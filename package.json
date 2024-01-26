@@ -1,0 +1,22 @@
+{
+  "name": "pts-plan",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [],
+  "license": "ISC",
+  "author": "",
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack-dev-server --mode development --open"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "path": "^0.12.7",
+    "webpack": "^4.29.6",
+    "webpack-cli": "^3.2.3",
+    "webpack-dev-server": "^3.2.1"
+  },
+  "engines": {
+    "node": "16"
+  }
+}
