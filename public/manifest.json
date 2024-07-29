@@ -1,30 +1,47 @@
 {
   "name": "plan.pixelplus.ru Injection",
-  "manifest_version": 2,
-  "version": "1.6.9",
+  "version": "1.7.0",
+  "description": "Расширение функционала сайта plan.pixelplus.ru",
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
   "permissions": [
-    "tabs",
-    "https://plan.pixelplus.ru/*",
-    "storage",
-    "activeTab"
+    "storage"
   ],
+  "manifest_version": 3,
   "content_scripts": [
     {
       "all_frames": true,
-      "js": [
-        "plan-injection.js"
-      ],
       "matches": [
         "https://plan.pixelplus.ru/*"
       ],
-      "run_at": "document_start"
+      "js": [
+        "isolated.js"
+      ],
+      "world": "ISOLATED"
+    },
+    {
+      "all_frames": true,
+      "matches": [
+        "https://plan.pixelplus.ru/*"
+      ],
+      "js": [
+        "main.js"
+      ],
+      "world": "MAIN"
     }
   ],
-  "icons": {
-    "50": "icon.png"
-  },
-  "browser_action": {
-    "default_icon": "icon.png"
-  },
-  "options_page": "options.html"
+  "host_permissions": [
+    "https://plan.pixelplus.ru/*"
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    },
+    "default_popup": "popup.html"
+  }
 }
