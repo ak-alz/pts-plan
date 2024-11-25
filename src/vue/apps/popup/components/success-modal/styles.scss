@@ -1,0 +1,35 @@
+.success-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+
+  text-align: center;
+
+  &__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+
+    border: 1px solid $primary;
+    border-radius: 50%;
+
+    svg {
+      width: 10px;
+      height: 10px;
+
+      fill: $primary;
+    }
+  }
+
+  &__title {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  &__description {
+    font-size: 13px;
+  }
+}

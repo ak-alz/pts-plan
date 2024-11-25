@@ -1,0 +1,394 @@
+{
+  "groups": [
+    {
+      "name": "Общие настройки",
+      "key": "general",
+      "inputs": [
+        {
+          "type": "text",
+          "key": "firstName",
+          "name": "Ваше имя",
+          "default": "",
+          "keywords": []
+        },
+        {
+          "type": "text",
+          "key": "secondName",
+          "name": "Ваша фамилия",
+          "default": "",
+          "keywords": []
+        },
+        {
+          "type": "text",
+          "key": "userId",
+          "name": "ID пользователя",
+          "default": "",
+          "keywords": []
+        }
+      ]
+    },
+    {
+      "name": "Настройки внешнего вида",
+      "key": "style",
+      "withCounter": true,
+      "inputs": [
+        {
+          "type": "checkbox",
+          "key": "isChangeUserNameColor",
+          "name": "Изменить цвет имени пользователя",
+          "default": false,
+          "keywords": [
+            "сменить",
+            "изменить",
+            "поменять",
+            "цвет",
+            "стиль",
+            "имя",
+            "имени"
+          ],
+          "children": [
+            {
+              "type": "color-picker",
+              "key": "nameColor",
+              "name": "Выберите цвет",
+              "default": "#ff0000"
+            }
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isChangeNewCommentColor",
+          "name": "Изменить цвет новых комментариев",
+          "default": false,
+          "keywords": [
+            "сменить",
+            "изменить",
+            "поменять",
+            "цвет",
+            "стиль",
+            "новый",
+            "новых",
+            "новые",
+            "комментарий",
+            "комментариев"
+          ],
+          "children": [
+            {
+              "type": "color-picker",
+              "key": "newCommentColor",
+              "name": "Выберите цвет",
+              "default": "#b7ecca"
+            }
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isQuotesNewColor",
+          "name": "Изменить цвет цитат",
+          "default": false,
+          "keywords": [
+            "сменить",
+            "изменить",
+            "поменять",
+            "цвет",
+            "стиль",
+            "цитат",
+            "цитата",
+            "цитаты",
+            "фон",
+            "фона",
+            "рамка",
+            "рамки"
+          ],
+          "children": [
+            {
+              "type": "color-picker",
+              "key": "quotesBackgroundColor",
+              "name": "Выберите цвет фона",
+              "default": "#fde08d"
+            },
+            {
+              "type": "color-picker",
+              "key": "quotesBorderColor",
+              "name": "Выберите цвет рамки",
+              "default": "#1e7aa9"
+            }
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isTagAllNewColor",
+          "name": "Изменить цвет TAGALL",
+          "default": false,
+          "keywords": [
+            "сменить",
+            "изменить",
+            "поменять",
+            "цвет",
+            "стиль",
+            "tagall",
+            "теголл",
+            "тегалл"
+          ],
+          "children": [
+            {
+              "type": "color-picker",
+              "key": "tagAllNewColor",
+              "name": "Выберите цвет",
+              "default": "#f97105"
+            }
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddMessagesBorders",
+          "name": "Добавить рамку для сообщений",
+          "default": false,
+          "keywords": [
+            "добавить",
+            "рамка",
+            "рамку",
+            "рамки",
+            "сообщение",
+            "сообщения",
+            "сообщению",
+            "сообщений",
+            "стиль"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isHideLiveFeed",
+          "name": "Скрыть живую ленту",
+          "default": false,
+          "keywords": [
+            "скрыть",
+            "удалить",
+            "убрать",
+            "живая",
+            "живую",
+            "лента",
+            "ленту"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isReturnUsersStatus",
+          "name": "Вернуть статусы пользователей в чатах",
+          "default": false,
+          "keywords": [
+            "вернуть",
+            "восстановить",
+            "статус",
+            "статусы",
+            "пользователей",
+            "юзеров",
+            "сотрудников"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isHideTasksImg",
+          "name": "Скрыть изображения задач в канбане",
+          "default": false,
+          "keywords": [
+            "скрыть",
+            "удалить",
+            "убрать",
+            "изображение",
+            "изображения",
+            "картинку",
+            "картинки",
+            "задачи",
+            "задача"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isTasksLikesHide",
+          "name": "Скрыть лайки у задач",
+          "default": false,
+          "keywords": [
+            "скрыть",
+            "удалить",
+            "убрать",
+            "лайки",
+            "эмоции",
+            "реакции",
+            "задачи",
+            "задача"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Расширение функционала",
+      "key": "additional",
+      "withCounter": true,
+      "inputs": [
+        {
+          "type": "checkbox",
+          "key": "isScrumPoints",
+          "name": "Добавить таблицу для подсчёта баллов спринта в канбане",
+          "default": false,
+          "isNew": true,
+          "hasInfoModal": true,
+          "keywords": [
+            "добавить",
+            "таблица",
+            "канбан",
+            "kanban",
+            "спринт",
+            "sprint",
+            "скрам",
+            "scrum",
+            "scram",
+            "баллы",
+            "points",
+            "считать",
+            "подсчёт",
+            "подсчет"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isMarkMissingUsers",
+          "name": "Отмечать в сообщениях пользователей, которые не добавлены в задачу",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isHideForumInSearchResult",
+          "name": "Убрать ссылки на форум в результатах поиска",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isHideNotForUserMessages",
+          "name": "Закрывать не адресованные вам уведомления",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isDisableShowTaskOnTagClick",
+          "name": "Убрать открытие задачи при клике на тег в канбане",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isAutoChoiseFindSingleUser",
+          "name": "Автоматически выбирать единственного найденного пользователя при поиске через +",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isChangeTitleOnProjectPage",
+          "name": "На страницах проектов добавить в title название проекта",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddLongLinkRepair",
+          "name": "Добавить кнопку для починки длинных ссылок",
+          "default": false,
+          "keywords": [
+            "кнопка"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddDeleteAllTaskMessagesButton",
+          "name": "Добавить кнопку для удаления всех уведомлений текущей задачи",
+          "default": false,
+          "keywords": [
+            "кнопка"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isMarkMessagesWithoutDestination",
+          "name": "Отмечать сообщения, которые никому не адресованы",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isOpenAllCommentsInTask",
+          "name": "Добавить кнопку открытия всех комментариев задачи",
+          "default": false,
+          "keywords": [
+            "кнопка"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddEditTaskButton",
+          "name": "Добавить кнопку редактирования задачи в канбане",
+          "default": false,
+          "keywords": [
+            "кнопка"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddCurrentMountButton",
+          "name": "Добавить кнопку указания тега текущего месяца в канбане",
+          "default": false,
+          "keywords": [
+            "кнопка"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isShowCats",
+          "name": "Добавить фото котиков в меню",
+          "default": false,
+          "keywords": []
+        }
+      ]
+    },
+    {
+      "name": "Модификация страницы /alert/",
+      "key": "alert",
+      "withCounter": true,
+      "inputs": [
+        {
+          "type": "checkbox",
+          "key": "isMarkMessagesToUsers",
+          "name": "Отметить все сообщения и задачи, в которых вы упоминаетесь",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddGroupName",
+          "name": "Добавить названия групп для блоков сообщений (для задач)",
+          "default": false,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddAllTasksOpenButton",
+          "name": "Добавить кнопку открытия всех задач",
+          "default": false,
+          "keywords": [
+            "кнопка"
+          ]
+        },
+        {
+          "type": "checkbox",
+          "key": "isAddGroupFilter",
+          "name": "Включить фильтрацию задачи по группам",
+          "default": false,
+          "keywords": []
+        }
+      ]
+    }
+  ]
+}

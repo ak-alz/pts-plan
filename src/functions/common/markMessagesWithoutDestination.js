@@ -8,12 +8,22 @@ export default function markMessagesWithoutDestination() {
     const warningImg = document.createElement('span');
     if (!messageUserBox.querySelector('span.warning_message')) {
       warningImg.className = 'warning_message';
-      warningImg.style = 'background-image: url(https://stjah.com/image/catalog/text/01publick.png); width: 20px; height: 20px; top: 5px; position: absolute; z-index: 9999; background-size: 20px 20px;';
+      warningImg.style = `background-image: url(https://stjah.com/image/catalog/text/01publick.png);
+                          width: 20px;
+                          height: 20px;
+                          top: 5px;
+                          position: absolute;
+                          z-index: 9999;
+                          background-size: 20px 20px;`;
       warningImg.title = text;
       messageUserBox.appendChild(warningImg);
     }
     if (link && !link.classList.contains('marked')) {
-      link.style = 'background-image: url(https://minecraft-statistic.net/img/screen/icon/166252.png); background-repeat: no-repeat; background-size: 15px 15px; background-position-x: 99%; padding-right: 20px;';
+      link.style = `background-image: url(https://minecraft-statistic.net/img/screen/icon/166252.png);
+                    background-repeat: no-repeat;
+                    background-size: 15px 15px;
+                    background-position-x: 99%;
+                    padding-right: 20px;`;
       link.title = 'Упоминание пользователя не в первых 100 символах сообщения';
       link.classList.add('marked');
     }

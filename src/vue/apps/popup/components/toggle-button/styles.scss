@@ -1,0 +1,38 @@
+.toggle-button {
+  $block-name: &;
+
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+
+  font-family: inherit;
+
+  background: none;
+
+  border: 1px solid $neutral;
+  border-radius: $border-radius;
+
+  cursor: pointer;
+
+  &.some::after {
+    width: 8px;
+    height: 8px;
+
+    background-color: $primary;
+    border-radius: 50%;
+
+    content: '';
+    pointer-events: none;
+  }
+
+  &.checked svg {
+    width: 12px;
+    height: 12px;
+
+    fill: $primary;
+  }
+}

@@ -1,0 +1,39 @@
+.color-picker {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: fit-content;
+
+  cursor: pointer;
+
+  &__element {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+
+    background: none;
+    border: 1px solid $neutral;
+    border-radius: $border-radius;
+    outline: none;
+
+    -webkit-appearance: none;
+
+    &::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    &::-webkit-color-swatch {
+      border: none;
+    }
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  &__label {
+    font-size: 13px;
+
+    user-select: none;
+  }
+}

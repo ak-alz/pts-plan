@@ -1,0 +1,52 @@
+.search-form {
+  $block-name: &;
+
+  position: relative;
+
+  &__button {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    padding: 0;
+
+    font-family: inherit;
+
+    background: none;
+    border: none;
+    transform: translateY(-50%);
+
+    cursor: pointer;
+
+    transition: opacity 0.3s ease;
+
+    pointer-events: none;
+
+    svg {
+      width: 12px;
+      height: 12px;
+    }
+  }
+
+  &.filled #{$block-name}__button {
+    pointer-events: all;
+
+    svg {
+      width: 10px;
+      height: 10px;
+
+      transition: fill 0.3s ease;
+
+      fill: $primary;
+    }
+
+    &:hover svg {
+      fill: $primary-light;
+    }
+  }
+}

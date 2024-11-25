@@ -1,0 +1,17 @@
+@keyframes loader {
+  100% {
+    transform: rotate(1turn);
+  }
+}
+
+.loader {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+
+  border: 2px solid;
+  border-right: 2px solid transparent;
+  border-radius: 50%;
+
+  animation: loader .75s linear infinite;
+}

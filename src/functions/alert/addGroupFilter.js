@@ -3,10 +3,14 @@ export default function addGroupFilter() {
   const blocks = [...document.querySelectorAll('div.task-messages-wrapper')];
   const messages = [...document.querySelectorAll('div.message-item')];
   if (blocks.length === 0 && messages.length === 0) return false;
-
+ 
   const groups = {};
   const select = document.createElement('select');
-  select.style = 'height: 30px; font-size: 12px; border: 1px solid #dbdbdb; margin-left: 25px; width: 200px;';
+  select.style = `height: 30px;
+                  font-size: 12px;
+                  border: 1px solid #dbdbdb;
+                  margin-left: 25px;
+                  width: 200px;`;
   select.className = 'plan_injection_messages_filter';
 
   if (blocks.length > 0 && messages.length > 0) {
@@ -30,7 +34,7 @@ export default function addGroupFilter() {
       if (groupName in groups) {
         groups[groupName].count++;
       } else {
-        groups[groupName] = {count: 1, id: Object.keys(groups).length};
+        groups[groupName] = { count: 1, id: Object.keys(groups).length };
       }
       block.classList.add(`injection_script_filter_${groups[groupName].id}`);
       return true;
@@ -58,7 +62,7 @@ export default function addGroupFilter() {
       if (groupName in groups) {
         groups[groupName].count++;
       } else {
-        groups[groupName] = {count: 1, id: Object.keys(groups).length};
+        groups[groupName] = { count: 1, id: Object.keys(groups).length };
       }
       message.classList.add(`injection_script_filter_${groups[groupName].id}`);
       return true;
@@ -90,7 +94,14 @@ export default function addGroupFilter() {
   styles.id = 'groupFilterInjection';
   document.head.appendChild(styles);
   select.addEventListener('change', () => {
-    styles.innerHTML = (select.value === 'all') ? '' : `.injection_group{display: none !important;} div.injection_script_filter_${select.value}{display: block !important;}`;
+    styles.innerHTML = (select.value === 'all')
+      ? ''
+      : `.injection_group {
+           display: none !important;
+         }
+         div.injection_script_filter_${select.value} {
+           display: block !important;
+         }`;
   });
 
   const settingsBlock = document.querySelectorAll('div.settings-row');

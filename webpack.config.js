@@ -1,53 +1,75 @@
-const {VueLoaderPlugin} = require('vue-loader');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
-const TerserPlugin = require("terser-webpack-plugin");
-const { CleanWebpackPlugin } = require('clean-webpack-plugin');
-const path = require("path");
+import webpack from 'webpack';
+import { VueLoaderPlugin } from 'vue-loader';
+import CopyWebpackPlugin from 'copy-webpack-plugin';
+import TerserPlugin from 'terser-webpack-plugin';
+import { CleanWebpackPlugin } from 'clean-webpack-plugin';
+import { resolve } from 'path';
 
-module.exports = {
+export default {
   entry: {
     popup: './src/popup/index.js',
     main: './src/content-scripts/main.js',
-    isolated: './src/content-scripts/isolated.js'
+    isolated: './src/content-scripts/isolated.js',
   },
   output: {
-    path: path.resolve(__dirname, './dist'),
-    filename: '[name].js'
+    path: resolve(import.meta.dirname, 'dist'),
+    filename: '[name].js',
   },
   mode: 'production',
   module: {
     rules: [
       {
         test: /\.vue$/,
-        loader: 'vue-loader'
+        loader: 'vue-loader',
       },
       {
         test: /\.js$/,
-        loader: 'babel-loader'
+        loader: 'babel-loader',
+        resolve: {
+          fullySpecified: false,
+        },
       },
       {
         test: /\.css$/,
         use: [
           'vue-style-loader',
-          'css-loader'
-        ]
+          'css-loader',
+        ],
       },
       {
         test: /\.scss$/,
         use: [
           'vue-style-loader',
           'css-loader',
-          'sass-loader'
-        ]
-      }
-    ]
+          {
+            loader: 'sass-loader',
+            options: {
+              additionalData: '@use "/src/vue/scss/_variables" as *;',
+            },
+          },
+        ],
+      },
+      {
+        test: /\.(png|jpe?g|gif)$/i,
+        use: [
+          {
+            loader: 'file-loader',
+          },
+        ],
+      },
+    ],
   },
   plugins: [
+    new webpack.DefinePlugin({
+      __VUE_OPTIONS_API__: true,
+      __VUE_PROD_DEVTOOLS__: false,
+      __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
+    }),
     new VueLoaderPlugin(),
     new CopyWebpackPlugin({
       patterns: [
-        { from: './public' }
-      ]
+        { from: './public' },
+      ],
     }),
     new CleanWebpackPlugin(),
   ],
@@ -62,4 +84,16 @@ module.exports = {
       extractComments: false,
     })],
   },
-}
+  performance: {
+    hints: false,
+    maxEntrypointSize: 512000,
+    maxAssetSize: 512000,
+  },
+  infrastructureLogging: { level: 'error' },
+  stats: 'minimal',
+  resolve: {
+    alias: {
+      '@': resolve(import.meta.dirname, 'src'),
+    },
+  },
+};

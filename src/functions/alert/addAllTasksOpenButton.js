@@ -1,9 +1,28 @@
-// добавляет кнопку открытия всех задач
+// Добавляет кнопку открытия всех задач
 export default function addAllTasksOpenButton() {
   const openAllTasks = document.createElement('span');
-  openAllTasks.style = 'display: inline-block; vertical-align: middle; background-color: #e4ae16; padding: 0 10px; font-size: 12px; text-align: center; text-align-last: center; line-height: 24px; border: none; color: #ffffff; transition: all .3s; box-sizing: border-box; cursor: pointer; border-radius: 6px;';
+  openAllTasks.style = `display: inline-block;
+                        vertical-align: middle;
+                        background-color: #e4ae16;
+                        padding: 0 10px;
+                        font-size: 12px;
+                        text-align: center;
+                        text-align-last: center;
+                        line-height: 24px;
+                        border: none;
+                        color: #ffffff;
+                        transition: all .3s;
+                        box-sizing: border-box;
+                        cursor: pointer;
+                        border-radius: 6px;`;
+
   openAllTasks.innerText = 'Открыть все задачи';
-  document.querySelector('a.delete-button').parentNode.insertBefore(openAllTasks, document.querySelector('a.delete-button').nextElementSibling);
+
+  document.querySelector('a.delete-button').parentNode
+    .insertBefore(
+      openAllTasks,
+      document.querySelector('a.delete-button').nextElementSibling,
+    );
 
   openAllTasks.addEventListener('click', () => {
     const tasksMessages = [...document.querySelectorAll('div.message-message')];

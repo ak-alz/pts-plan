@@ -1,0 +1,29 @@
+{
+  "env": {
+    "browser": true,
+    "node": true,
+    "webextensions": true
+  },
+  "plugins": [
+    "editorconfig",
+    "import"
+  ],
+  "extends": [
+    "airbnb-base",
+    "plugin:vue/vue3-recommended",
+    "@vue/airbnb",
+    "plugin:editorconfig/all"
+  ],
+  "settings": {
+    "import/resolver": {
+      "alias": {
+        "map": [
+          [
+            "@",
+            "./src"
+          ]
+        ]
+      }
+    }
+  }
+}

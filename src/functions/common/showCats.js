@@ -11,7 +11,11 @@ export default function showCats() {
     } else {
       img = document.createElement('img');
       img.id = 'funny_cat_image';
-      img.style = `position: fixed; left: 0px; bottom: 0px; width: ${parseInt(getComputedStyle(leftBlock).width, 10)}px; height: auto;`;
+      img.style = `position: fixed;
+                   left: 0px;
+                   bottom: 0px;
+                   width: ${parseInt(getComputedStyle(leftBlock).width, 10)}px;
+                   height: auto;`;
       leftBlock.appendChild(img);
     }
     img.src = localStorage.catUrl;
@@ -37,7 +41,7 @@ export default function showCats() {
       if (data[0].url.includes('http://')) return false;
       localStorage.catUrl = data[0].url;
       addCatInPage();
-    }
+    };
     return true;
   }
 

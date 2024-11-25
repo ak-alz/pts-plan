@@ -1,0 +1,38 @@
+.button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+
+  color: $white;
+  font-weight: 600;
+  font-size: 13px;
+  font-family: inherit;
+  text-align: center;
+
+  background-color: $primary;
+
+  border: none;
+  border-radius: $border-radius;
+
+  cursor: pointer;
+
+  transition: 0.3s;
+
+  &:hover {
+    background-color: $primary-light;
+    border-color: $primary-light;
+    box-shadow: 0 5px 5px rgba($primary-light, 0.35), 0 20px 35px rgba($primary-light, 0.15);
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  &[disabled] {
+    opacity: 0.8;
+
+    pointer-events: none;
+  }
+}

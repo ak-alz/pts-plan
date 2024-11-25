@@ -1,0 +1,34 @@
+.input {
+  $block-name: &;
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  &__label {
+    color: $neutral-dark;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  &__element {
+    padding: 6px 10px;
+
+    font-size: 13px;
+
+    border: 1px solid $neutral;
+    border-radius: $border-radius;
+
+    &::placeholder {
+      font-family: inherit;
+    }
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  &.with-icon #{$block-name}__element {
+    padding-right: 32px;
+  }
+}

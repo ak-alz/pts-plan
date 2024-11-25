@@ -1,3 +1,3 @@
-import postBitrixSessionId from "../functions/core/postBitrixSessionId";
+import postBitrixSessionId from '@/functions/core/postBitrixSessionId';
 
 postBitrixSessionId();

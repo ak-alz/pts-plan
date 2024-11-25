@@ -14,7 +14,11 @@ export default function markMissingUsers() {
       usersInCommetns.forEach((user) => {
         const userId = re.exec(user.href);
         if (!usersId.includes(userId[1]) && !user.classList.contains('marked-link')) {
-          user.style = 'background-image: url(https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Emblem-important-red.svg/120px-Emblem-important-red.svg.png); background-repeat: no-repeat; background-size: 15px 15px; background-position-x: 99%; padding-right: 20px;';
+          user.style = `background-image: url(https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Emblem-important-red.svg/120px-Emblem-important-red.svg.png);
+                        background-repeat: no-repeat;
+                        background-size: 15px 15px;
+                        background-position-x: 99%;
+                        padding-right: 20px;`;
           user.title = 'Пользователь не добавлен в задачу';
           user.classList.add('marked-link');
         } else if (usersId.includes(userId[1]) && user.classList.contains('marked-link')) {
