@@ -98,11 +98,7 @@ const onCopy = (columnId) => {
   string += `${total} ${getNumberEnding(total, ['балл', 'балла', 'баллов'])}\n\n`;
   string += usersData.map(({ name, points }) => `${name} — ${points}`).join('\n');
 
-  navigator.clipboard.writeText(string).then(() => {
-    console.log('Async: Copying to clipboard was successful!');
-  }, (err) => {
-    console.error('Async: Could not copy text: ', err);
-  });
+  navigator.clipboard.writeText(string);
 };
 
 // Получение данных при первом открытии модалки

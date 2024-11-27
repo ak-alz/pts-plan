@@ -1,5 +1,5 @@
 import createVueApp from '@/vue/createVueApp';
-import DeleteTaskMessages from '@/vue/apps/delete-task-messages/DeleteTaskMessages.vue';
+import App from '@/vue/apps/delete-task-messages/App.vue';
 
 // Добавить кнопку для удаления всех уведомлений текущей задачи
 export default function addDeleteAllTaskMessagesButton(bitrixSessionId) {
@@ -11,7 +11,7 @@ export default function addDeleteAllTaskMessagesButton(bitrixSessionId) {
   createVueApp(
     container,
     'delete-task-messages',
-    DeleteTaskMessages,
+    App,
     {
       bitrixSessionId,
     },

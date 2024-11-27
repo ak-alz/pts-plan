@@ -13,6 +13,7 @@ import SearchForm from '@/vue/apps/popup/components/search-form/SearchForm.vue';
 import SearchResult from '@/vue/apps/popup/components/search-result/SearchResult.vue';
 import InfoModals from '@/vue/apps/popup/components/info-modals/InfoModals.vue';
 import ScrumPointsInfo from '@/vue/apps/popup/components/info-modals/ScrumPointsInfo.vue';
+import CommitButtonInfo from '@/vue/apps/popup/components/info-modals/CommitButtonInfo.vue';
 import generateInfoModalsState from './generateInfoModalsState';
 import generateState from './generateState';
 
@@ -148,6 +149,9 @@ onMounted(loadOptions);
   <InfoModals v-model="infoModalsState">
     <template #isScrumPoints>
       <ScrumPointsInfo />
+    </template>
+    <template #isCommitButton>
+      <CommitButtonInfo />
     </template>
   </InfoModals>
 </template>

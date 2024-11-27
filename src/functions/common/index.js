@@ -13,6 +13,7 @@ import addEditTaskButton from './addEditTaskButton';
 import addCurrentMountButton from './addCurrentMountButton';
 import showCats from './showCats';
 import scrumPoints from './scrumPoints';
+import commitButton from './commitButton';
 
 function scriptsInjection(options, bitrixSessionId) {
   if (options.isTagAllNewColor) {
@@ -62,6 +63,9 @@ function scriptsInjection(options, bitrixSessionId) {
   }
   if (options.isScrumPoints) {
     scrumPoints(bitrixSessionId);
+  }
+  if (options.isCommitButton) {
+    commitButton();
   }
 }
 

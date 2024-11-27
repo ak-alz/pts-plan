@@ -1,5 +1,5 @@
 import createVueApp from '@/vue/createVueApp';
-import ScrumPoints from '@/vue/apps/scrum-points/ScrumPoints.vue';
+import App from '@/vue/apps/scrum-points/App.vue';
 import getGroupId from '@/functions/core/getGroupId';
 
 export default function scrumPoints(bitrixSessionId) {
@@ -17,7 +17,7 @@ export default function scrumPoints(bitrixSessionId) {
   createVueApp(
     container,
     'scrum-points',
-    ScrumPoints,
+    App,
     {
       bitrixSessionId,
       groupId,

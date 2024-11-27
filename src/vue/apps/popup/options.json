@@ -252,6 +252,24 @@
         },
         {
           "type": "checkbox",
+          "key": "isCommitButton",
+          "name": "Добавить кнопку для копирования названия коммита",
+          "default": false,
+          "isNew": true,
+          "hasInfoModal": true,
+          "keywords": [
+            "добавить",
+            "кнопку",
+            "кнопка",
+            "commit",
+            "коммит",
+            "комит",
+            "github",
+            "гитхаб"
+          ]
+        },
+        {
+          "type": "checkbox",
           "key": "isMarkMissingUsers",
           "name": "Отмечать в сообщениях пользователей, которые не добавлены в задачу",
           "default": false,
