@@ -8,29 +8,26 @@ export default function getTaskPoints(name) {
   if (!name) return result;
 
   const chunks = name.split('|').map((chunk) => chunk.trim());
+
+  // Если заголовок задачи не сформирован
   if (chunks.length <= 1) {
     result.hasQuestion = true;
     return result;
   }
 
   let possibleValue = chunks[chunks.length - 1];
-  if (possibleValue.replace('+', '').length > 2) {
-    result.hasQuestion = true;
-    return result;
-  }
 
   if (possibleValue.includes('+')) {
     result.hasPlus = true;
   }
-  possibleValue = possibleValue.replace('+', '');
 
   if (possibleValue.includes('?')) {
     result.hasQuestion = true;
   }
-  possibleValue = possibleValue.replace('?', '');
 
-  if (isNaN(possibleValue)) return result;
-
+  // Оставляем только число
+  possibleValue = possibleValue.replace(/[^0-9]/g, '');
+ 
   result.value = Number(possibleValue);
   return result;
 }

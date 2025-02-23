@@ -93,8 +93,9 @@ const columnsArray = computed(() => {
               </template>
             </template>
             <tr class="user-tasks-modal__table-summary">
-              <td v-if="props.columns" />
-              <td>Итого</td>
+              <td :colspan="props.columns ? 2 : 1">
+                Итого
+              </td>
               <td>{{ points }}</td>
             </tr>
           </tbody>
