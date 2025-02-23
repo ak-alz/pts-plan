@@ -252,6 +252,14 @@
         },
         {
           "type": "checkbox",
+          "key": "isScrumSummary",
+          "name": "Добавить сводку по спринтам в канбане",
+          "default": false,
+          "isNew": true,
+          "keywords": []
+        },
+        {
+          "type": "checkbox",
           "key": "isCommitButton",
           "name": "Добавить кнопку для копирования названия коммита",
           "default": false,

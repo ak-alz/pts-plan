@@ -13,6 +13,7 @@ import addEditTaskButton from './addEditTaskButton';
 import addCurrentMountButton from './addCurrentMountButton';
 import showCats from './showCats';
 import scrumPoints from './scrumPoints';
+import scrumSummary from './scrumSummary';
 import commitButton from './commitButton';
 
 function scriptsInjection(options, bitrixSessionId) {
@@ -63,6 +64,9 @@ function scriptsInjection(options, bitrixSessionId) {
   }
   if (options.isScrumPoints) {
     scrumPoints(bitrixSessionId);
+  }
+  if (options.isScrumSummary) {
+    scrumSummary(bitrixSessionId);
   }
   if (options.isCommitButton) {
     commitButton();

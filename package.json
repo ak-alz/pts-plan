@@ -11,7 +11,9 @@
     "dev": "webpack serve"
   },
   "dependencies": {
-    "vue": "^3.5.12"
+    "chart.js": "^4.4.8",
+    "vue": "^3.5.12",
+    "vue-chartjs": "^5.3.2"
   },
   "devDependencies": {
     "@vue/eslint-config-airbnb": "^8.0.0",

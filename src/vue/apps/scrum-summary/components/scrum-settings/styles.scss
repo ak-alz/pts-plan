@@ -1,0 +1,66 @@
+.scrum-settings {
+  &__button {
+    display: block;
+    padding: 0;
+
+    background: none;
+    border: none;
+    cursor: pointer;
+
+    transition: color 0.3s ease;
+
+    &:hover {
+      color: $primary;
+    }
+
+    &:focus {
+      outline: none;
+    }
+
+    svg {
+      display: block;
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  &__blocks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  &__block {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    &.--wide {
+      grid-column: span 2;
+    }
+  }
+
+  &__block-name {
+    font-weight: 500;
+    font-size: 15px;
+  }
+
+  &__block-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__input {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+
+    font-size: 13px;
+
+    .input,
+    .select {
+      max-width: 100px;
+    }
+  }
+}
