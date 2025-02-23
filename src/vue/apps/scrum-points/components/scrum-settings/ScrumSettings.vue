@@ -111,6 +111,10 @@ const weekDays = [
               style="padding-left: 30px;"
             />
             <VCheckbox
+              v-model="settings.showSummaryColumn"
+              label="Показывать колонку итогов"
+            />
+            <VCheckbox
               v-model="settings.showTasksCount"
               label="Показывать количество задач"
             />
@@ -125,6 +129,10 @@ const weekDays = [
             <VCheckbox
               v-model="settings.showDetails"
               label="Показывать детальный список задач"
+            />
+            <VCheckbox
+              v-model="settings.compactMode"
+              label="Включить компактные названия колонок"
             />
           </div>
         </div>

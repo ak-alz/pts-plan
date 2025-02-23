@@ -42,6 +42,9 @@ const onCopy = (columnId) => {
             :key="column.id"
             :column="column"
           />
+          <th v-if="settings.showSummaryColumn">
+            Итого
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -62,6 +65,11 @@ const onCopy = (columnId) => {
             :column
             :user
           />
+          <UserPoints
+            v-if="settings.showSummaryColumn"
+            :columns
+            :user
+          />
         </tr>
         <tr
           v-if="settings.showSummary"
@@ -77,6 +85,7 @@ const onCopy = (columnId) => {
             :users
             @copy="onCopy"
           />
+          <td v-if="settings.showSummaryColumn" />
         </tr>
       </tbody>
     </table>

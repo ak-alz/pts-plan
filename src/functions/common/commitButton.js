@@ -4,8 +4,12 @@ import App from '@/vue/apps/commit-button/App.vue';
 export default function commitButton() {
   if (!window.location.href.includes('/tasks/task/view/')) return;
 
-  const container = document.querySelector('.pagetitle');
+  let container = document.querySelector('.pagetitle');
   if (!container) return;
+
+  if (container.querySelector('.pagetitle-item__additional-actions-container')) {
+    container = container.querySelector('.pagetitle-item');
+  }
 
   createVueApp(
     container,

@@ -7,11 +7,13 @@ export default function getSettings(initialData, groupId) {
     sprintNumber: savedSettings.sprintNumber || '',
     sprintFirstDate: savedSettings.sprintFirstDate || '1',
     showSummary: savedSettings.showSummary || false,
+    showSummaryColumn: savedSettings.showSummaryColumn || false,
     showCopyButton: savedSettings.showCopyButton || false,
     showTasksCount: savedSettings.showTasksCount || false,
     showQuestion: savedSettings.showQuestion || false,
     showPlus: savedSettings.showPlus || false,
     showDetails: savedSettings.showDetails || false,
+    compactMode: savedSettings.compactMode || false,
   };
 
   // Собираем мапу вида [id колонки]: true/false

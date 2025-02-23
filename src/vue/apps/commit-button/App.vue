@@ -11,19 +11,29 @@ const onClick = () => {
   const wrapper = button.value.closest('.pagetitle');
   if (!wrapper) return;
 
-  const title = wrapper.querySelector('.pagetitle-item');
+  let title = wrapper.querySelector('.pagetitle-item');
   if (!title) return;
 
   const taskId = getTaskId();
   if (!taskId) return;
 
-  const parts = title.textContent.split('|').map((x) => x.trim()).filter((x) => !!x);
+  const popupTitle = title.querySelector('.task-popup-pagetitle-item');
+  if (popupTitle) {
+    title = popupTitle;
+  }
 
-  const longestPart = parts.reduce(
-    (a, b) => (a.length > b.length ? a : b),
-  );
+  const parts = title.textContent
+    .split('|')
+    .map((x) => x.trim())
+    .filter((x) => !!x);
+  const lastPart = parts[parts.length - 1];
+  const lastPartIsPointsPart = lastPart.length < 4; // 100+
+  if (lastPartIsPointsPart) {
+    parts.pop();
+  }
+  parts.push(taskId);
 
-  navigator.clipboard.writeText(`${longestPart} | ${taskId}`);
+  navigator.clipboard.writeText(parts.join(' | '));
 
   isCopied.value = true;
 

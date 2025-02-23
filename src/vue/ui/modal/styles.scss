@@ -29,6 +29,14 @@
     border-radius: $border-radius;
   }
 
+  &--resizable #{$block-name}__window {
+    min-width: 250px;
+    max-width: calc(100% - 30px);
+    overflow: auto;
+
+    resize: horizontal;
+  }
+
   &--large #{$block-name}__window {
     max-width: 1000px;
   }

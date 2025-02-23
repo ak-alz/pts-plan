@@ -3,9 +3,13 @@ import { computed, inject, ref } from 'vue';
 import UserTasksModal from '../user-tasks-modal/UserTasksModal.vue';
 
 const props = defineProps({
+  columns: {
+    type: [Object, null],
+    default: null,
+  },
   column: {
-    type: Object,
-    required: true,
+    type: [Object, null],
+    default: null,
   },
   user: {
     type: Object,
@@ -15,12 +19,38 @@ const props = defineProps({
 
 const settings = inject('settings');
 
-const tasksCount = computed(() => (props.user.columns[props.column.id]
-  ? props.user.columns[props.column.id].length
-  : 0));
+const tasksCount = computed(() => {
+  if (props.columns) {
+    return props.columns.reduce((acc, { id }) => {
+      const count = props.user.columns[id]
+        ? props.user.columns[id].length
+        : 0;
+
+      return acc + count;
+    }, 0);
+  }
+
+  if (props.column) {
+    return props.user.columns[props.column.id]
+      ? props.user.columns[props.column.id].length
+      : 0;
+  }
+
+  return 0;
+});
 
 const userPoints = computed(() => {
-  if (tasksCount.value) {
+  if (props.columns) {
+    return props.columns.reduce((acc, { id }) => {
+      const columnPoints = props.user.columns[id]
+        ? props.user.columns[id].reduce((a, task) => a + task.points.value, 0)
+        : 0;
+
+      return acc + columnPoints;
+    }, 0);
+  }
+
+  if (props.column && tasksCount.value) {
     return props.user.columns[props.column.id]
       .reduce((acc, task) => acc + task.points.value, 0);
   }
@@ -29,7 +59,13 @@ const userPoints = computed(() => {
 });
 
 const hasPlus = computed(() => {
-  if (tasksCount.value) {
+  if (props.columns) {
+    return props.columns.some(({ id }) => (props.user.columns[id]
+      ? props.user.columns[id].some(({ points }) => points.hasPlus)
+      : false));
+  }
+
+  if (props.column && tasksCount.value) {
     return props.user.columns[props.column.id]
       .some(({ points }) => points.hasPlus);
   }
@@ -38,9 +74,17 @@ const hasPlus = computed(() => {
 });
 
 const hasQuestion = computed(() => {
-  if (tasksCount.value) {
-    return props.user.columns[props.column.id]
-      .some(({ points }) => points.hasQuestion);
+  if (props.columns) {
+    return props.columns.some(({ id }) => (props.user.columns[id]
+      ? props.user.columns[id].some(({ points }) => points.hasQuestion)
+      : false));
+  }
+
+  if (props.column) {
+    if (tasksCount.value) {
+      return props.user.columns[props.column.id]
+        .some(({ points }) => points.hasQuestion);
+    }
   }
 
   return false;
@@ -82,6 +126,7 @@ const isModalOpened = ref(false);
     </div>
     <UserTasksModal
       v-model="isModalOpened"
+      :columns
       :column
       :user
       :points="userPoints"
