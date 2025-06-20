@@ -23,6 +23,7 @@ const handleClose = () => {
 
 const closeOnEsc = (e) => {
   if (e.key === 'Escape' || e.key === 'Esc') {
+    e.stopPropagation();
     handleClose();
   }
 };

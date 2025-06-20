@@ -5,16 +5,14 @@ import {
 } from 'vue';
 import {
   Chart as ChartJS,
-  CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
-  Title,
   Tooltip,
-  Legend,
   Colors,
+  Filler,
 } from 'chart.js';
-import { Line } from 'vue-chartjs';
+import { Scatter } from 'vue-chartjs';
 import VLoader from '@/vue/ui/loader/VLoader.vue';
 import VIcon from '@/vue/ui/icon/VIcon.vue';
 import ScrumSettings from '../scrum-settings/ScrumSettings.vue';
@@ -22,14 +20,12 @@ import getSettings from './getSettings';
 import ScrumSummaryTable from '../scrum-summary-table/ScrumSummaryTable.vue';
 
 ChartJS.register(
-  CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
-  Title,
   Tooltip,
-  Legend,
   Colors,
+  Filler,
 );
 
 const isModalOpened = defineModel({
@@ -172,10 +168,12 @@ const chartData = computed(() => {
     : [...sprints.value];
 
   return {
-    labels: s,
     datasets: usersData.value
       .map((user) => ({
         label: user.name,
+        showLine: true,
+        borderWidth: 1,
+        tension: 0.1,
         data: (settings.value.sprintsCount >= 0
           ? user.points.slice(-1 * settings.value.sprintsCount)
           : [...user.points])
@@ -183,7 +181,7 @@ const chartData = computed(() => {
             x: s[i],
             y: point,
           }))
-          .filter((point) => point.y),
+          .filter(({ y }) => !!y || y >= 8),
         cubicInterpolationMode: 'monotone',
         hidden: !settings.value.users[user.id],
       })),
@@ -193,12 +191,28 @@ const chartData = computed(() => {
 const chartOptions = computed(() => ({
   interaction: {
     intersect: false,
-    mode: 'index',
+    mode: 'x',
   },
   animation: false,
   plugins: {
     legend: {
       display: false,
+    },
+    tooltip: {
+      itemSort(a, b) {
+        return b.raw.y - a.raw.y;
+      },
+      callbacks: {
+        footer(tooltipItems) {
+          let sum = 0;
+
+          tooltipItems.forEach((tooltipItem) => {
+            sum += tooltipItem.parsed.y;
+          });
+
+          return `Итого: ${sum}`;
+        },
+      },
     },
   },
   scales: {
@@ -252,7 +266,7 @@ const chartOptions = computed(() => ({
       </div>
       <div v-else-if="settings.taskId && hasVisibleUsers">
         <ScrumSummaryTable :chart-instance :users="usersData" style="margin-bottom: 20px;" />
-        <Line ref="chartInstance" :data="chartData" :options="chartOptions" />
+        <Scatter ref="chartInstance" :data="chartData" :options="chartOptions" />
       </div>
       <div
         v-else
