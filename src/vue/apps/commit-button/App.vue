@@ -8,26 +8,21 @@ const button = ref(null);
 const isCopied = ref(false);
 
 const onClick = () => {
-  const wrapper = button.value.closest('.pagetitle');
+  const wrapper = button.value.closest('.ui-toolbar-title-item-box');
   if (!wrapper) return;
 
-  let title = wrapper.querySelector('.pagetitle-item');
+  const title = wrapper.querySelector('.ui-toolbar-title-item');
   if (!title) return;
 
   const taskId = getTaskId();
   if (!taskId) return;
-
-  const popupTitle = title.querySelector('.task-popup-pagetitle-item');
-  if (popupTitle) {
-    title = popupTitle;
-  }
 
   const parts = title.textContent
     .split('|')
     .map((x) => x.trim())
     .filter((x) => !!x);
   const lastPart = parts[parts.length - 1];
-  const lastPartIsPointsPart = lastPart.length < 4; // 100+
+  const lastPartIsPointsPart = lastPart.length <= 4; // 100+
   if (lastPartIsPointsPart) {
     parts.pop();
   }
