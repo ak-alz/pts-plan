@@ -9,6 +9,9 @@ import tasksLikesHide from './tasksLikesHide';
 import quotesBackgroundColor from './quotesBackgroundColor';
 
 function stylesInjection(options) {
+  // Пропускаем HTML редактор, в котором тоже есть body
+  if (document.body.hasAttribute('contenteditable')) return;
+
   let styles = `a.tasks-kanban-item-title {
                          margin-right: 5px !important;
                        }`;
