@@ -1,5 +1,4 @@
 <script setup>
-import { round } from 'lodash-es';
 import { Button, Column, DataTable } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, inject, ref } from 'vue';
@@ -53,7 +52,7 @@ async function completeSelectedTasks() {
       .map((task) => {
         return bitrixApi.completeTask(groupId, props.column.id, task.id)
           .finally(() => {
-            progress.value += round(100 / selectedTasks.value.length);
+            progress.value += Math.round(100 / selectedTasks.value.length);
           });
       });
 

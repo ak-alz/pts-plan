@@ -14,7 +14,7 @@ import { getTaskAndGroupIdsFromUrl } from '../../utils.js';
 
     const button = Object.assign(document.createElement('a'), {
       className: 'js-show-comments feed-com-all',
-      href: BitrixApi.getTaskCommentsLink(ids.groupId, ids.taskId),
+      href: BitrixApi.getTaskCommentsUrl(ids.groupId, ids.taskId),
       textContent: 'Загрузить все комментарии',
     });
 

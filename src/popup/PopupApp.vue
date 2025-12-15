@@ -121,7 +121,7 @@ onMounted(() => {
 
   <Dialog
     v-model:visible="infoModalOpened"
-    header="О расширении"
+    header="Pixel Plan Injection"
     :draggable="false"
     dismissable-mask
     modal
@@ -176,6 +176,9 @@ onMounted(() => {
 
   <Toast
     :dt="{
+      summaryFontSize: '14px',
+      detailFontSize: '14px',
+      contentPadding: '10px',
       width: 'calc(100% - 40px)'
     }"
   />

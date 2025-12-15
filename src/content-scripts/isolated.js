@@ -1,6 +1,8 @@
 import options from '../js/options.js';
 
 (() => {
+  document.body.classList.add('pts-plan');
+
   // Получаем session id при первой загрузке
   window.addEventListener('message', async (e) => {
     if (e?.data?.key !== 'BX_SESSION_ID' || !e?.data?.data) return;

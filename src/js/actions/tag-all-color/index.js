@@ -1,4 +1,4 @@
-import { getTaskAndGroupIdsFromUrl, insertCSS, validateHexColor } from '../../utils.js';
+import {getTaskAndGroupIdsFromUrl, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
 
 export function tagAllColor(color) {
   if (!validateHexColor(color)) return;
@@ -8,26 +8,32 @@ export function tagAllColor(color) {
 
   const className = 'tag-all-highlight';
 
-  const comments = document.querySelectorAll('.feed-com-text-inner-inner');
-  if (!comments.length) return;
-
   const regex = /\bTAGALL\b/gi;
 
-  let hasMatches = false;
+  function highlight() {
+    const comments = document.querySelectorAll('.feed-com-text-inner-inner');
+    if (!comments.length) return;
 
-  comments.forEach((comment) => {
-    if (regex.test(comment.textContent)) {
-      hasMatches = true;
+    let hasMatches = false;
 
-      comment.innerHTML = comment.innerHTML.replace(regex, (match) => `<b class="${className}">${match}</b>`);
+    comments.forEach((comment) => {
+      if (regex.test(comment.textContent)) {
+        hasMatches = true;
+
+        comment.innerHTML = comment.innerHTML.replace(regex, (match) => `<b class="${className}">${match}</b>`);
+      }
+    });
+
+    if (hasMatches) {
+      const css = `.${className} {
+        color: ${color} !important;
+      }`;
+
+      insertCSS(css);
     }
-  });
-
-  if (hasMatches) {
-    const css = `.${className} {
-      color: ${color} !important;
-    }`;
-
-    insertCSS(css);
   }
+
+  highlight();
+
+  rehydrateOnChanges(highlight);
 }

@@ -1,4 +1,4 @@
-import { getColors } from './utils.js';
+import {getColors} from './utils.js';
 
 export const optionTypes = {
   TEXT: 'text',
@@ -24,8 +24,8 @@ export default [
     name: 'Цвет вашего имени',
     tip: 'Делает ваше имя в комментариях цветным. Необходимо указать ID пользователя',
     disabled: (options) => !options.userId,
-    action: async ({ options }) => {
-      const { userNameColor } = await import('/src/js/actions/user-name-color');
+    action: async ({options}) => {
+      const {userNameColor} = await import('/src/js/actions/user-name-color');
       userNameColor(options.userId, options.userNameColorColor);
     },
     options: [
@@ -45,8 +45,8 @@ export default [
     tip: 'Подсвечивает цветной рамкой комментарии, где вас упомянули. Необходимо указать ID пользователя',
     new: true,
     disabled: (options) => !options.userId,
-    action: async ({ options }) => {
-      const { mentionColor } = await import('/src/js/actions/mention-color');
+    action: async ({options}) => {
+      const {mentionColor} = await import('/src/js/actions/mention-color');
       mentionColor(options.userId, options.mentionColorBorder);
     },
     options: [
@@ -64,8 +64,8 @@ export default [
     key: 'newCommentColor',
     name: 'Фон новых комментариев',
     tip: 'Меняет заливку непрочитанных комментариев в задачах',
-    action: async ({ options }) => {
-      const { newCommentColor } = await import('/src/js/actions/new-comment-color');
+    action: async ({options}) => {
+      const {newCommentColor} = await import('/src/js/actions/new-comment-color');
       newCommentColor(options.newCommentColorBackground);
     },
     options: [
@@ -83,8 +83,8 @@ export default [
     key: 'tagAllColor',
     name: 'Цвет TAGALL',
     tip: 'Делает метку TAGALL в комментариях более заметной',
-    action: async ({ options }) => {
-      const { tagAllColor } = await import('/src/js/actions/tag-all-color');
+    action: async ({options}) => {
+      const {tagAllColor} = await import('/src/js/actions/tag-all-color');
       tagAllColor(options.tagAllColorColor);
     },
     options: [
@@ -102,8 +102,8 @@ export default [
     key: 'quoteColor',
     name: 'Оформление цитат',
     tip: 'Меняет фон и рамку у цитат в комментариях и задачах',
-    action: async ({ options }) => {
-      const { quoteColor } = await import('/src/js/actions/quote-color');
+    action: async ({options}) => {
+      const {quoteColor} = await import('/src/js/actions/quote-color');
       quoteColor(options.quoteColorBackground, options.quoteColorBorder);
     },
     options: [
@@ -130,8 +130,8 @@ export default [
     name: 'Таблица баллов спринта',
     tip: 'Добавляет счётчик story points в канбан-доске',
     new: true,
-    action: async ({ sessionId }) => {
-      const { scrumPoints } = await import('/src/js/actions/scrum-points');
+    action: async ({sessionId}) => {
+      const {scrumPoints} = await import('/src/js/actions/scrum-points');
       scrumPoints(sessionId);
     },
   },
@@ -140,8 +140,8 @@ export default [
     name: 'Сводка спринтов',
     tip: 'Показывает итоги по завершённым спринтам в канбане',
     new: true,
-    action: async ({ sessionId }) => {
-      const { scrumSummary } = await import('/src/js/actions/scrum-summary');
+    action: async ({sessionId}) => {
+      const {scrumSummary} = await import('/src/js/actions/scrum-summary');
       scrumSummary(sessionId);
     },
   },
@@ -168,6 +168,15 @@ export default [
     tip: 'Добавляет кнопку для загрузки всех комментариев в задаче',
     action: () => {
       import('/src/js/actions/show-comments');
+    },
+  },
+  {
+    key: 'removeNotifications',
+    name: 'Кнопка «Удалить уведомления»',
+    tip: 'Добавляет кнопку для удаления всех уведомлений задачи',
+    action: async ({sessionId}) => {
+      const {removeNotifications} = await import('/src/js/actions/remove-notifications');
+      removeNotifications(sessionId);
     },
   },
   {

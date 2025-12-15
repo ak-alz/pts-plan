@@ -60,7 +60,7 @@ export default class BitrixApi {
     });
   }
 
-  static getTaskCommentsLink(groupId, taskId) {
+  static getTaskCommentsUrl(groupId, taskId) {
     return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/?MID=1`;
   }
 
@@ -71,7 +71,7 @@ export default class BitrixApi {
    * @return {Promise<*[HTMLElement]>}
    */
   getTaskComments(groupId, taskId) {
-    return axios.get(BitrixApi.getTaskCommentsLink(groupId, taskId), {
+    return axios.get(BitrixApi.getTaskCommentsUrl(groupId, taskId), {
       headers: {
         'x-bitrix-csrf-token': this.sessionId,
       },
@@ -82,5 +82,27 @@ export default class BitrixApi {
 
         return [...html.querySelectorAll('.feed-com-block')];
       });
+  }
+
+  static getUserNotifications(taskId) {
+    return axios.get('/alert/')
+      .then(({data}) => {
+        const parser = new DOMParser();
+        const html = parser.parseFromString(data, 'text/html');
+
+        if (taskId) {
+          return [...html.querySelectorAll(`.message-message:has(a[href*="/tasks/task/view/${taskId}/"]):not([data-id=""])`)];
+        }
+
+        return [...html.querySelectorAll('.message-message:not([data-id=""])')];
+      });
+  }
+
+  removeNotification(notificationId) {
+    return axios.postForm('/bitrix/components/bitrix/im.messenger/im.ajax.php', {
+      IM_NOTIFY_REMOVE: 'Y',
+      NOTIFY_ID: notificationId,
+      sessid: this.sessionId,
+    });
   }
 }

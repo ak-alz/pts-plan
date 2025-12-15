@@ -22,20 +22,25 @@
   color: lightgreen;
 }
 
-.fix-links {
+.remove-notifications {
   font-size: 13px;
   color: #828b95;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  transition: color 0.3s;
+  transition: color 0.3s, opacity 0.3s;
 }
 
-.fix-links:not(.fix-links--success):hover {
+.remove-notifications[disabled] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.remove-notifications:not(.remove-notifications--success):hover {
   color: #3a3d42;
 }
 
-.fix-links--success {
+.remove-notifications--success {
   color: lightgreen;
 }

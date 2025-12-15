@@ -1,7 +1,7 @@
-import { toUpper } from 'lodash-es';
+import {throttle, toUpper} from 'lodash-es';
 
 export function getTaskAndGroupIdsFromUrl(url) {
-  const pattern = /\/workgroups\/group\/(\d+)\/tasks\/task\/view\/(\d+)\//;
+  const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)\//;
   const match = url.match(pattern);
 
   if (match && match[1] && match[2]) {
@@ -15,11 +15,11 @@ export function getTaskAndGroupIdsFromUrl(url) {
 }
 
 export function getGroupIdFromUrl(url) {
-  const pattern = /\/workgroups\/group\/(\d+)\/tasks\/(?!task\/)(\?.*|$)/;
+  const pattern = /\/(\d+)\/tasks\/(?!task\/)(\?.*|$)/;
   const match = url.match(pattern);
 
   if (match && match[1]) {
-    return match[1]; // Возвращаем захваченный groupId
+    return match[1];
   }
 
   return null;
@@ -386,4 +386,39 @@ export function getColors(palettes, weight = '500') {
   return palettes
     .filter((palette) => !!colors?.[palette.toLowerCase()]?.[weight])
     .map((palette) => colors[palette.toLowerCase()][weight]);
+}
+
+export function rehydrateOnChanges(callback) {
+  if (typeof callback !== 'function') return;
+
+  const throttledCallBack = throttle(callback, 1000);
+
+  const observer = new MutationObserver((mutations) => {
+    let shouldRehydrate = false;
+
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList' && mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+        shouldRehydrate = true;
+        break;
+      }
+    }
+
+    if (shouldRehydrate) {
+      throttledCallBack();
+    }
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  const handleWindowFocus = () => throttledCallBack();
+
+  window.addEventListener('focus', handleWindowFocus);
+
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('focus', handleWindowFocus);
+  };
 }
