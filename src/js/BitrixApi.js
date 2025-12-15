@@ -1,0 +1,86 @@
+import axios from 'axios';
+
+export default class BitrixApi {
+  constructor(sessionId) {
+    this.sessionId = sessionId;
+  }
+
+  /**
+   * Возвращает все колонки канбана, а также максимум 20 задач для каждой из колонок
+   * @param groupId
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  applyFilter(groupId) {
+    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.kanban&action=applyFilter', {
+      params: {
+        GROUP_ID: groupId,
+      },
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
+  getColumnItems(groupId, columnId, page) {
+    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.kanban&action=getColumnItems', {
+      pageId: page,
+      columnId,
+      params: {
+        GROUP_ID: groupId,
+      },
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
+  completeTask(groupId, columnId, taskId) {
+    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.kanban&action=completeTask', {
+      columnId,
+      taskId,
+      params: {
+        GROUP_ID: groupId,
+      },
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
+  renewTask(taskId) {
+    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.task&action=renew', {
+      taskId,
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
+  static getTaskCommentsLink(groupId, taskId) {
+    return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/?MID=1`;
+  }
+
+  /**
+   *
+   * @param groupId
+   * @param taskId
+   * @return {Promise<*[HTMLElement]>}
+   */
+  getTaskComments(groupId, taskId) {
+    return axios.get(BitrixApi.getTaskCommentsLink(groupId, taskId), {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    })
+      .then(({data}) => {
+        const parser = new DOMParser();
+        const html = parser.parseFromString(data, 'text/html');
+
+        return [...html.querySelectorAll('.feed-com-block')];
+      });
+  }
+}

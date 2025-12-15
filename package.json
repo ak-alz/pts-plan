@@ -1,0 +1,52 @@
+{
+  "name": "pts-plan",
+  "displayName": "Pixel Plan Injection",
+  "version": "2.0.0",
+  "description": "Расширение функционала сайта plan.pixelplus.ru",
+  "keywords": [
+    "chrome-extension",
+    "vue",
+    "vite",
+    "create-chrome-ext"
+  ],
+  "license": "MIT",
+  "author": "MelentQ",
+  "type": "module",
+  "scripts": {
+    "copy-assets": "cp -r node_modules/primeicons/fonts/ public/assets/",
+    "build-css": "npx @tailwindcss/cli -i src/css/content-styles.css -o public/assets/content-styles.css --minify && npm run copy-assets",
+    "build": "npm run build-css && vite build",
+    "dev": "npm run build-css && vite",
+    "preview": "npm run build-css && vite preview"
+  },
+  "dependencies": {
+    "@primeuix/themes": "^1.2.5",
+    "axios": "^1.13.2",
+    "chart.js": "^4.5.1",
+    "dayjs": "^1.11.19",
+    "lodash-es": "^4.17.21",
+    "primeicons": "^7.0.0",
+    "primelocale": "^2.2.3",
+    "primevue": "^4.5.3",
+    "vue": "^3.5.24",
+    "vue-color": "^3.3.3"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.3.0",
+    "@eslint/js": "^9.31.0",
+    "@tailwindcss/cli": "^4.1.18",
+    "@tailwindcss/vite": "^4.1.18",
+    "@vitejs/plugin-vue": "^6.0.3",
+    "chrome-types": "^0.1.396",
+    "eslint": "^9.39.2",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-vue": "^10.6.2",
+    "globals": "^16.5.0",
+    "tailwindcss": "^4.1.17",
+    "tailwindcss-primeui": "^0.6.1",
+    "vite": "^7.2.7"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

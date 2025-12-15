@@ -1,0 +1,41 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import 'tailwindcss-primeui';
+@import 'primeicons/primeicons.css';
+
+.commit-button {
+  font-size: 16px;
+  color: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: color 0.3s, opacity 0.3s;
+}
+
+.commit-button:not(.commit-button--success):hover {
+  opacity: 0.8;
+}
+
+.commit-button--success {
+  color: lightgreen;
+}
+
+.fix-links {
+  font-size: 13px;
+  color: #828b95;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.fix-links:not(.fix-links--success):hover {
+  color: #3a3d42;
+}
+
+.fix-links--success {
+  color: lightgreen;
+}
