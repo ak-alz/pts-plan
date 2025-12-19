@@ -6,7 +6,7 @@ import {
   AccordionPanel,
   Avatar,
   Badge,
-  Button,
+  Button, Checkbox,
   MultiSelect,
   Select,
 } from 'primevue';
@@ -53,6 +53,7 @@ const form = reactive({
   showCompleteTasksButton: props.initial.showCompleteTasksButton ? toRaw(props.initial.showCompleteTasksButton) : [],
   sortColumn: props.initial.sortColumn ? toRaw(props.initial.sortColumn) : defaultSortColumn,
   excludeFromTotal: props.initial.excludeFromTotal ? toRaw(props.initial.excludeFromTotal) : [],
+  ignoreCompleted: props.initial.ignoreCompleted || false,
 });
 
 async function saveSettings() {
@@ -240,6 +241,21 @@ const sortableColumns = computed(() => {
                 </template>
               </MultiSelect>
             </FormField>
+
+            <div class="flex gap-1 items-center">
+              <Checkbox
+                v-model="form.ignoreCompleted"
+                binary
+                input-id="settings_ignore_completed"
+              />
+              <label for="settings_ignore_completed">
+                Исключать завершённые задачи
+              </label>
+              <i
+                v-tooltip="'Завершённые задачи не будут отображаться в итоговой таблице. Полезно, если вы не читаете комментарии в закрытых задачах.'"
+                class="pi pi-question-circle"
+              />
+            </div>
           </div>
         </AccordionContent>
       </AccordionPanel>

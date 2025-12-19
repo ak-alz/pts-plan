@@ -8,9 +8,15 @@ export const optionTypes = {
 
 export default [
   {
-    key: 'userName',
-    name: 'Имя пользователя',
+    key: 'userFirstName',
+    name: 'Имя',
     tip: 'Ваше имя в Bitrix24 (нужно для некоторых фич)',
+    type: optionTypes.TEXT,
+  },
+  {
+    key: 'userLastName',
+    name: 'Фамилия',
+    tip: 'Ваша фамилия в Bitrix24 (нужно для некоторых фич)',
     type: optionTypes.TEXT,
   },
   {
@@ -21,12 +27,13 @@ export default [
   },
   {
     key: 'userNameColor',
-    name: 'Цвет вашего имени',
-    tip: 'Делает ваше имя в комментариях цветным. Необходимо указать ID пользователя',
+    name: 'Заметные упоминания',
+    tip: 'Делает упоминания с вами заметными. Необходимо указать ID пользователя',
+    new: true,
     disabled: (options) => !options.userId,
     action: async ({options}) => {
       const {userNameColor} = await import('/src/js/actions/user-name-color');
-      userNameColor(options.userId, options.userNameColorColor);
+      userNameColor(options.userId, options.userNameColorColor, options.userNameColorBorder, options.userNameColorBackground);
     },
     options: [
       {
@@ -37,24 +44,19 @@ export default [
         demo: true,
         type: optionTypes.COLOR,
       },
-    ],
-  },
-  {
-    key: 'mentionColor',
-    name: 'Рамка при упоминании',
-    tip: 'Подсвечивает цветной рамкой комментарии, где вас упомянули. Необходимо указать ID пользователя',
-    new: true,
-    disabled: (options) => !options.userId,
-    action: async ({options}) => {
-      const {mentionColor} = await import('/src/js/actions/mention-color');
-      mentionColor(options.userId, options.mentionColorBorder);
-    },
-    options: [
       {
-        key: 'mentionColorBorder',
+        key: 'userNameColorBorder',
         name: 'Цвет рамки',
         default: getColors('violet', '500'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '500'),
+        demo: true,
+        type: optionTypes.COLOR,
+      },
+      {
+        key: 'userNameColorBackground',
+        name: 'Цвет фона',
+        default: getColors('violet', '50'),
+        presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
         demo: true,
         type: optionTypes.COLOR,
       },
@@ -128,7 +130,7 @@ export default [
   {
     key: 'scrumPoints',
     name: 'Таблица баллов спринта',
-    tip: 'Добавляет счётчик story points в канбан-доске',
+    tip: 'Добавляет счётчик story points в канбан-доске.',
     new: true,
     action: async ({sessionId}) => {
       const {scrumPoints} = await import('/src/js/actions/scrum-points');
@@ -177,6 +179,49 @@ export default [
     action: async ({sessionId}) => {
       const {removeNotifications} = await import('/src/js/actions/remove-notifications');
       removeNotifications(sessionId);
+    },
+  },
+  {
+    key: 'removeSystemNotifications',
+    name: 'Кнопка «Удалить системные уведомления»',
+    tip: 'Добавляет кнопку для удаления всех системных уведомлений',
+    action: async ({sessionId}) => {
+      const {removeSystemNotifications} = await import('/src/js/actions/remove-system-notifications');
+      removeSystemNotifications(sessionId);
+    },
+  },
+  {
+    key: 'autoChoiceUser',
+    name: 'Автовыбор единственного пользователя',
+    tip: 'При добавлении упоминания через «+» автоматически выбирает пользователя, если поиск выдал только один результат.',
+    action: () => {
+      import('/src/js/actions/auto-choice-user');
+    },
+  },
+  {
+    key: 'invisibleMentions',
+    name: 'Неработающие упоминания',
+    tip: 'Подсвечивает пользователей, не добавленных в задачу. Подсвечивает комментарии без упоминаний в первых 100 символах.',
+    action: () => {
+      import('/src/js/actions/invisible-mentions');
+    },
+  },
+  {
+    key: 'groupTitle',
+    name: 'Название проекта в <title>',
+    tip: 'Добавляет название текущего проекта/группы в <title> браузерной вкладки для быстрого поиска среди открытых вкладок.',
+    action: () => {
+      import('/src/js/actions/group-title');
+    },
+  },
+  {
+    key: 'closeNotifications',
+    name: 'Автозакрытие чужих уведомлений',
+    tip: 'Автоматически закрывает уведомления о комментариях, в которых вас не упомянули. Необходимо указать имя и фамилию пользователя.',
+    disabled: (options) => !options.userFirstName || !options.userLastName,
+    action: async ({options}) => {
+      const {closeNotifications} = await import('/src/js/actions/close-notifications');
+      closeNotifications(options.userFirstName, options.userLastName);
     },
   },
   {

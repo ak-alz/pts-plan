@@ -19,30 +19,18 @@ export function removeNotifications(sessionId) {
     async onclick() {
       this.setAttribute('disabled', '');
 
-      const notifications = await BitrixApi.getUserNotifications(ids.taskId);
+      let notifications = await BitrixApi.getUserNotifications(ids.taskId);
       if (!notifications.length) {
         this.removeAttribute('disabled');
 
         return;
       }
 
-      let progress = 0;
-
-      const promises = notifications.map((notification) => {
-        const notificationId = notification.getAttribute('data-id');
-
-        return bitrixApi.removeNotification(notificationId)
-          .then((response) => {
-            progress += Math.round(100 / notifications.length);
-            this.textContent = `Удаление уведомлений... (${progress}%)`;
-
-            return response;
-          });
+      notifications = notifications.map((notification) => {
+        return notification.getAttribute('data-id');
       });
 
-      progress = 0;
-      await Promise.allSettled(promises);
-      progress = 100;
+      await bitrixApi.removeNotifications(notifications);
       this.textContent = 'Уведомления успешно удалены';
       this.classList.add('remove-notifications--success');
 

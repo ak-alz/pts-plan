@@ -23,6 +23,8 @@ import options from '../js/options.js';
 
     if (!options) return;
 
+    // console.log(options);
+
     Object.keys(options)
       .filter((optionKey) => {
         const optionAction = optionActionsMap.get(optionKey);

@@ -1,4 +1,5 @@
 <script setup>
+import dayjs from 'dayjs';
 import { computed } from 'vue';
 
 import { validateHexColor } from '../../js/utils.js';
@@ -28,12 +29,28 @@ const tagAllColor = computed(() => {
   return 'inherit';
 });
 
+const tagAllFontWeight = computed(() => {
+  if (props.options.tagAllColor && validateHexColor(props.options.tagAllColorColor)) {
+    return '700';
+  }
+
+  return '400';
+});
+
 const userNameColor = computed(() => {
   if (props.options.userNameColor && validateHexColor(props.options.userNameColorColor)) {
     return props.options.userNameColorColor;
   }
 
-  return 'inherit';
+  return '#2066b0';
+});
+
+const userNameFontWeight = computed(() => {
+  if (props.options.userNameColor && validateHexColor(props.options.userNameColorColor)) {
+    return '700';
+  }
+
+  return '400';
 });
 
 const commentBackground = computed(() => {
@@ -41,12 +58,16 @@ const commentBackground = computed(() => {
     return props.options.newCommentColorBackground;
   }
 
+  if (props.options.userNameColor && validateHexColor(props.options.userNameColorBackground)) {
+    return props.options.userNameColorBackground;
+  }
+
   return '#edf1f3';
 });
 
 const commentBorder = computed(() => {
-  if (props.options.mentionColor && validateHexColor(props.options.mentionColorBorder)) {
-    return props.options.mentionColorBorder;
+  if (props.options.userNameColor && validateHexColor(props.options.userNameColorBorder)) {
+    return props.options.userNameColorBorder;
   }
 
   return commentBackground.value;
@@ -76,7 +97,7 @@ const quoteBorder = computed(() => {
         Иван Иванов
       </div>
       <div class="crm-comment__time">
-        8 Декабря 17:45
+        {{ dayjs().format('D MMMM HH:mm') }}
       </div>
     </div>
     <div class="crm-comment__body">
@@ -137,12 +158,12 @@ const quoteBorder = computed(() => {
 }
 
 .tag-all-highlight {
-  font-weight: 700;
+  font-weight: v-bind(tagAllFontWeight);
   color: v-bind(tagAllColor);
 }
 
 .user-name-highlight {
-  font-weight: 700;
+  font-weight: v-bind(userNameFontWeight);
   color: v-bind(userNameColor);
 }
 </style>

@@ -6,7 +6,7 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
-import { stringToPastelColor } from '../../../utils.js';
+import {getUserIdFromUrl, stringToPastelColor} from '../../../utils.js';
 import { defaultIgnorePoints, defaultMaxSprints } from '../variables.js';
 import SettingsForm from './SettingsForm.vue';
 import SummaryChart from './SummaryChart.vue';
@@ -115,11 +115,11 @@ async function fetchData() {
       sprintsAcc.push(sprintNumber);
 
       userLinks.forEach((link) => {
-        const id = link.href.match(/\/user\/(\d+)(?:\/|\?|$)/)[1];
+        const id = getUserIdFromUrl(link.href);
+        if (!id) return;
 
         const m = /(\d+)\s+балл(?:ов|а|)/g.exec(link.closest('li').textContent);
         const points = m?.[1] ? Number(m[1]) : 0;
-
         if (!points) return;
 
         if (!usersMap[id]) {

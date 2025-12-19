@@ -64,6 +64,14 @@ export default class BitrixApi {
     return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/?MID=1`;
   }
 
+  getTaskCommentsRaw(groupId, taskId) {
+    return axios.get(BitrixApi.getTaskCommentsUrl(groupId, taskId), {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
   /**
    *
    * @param groupId
@@ -71,16 +79,12 @@ export default class BitrixApi {
    * @return {Promise<*[HTMLElement]>}
    */
   getTaskComments(groupId, taskId) {
-    return axios.get(BitrixApi.getTaskCommentsUrl(groupId, taskId), {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
-    })
+    return this.getTaskCommentsRaw(groupId, taskId)
       .then(({data}) => {
         const parser = new DOMParser();
         const html = parser.parseFromString(data, 'text/html');
 
-        return [...html.querySelectorAll('.feed-com-block')];
+        return [...html.querySelectorAll('.feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner')];
       });
   }
 
@@ -91,18 +95,17 @@ export default class BitrixApi {
         const html = parser.parseFromString(data, 'text/html');
 
         if (taskId) {
-          return [...html.querySelectorAll(`.message-message:has(a[href*="/tasks/task/view/${taskId}/"]):not([data-id=""])`)];
+          return [...html.querySelectorAll(`.message-item:has(a[href*="/tasks/task/view/${taskId}/"]) .message-delete-checkbox[data-id]:not([data-id=""])`)];
         }
 
-        return [...html.querySelectorAll('.message-message:not([data-id=""])')];
+        return [...html.querySelectorAll('.message-delete-checkbox[data-id]:not([data-id=""])')];
       });
   }
 
-  removeNotification(notificationId) {
-    return axios.postForm('/bitrix/components/bitrix/im.messenger/im.ajax.php', {
-      IM_NOTIFY_REMOVE: 'Y',
-      NOTIFY_ID: notificationId,
+  removeNotifications(ids) {
+    return axios.postForm('/rest/im.notify.delete.json', {
       sessid: this.sessionId,
+      id: ids,
     });
   }
 }

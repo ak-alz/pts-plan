@@ -1,7 +1,7 @@
 import {throttle, toUpper} from 'lodash-es';
 
 export function getTaskAndGroupIdsFromUrl(url) {
-  const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)\//;
+  const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)(?:\/|\?|$)/;
   const match = url.match(pattern);
 
   if (match && match[1] && match[2]) {
@@ -15,7 +15,18 @@ export function getTaskAndGroupIdsFromUrl(url) {
 }
 
 export function getGroupIdFromUrl(url) {
-  const pattern = /\/(\d+)\/tasks\/(?!task\/)(\?.*|$)/;
+  const pattern = /\/(\d+)\/tasks\/(?!task\/)(?:[?#]|$)/;
+  const match = url.match(pattern);
+
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  return null;
+}
+
+export function getUserIdFromUrl(url) {
+  const pattern = /\/company\/personal\/user\/(\d+)(?:\/|\?|#|$)/;
   const match = url.match(pattern);
 
   if (match && match[1]) {
@@ -388,16 +399,33 @@ export function getColors(palettes, weight = '500') {
     .map((palette) => colors[palette.toLowerCase()][weight]);
 }
 
-export function rehydrateOnChanges(callback) {
-  if (typeof callback !== 'function') return;
+export function rehydrateOnChanges(callBack, target = document.body, filterMutation = undefined) {
+  if (typeof callBack !== 'function') return;
 
-  const throttledCallBack = throttle(callback, 1000);
+  if (!target) return;
+
+  const throttledCallBack = throttle(() => {
+    observer.disconnect();
+
+    try {
+      callBack();
+    } finally {
+      observer.observe(target, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+    }
+  }, 1000);
 
   const observer = new MutationObserver((mutations) => {
     let shouldRehydrate = false;
 
     for (const mutation of mutations) {
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+      if (typeof filterMutation === 'function' && !filterMutation(mutation)) continue;
+
+      if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
         shouldRehydrate = true;
         break;
       }
@@ -408,7 +436,7 @@ export function rehydrateOnChanges(callback) {
     }
   });
 
-  observer.observe(document.body, {
+  observer.observe(target, {
     childList: true,
     subtree: true,
   });

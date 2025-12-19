@@ -23,5 +23,6 @@
 # secrets
 secrets.*.js
 
-public/assets/fonts
+public/assets/fonts/primeicons.*
 public/assets/content-styles.css
+*.zip

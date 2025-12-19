@@ -1,7 +1,7 @@
 {
   "name": "pts-plan",
   "displayName": "Pixel Plan Injection",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Расширение функционала сайта plan.pixelplus.ru",
   "keywords": [
     "chrome-extension",

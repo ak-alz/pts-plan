@@ -43,14 +43,14 @@ const style = computed(() => {
         v-if="option.type === optionTypes.TEXT"
         :id="`option_${option.key}`"
         v-model="model[option.key]"
-        class="w-[125px]"
+        class="w-[180px]"
         size="small"
         :disabled="typeof option.disabled === 'function' ? option.disabled(model) : !!option.disabled"
       />
       <InputNumber
         v-else-if="option.type === optionTypes.NUMBER"
         v-model="model[option.key]"
-        input-class="w-[125px]"
+        input-class="w-[180px]"
         :input-id="`option_${option.key}`"
         size="small"
         :use-grouping="false"

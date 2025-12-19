@@ -77,7 +77,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="w-[300px] h-[400px] p-3 flex flex-col gap-3">
+  <main class="w-[350px] h-[400px] p-3 flex flex-col gap-3">
     <form
       class="grow flex gap-3 flex-col"
       @submit.prevent="saveSettings"

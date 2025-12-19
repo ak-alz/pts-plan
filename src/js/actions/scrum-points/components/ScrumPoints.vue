@@ -94,6 +94,7 @@ async function fetchData() {
     const usersMap = {};
 
     tasks
+      .filter((task) => !settings.value.ignoreCompleted || !task.data.completed)
       .forEach((task) => {
         const points = getTaskPointsFromName(task.data.name);
 

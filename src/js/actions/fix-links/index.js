@@ -1,20 +1,24 @@
 import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  function init() {
-    const ids = getTaskAndGroupIdsFromUrl(window.location.href);
-    if (!ids?.groupId || !ids?.taskId) return;
+  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  if (!ids?.taskId) return;
 
-    const links = document.querySelectorAll('.task-detail-description a:not(.--fixed), .feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner a:not(.--fixed)');
+  function fix() {
+    const links = document.querySelectorAll('.task-detail-description a:not(.js-link-fixed), .feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner a:not(.js-link-fixed)');
     links.forEach((link) => {
       if (link.textContent.includes('...')) {
-        link.classList.add('--fixed');
+        link.classList.add('js-link-fixed');
         link.textContent = link.href;
       }
     });
   }
 
-  init();
+  fix();
 
-  rehydrateOnChanges(init);
+  rehydrateOnChanges(
+    fix,
+    document.querySelector('.feed-comments-block'),
+    (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
+  );
 })();

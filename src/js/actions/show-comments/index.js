@@ -2,6 +2,8 @@ import BitrixApi from '../../BitrixApi.js';
 import { getTaskAndGroupIdsFromUrl } from '../../utils.js';
 
 (() => {
+  // TODO: 1. Загружать комментарии на той же странице, а не в новой
+  //  2. Добавить возможность подгружать выбранное кол-во страниц или хотя бы по 50
   function init() {
     const ids = getTaskAndGroupIdsFromUrl(window.location.href);
     if (!ids?.groupId || !ids?.taskId) return;

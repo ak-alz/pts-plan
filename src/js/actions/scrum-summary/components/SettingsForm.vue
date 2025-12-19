@@ -107,6 +107,7 @@ async function saveSettings() {
           fluid
           input-id="settings_users"
           :max-selected-labels="3"
+          placeholder="Выбрать"
         />
       </FormField>
 
