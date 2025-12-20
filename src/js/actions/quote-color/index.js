@@ -5,8 +5,8 @@ export function quoteColor(backgroundColor, borderColor) {
   if (!validateHexColor(borderColor)) return;
 
   const css = `.forum-quote {
-    background-color: ${backgroundColor};
-    border-color: ${borderColor};
+    background-color: ${backgroundColor} !important;
+    border-color: ${borderColor} !important;
   }`;
 
   insertCSS(css);
