@@ -88,6 +88,14 @@ const quoteBorder = computed(() => {
 
   return '#e0e2e3';
 });
+
+const userName = computed(() => {
+  if (props.options.userFirstName && props.options.userLastName) {
+    return `${props.options.userFirstName} ${props.options.userLastName}`;
+  }
+
+  return 'Имя Фамилия'
+});
 </script>
 
 <template>
@@ -105,11 +113,11 @@ const quoteBorder = computed(() => {
         v-if="quote"
         class="crm-comment__quote"
       >
-        <span class="tag-all-highlight">TAGALL</span>, <span class="user-name-highlight">{{ options.userName || 'Имя Фамилия' }}</span>
+        <span class="tag-all-highlight">TAGALL</span>, <span class="user-name-highlight">{{ userName }}</span>
         Коллеги, задача готова к проверке. Жду обратной связи!
       </div>
       <template v-else>
-        <span class="tag-all-highlight">TAGALL</span>, <span class="user-name-highlight">{{ options.userName || 'Имя Фамилия' }}</span>
+        <span class="tag-all-highlight">TAGALL</span>, <span class="user-name-highlight">{{ userName }}</span>
         Коллеги, задача готова к проверке. Жду обратной связи!
       </template>
     </div>
