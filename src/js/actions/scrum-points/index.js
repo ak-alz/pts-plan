@@ -20,6 +20,7 @@ export function scrumPoints(sessionId) {
 
   const appContainer = Object.assign(document.createElement('div'), {
     className: 'js-scrum-points',
+    style: 'order: 1;',
   });
 
   buttonsContainer.appendChild(appContainer);

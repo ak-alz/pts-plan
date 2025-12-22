@@ -15,14 +15,14 @@ export function userNameColor(userId, color, borderColor, backgroundColor) {
 
   if (borderColor) {
     css += `.feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.feed-com-text-inner-inner a[href$="/company/personal/user/${userId}/"]),
-    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.tag-all-highlight) {
+    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:not(:has(.feed-com-user-box a.feed-author-name[href$="/company/personal/user/${userId}/"])):has(.tag-all-highlight:not(.forum-quote .tag-all-highlight)) {
       border: 1px solid ${borderColor};
     }`;
   }
 
   if (backgroundColor) {
     css += `.feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.feed-com-text-inner-inner a[href$="/company/personal/user/${userId}/"]),
-    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.tag-all-highlight) {
+    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:not(:has(.feed-com-user-box a.feed-author-name[href$="/company/personal/user/${userId}/"])):has(.tag-all-highlight:not(.forum-quote .tag-all-highlight)) {
       background-color: ${backgroundColor};
     }`;
   }

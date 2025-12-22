@@ -184,7 +184,7 @@ export default [
   {
     key: 'removeSystemNotifications',
     name: 'Кнопка «Удалить системные уведомления»',
-    tip: 'Добавляет кнопку для удаления всех системных уведомлений',
+    tip: 'Добавляет кнопку для удаления всех системных уведомлений. Например: все сообщения с серым колокольчиком; сообщения, которые начинаются на «Изменил(а) задачу» и на «Закрыл(а) задачу».',
     action: async ({sessionId}) => {
       const {removeSystemNotifications} = await import('/src/js/actions/remove-system-notifications');
       removeSystemNotifications(sessionId);
@@ -217,7 +217,7 @@ export default [
   {
     key: 'closeNotifications',
     name: 'Автозакрытие чужих уведомлений',
-    tip: 'Автоматически закрывает уведомления о комментариях, в которых вас не упомянули. Необходимо указать имя и фамилию пользователя.',
+    tip: 'Автоматически закрывает уведомления, в которых вас не упомянули. Необходимо указать имя и фамилию пользователя.',
     disabled: (options) => !options.userFirstName || !options.userLastName,
     action: async ({options}) => {
       const {closeNotifications} = await import('/src/js/actions/close-notifications');

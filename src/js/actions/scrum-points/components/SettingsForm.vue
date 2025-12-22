@@ -249,7 +249,7 @@ const sortableColumns = computed(() => {
                 input-id="settings_ignore_completed"
               />
               <label for="settings_ignore_completed">
-                Исключать завершённые задачи
+                Исключить завершённые задачи
               </label>
               <i
                 v-tooltip="'Завершённые задачи не будут отображаться в итоговой таблице. Полезно, если вы не читаете комментарии в закрытых задачах.'"

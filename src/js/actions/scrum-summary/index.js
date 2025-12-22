@@ -20,6 +20,7 @@ export function scrumSummary(sessionId) {
 
   const appContainer = Object.assign(document.createElement('div'), {
     className: 'js-scrum-summary',
+    style: 'order: 2;',
   });
 
   buttonsContainer.appendChild(appContainer);

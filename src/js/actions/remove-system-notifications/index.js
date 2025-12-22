@@ -22,7 +22,14 @@ export function removeSystemNotifications(sessionId) {
       textContent: 'Удалить системные уведомления',
       className: 'remove-notifications js-remove-system-notifications',
       async onclick() {
-        const notifications = [...notificationsContainer.querySelectorAll('.bx-im-content-notification-item__container:has(.bx-im-content-notification-item-avatar__system-icon)[data-id]:not([data-id=""])')]
+        const notifications = [...notificationsContainer.querySelectorAll('.bx-im-content-notification-item__container[data-id]:not([data-id=""])')]
+          .filter((notification) => {
+            // Если вместо аватарки серый колокольчик
+            if (notification.querySelector('.bx-im-content-notification-item-avatar__system-icon')) return true;
+
+            const notificationText = notification.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent?.trim();
+            return /^(Изменила?|Закрыла?) задачу \[#/.test(notificationText);
+          })
           .map((notification) => notification.getAttribute('data-id'));
 
         if (!notifications.length) return;
