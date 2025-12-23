@@ -413,8 +413,6 @@ export function rehydrateOnChanges(callBack, target = document.body, filterMutat
       observer.observe(target, {
         childList: true,
         subtree: true,
-        attributes: true,
-        attributeFilter: ['class'],
       });
     }
   }, 1000);
