@@ -22,7 +22,7 @@ export default [
   {
     key: 'userId',
     name: 'ID пользователя',
-    tip: 'Ваш ID в Bitrix24 (нужен для некоторых фич)',
+    tip: 'Ваш ID в Bitrix24 (нужно для некоторых фич)',
     type: optionTypes.NUMBER,
   },
   {
@@ -185,6 +185,7 @@ export default [
     key: 'removeSystemNotifications',
     name: 'Кнопка «Удалить системные уведомления»',
     tip: 'Добавляет кнопку для удаления всех системных уведомлений. Например: все сообщения с серым колокольчиком; сообщения, которые начинаются на «Изменил(а) задачу» и на «Закрыл(а) задачу».',
+    new: true,
     action: async ({sessionId}) => {
       const {removeSystemNotifications} = await import('/src/js/actions/remove-system-notifications');
       removeSystemNotifications(sessionId);
