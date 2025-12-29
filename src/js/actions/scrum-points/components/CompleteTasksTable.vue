@@ -52,7 +52,7 @@ async function completeSelectedTasks() {
       .map((task) => {
         return bitrixApi.completeTask(groupId, props.column.id, task.id)
           .finally(() => {
-            progress.value += Math.round(100 / selectedTasks.value.length);
+            progress.value += Math.floor(100 / selectedTasks.value.length);
           });
       });
 

@@ -1,6 +1,6 @@
 <script setup>
 import dayjs from 'dayjs';
-import { orderBy, round } from 'lodash-es';
+import { orderBy } from 'lodash-es';
 import { Avatar, Badge, Button, Column, ColumnGroup, DataTable, Dialog, Row } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, provide, ref } from 'vue';
@@ -73,7 +73,7 @@ async function fetchData() {
           promises.push(
             bitrixApi.getColumnItems(props.groupId, column.id, page)
               .finally(() => {
-                progress.value += round(100 / promises.length);
+                progress.value += Math.floor(100 / promises.length);
               }),
           );
         }
