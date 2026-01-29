@@ -21,8 +21,23 @@ import axios from 'axios';
 
     let catIndex = 0;
     const timeout = 6 * 60 * 1000;
-    const cats = await fetchCats();
+    let cats = await fetchCats();
     if (!cats?.length) return;
+
+    cats = cats
+      .map((cat) => {
+        const aspectRatio = cat.height > 0
+          ? Math.round(cat.width / cat.height * 100) / 100
+          : 1;
+
+        return {
+          ...cat,
+          aspectRatio,
+        }
+      })
+      .filter((cat) => {
+        return cat.aspectRatio >= 0.5 && cat.aspectRatio <= 2;
+      });
 
     const image = Object.assign(document.createElement('img'), {
       className: 'rounded cursor-pointer js-show-cats',
@@ -39,9 +54,7 @@ import axios from 'axios';
       catIndex += 1;
 
       image.src = cat.url;
-      image.style.aspectRatio = cat.height > 0
-        ? Math.round(cat.width / cat.height * 100) / 100
-        : 1;
+      image.style.aspectRatio = cat.aspectRatio;
     }
 
     updateCat();
