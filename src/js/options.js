@@ -226,6 +226,35 @@ export default [
     },
   },
   {
+    key: 'kanbanUserCards',
+    name: 'Фон карточек исполнителя',
+    tip: 'Меняет фон карточек в канбане. Необходимо указать имя и фамилию пользователя.',
+    new: true,
+    disabled: (options) => !options.userFirstName || !options.userLastName,
+    action: async ({options}) => {
+      const {kanbanUserCards} = await import('/src/js/actions/kanban-user-cards');
+      kanbanUserCards(options.kanbanUserCardBackground, options.userFirstName, options.userLastName);
+    },
+    options: [
+      {
+        key: 'kanbanUserCardBackground',
+        name: 'Цвет фона',
+        default: getColors('green', '100'),
+        presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '100'),
+        type: optionTypes.COLOR,
+      },
+    ],
+  },
+  {
+    key: 'statusMarkers',
+    name: 'Маркеры стадий',
+    tip: 'Добавляет сокращённые буквы в ячейки стадий внутри задачи для быстрой навигации без наведения курсора.',
+    new: true,
+    action: () => {
+      import('/src/js/actions/status-markers');
+    },
+  },
+  {
     key: 'showCats',
     name: 'Баннер с котами',
     tip: 'Добавляет баннер с котами в боковое меню (работает с VPN, 10 случайных фото меняются каждые 6 минут)',

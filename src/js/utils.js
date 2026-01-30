@@ -37,7 +37,9 @@ export function getUserIdFromUrl(url) {
 }
 
 export function simplifyColumnName(columnName) {
-  const words = columnName.split(' ');
+  if (typeof columnName !== 'string') return '';
+
+  const words = columnName.replace(/[^A-Za-zА-Яа-я\s]/g, '').trim().split(' ');
   if (words.length === 1) {
     return columnName.substring(0, 3);
   }
