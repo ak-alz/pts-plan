@@ -55,6 +55,8 @@ export function removeSystemNotifications(sessionId) {
   rehydrateOnChanges(
     init,
     document.body,
-    (mutation) => mutation.target.closest('.bx-im-messenger__slider'),
+    {
+      filterMutation: (mutation) => mutation.target.closest('.bx-im-messenger__slider'),
+    },
   );
 }

@@ -19,6 +19,8 @@ import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
   rehydrateOnChanges(
     fix,
     document.querySelector('.feed-comments-block'),
-    (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
+    {
+      filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
+    },
   );
 })();

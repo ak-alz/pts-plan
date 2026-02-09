@@ -28,8 +28,10 @@ export function closeNotifications(firstName, lastName) {
   rehydrateOnChanges(
     close,
     document.body,
-    (mutation) => mutation.type === 'childList'
-      && mutation.target === document.body
-      && Array.from(mutation.addedNodes).some((el) => el.classList?.contains('ui-notification-manager-browser-balloon')),
+    {
+      filterMutation: (mutation) => mutation.type === 'childList'
+        && mutation.target === document.body
+        && Array.from(mutation.addedNodes).some((el) => el.classList?.contains('ui-notification-manager-browser-balloon')),
+    },
   );
 }

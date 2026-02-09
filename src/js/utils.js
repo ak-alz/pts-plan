@@ -401,10 +401,32 @@ export function getColors(palettes, weight = '500') {
     .map((palette) => colors[palette.toLowerCase()][weight]);
 }
 
-export function rehydrateOnChanges(callBack, target = document.body, filterMutation = undefined) {
+/**
+ * @typedef {Object} RehydrateOptions
+ * @property {function(MutationRecord): boolean} [filterMutation] - Функция для фильтрации мутаций.
+ * @property {boolean|string[]} [attributes] - Следить ли за атрибутами. Можно передать массив ['style', 'class'].
+ */
+
+/**
+ * Следит за изменениями в DOM и вызывает callback при обновлении контента.
+ * Автоматически делает throttle вызовов и обрабатывает фокус окна.
+ *
+ * @param {Function} callBack - Функция, выполняемая при изменениях.
+ * @param {Node} [target=document.body] - Элемент, за которым ведется наблюдение.
+ * @param {RehydrateOptions} [options] - Дополнительные настройки.
+ * @returns {function(): void} Функция для остановки наблюдения и снятия обработчиков (cleanup).
+ */
+export function rehydrateOnChanges(callBack, target = document.body, options) {
   if (typeof callBack !== 'function') return;
 
   if (!target) return;
+
+  const observerConfig = {
+    childList: true,
+    subtree: true,
+    attributes: !!options?.attributes,
+    ...(Array.isArray(options?.attributes) && { attributeFilter: options.attributes }),
+  };
 
   const throttledCallBack = throttle(() => {
     observer.disconnect();
@@ -412,10 +434,7 @@ export function rehydrateOnChanges(callBack, target = document.body, filterMutat
     try {
       callBack();
     } finally {
-      observer.observe(target, {
-        childList: true,
-        subtree: true,
-      });
+      observer.observe(target, observerConfig);
     }
   }, 1000);
 
@@ -423,9 +442,12 @@ export function rehydrateOnChanges(callBack, target = document.body, filterMutat
     let shouldRehydrate = false;
 
     for (const mutation of mutations) {
-      if (typeof filterMutation === 'function' && !filterMutation(mutation)) continue;
+      if (typeof options?.filterMutation === 'function' && !options.filterMutation(mutation)) continue;
 
-      if (mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0)) {
+      const isChildChange = mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0);
+      const isAttrChange = mutation.type === 'attributes';
+
+      if (isChildChange || isAttrChange) {
         shouldRehydrate = true;
         break;
       }
@@ -436,10 +458,7 @@ export function rehydrateOnChanges(callBack, target = document.body, filterMutat
     }
   });
 
-  observer.observe(target, {
-    childList: true,
-    subtree: true,
-  });
+  observer.observe(target, observerConfig);
 
   const handleWindowFocus = () => throttledCallBack();
 

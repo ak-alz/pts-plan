@@ -17,6 +17,8 @@ import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
   rehydrateOnChanges(
     autoChoiceUser,
     document.body,
-    (mutation) => mutation.target.closest('.popup-window'),
+    {
+      filterMutation: (mutation) => mutation.target.closest('.popup-window'),
+    },
   );
 })();

@@ -52,6 +52,8 @@ import {getTaskAndGroupIdsFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '.
   rehydrateOnChanges(
     highlight,
     document.querySelector('.feed-comments-block'),
-    (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
+    {
+      filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
+    },
   );
 })();

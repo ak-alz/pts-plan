@@ -101,7 +101,7 @@ async function fetchData() {
         if (!usersMap[task.data.responsible.id]) {
           usersMap[task.data.responsible.id] = {
             id: task.data.responsible.id,
-            photo: task.data.responsible.photo.src,
+            photo: task.data.responsible.photo?.src || false, // Может не быть фото
             name: task.data.responsible.name,
             url: task.data.responsible.url,
             columns: data.data.columns.reduce((acc, column) => {
@@ -265,6 +265,7 @@ onMounted(() => {
       <template #body="{data}">
         <div class="flex gap-3 items-center">
           <Avatar
+            v-if="data.photo"
             :image="data.photo"
             shape="circle"
           />

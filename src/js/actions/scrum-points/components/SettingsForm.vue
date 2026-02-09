@@ -120,6 +120,7 @@ const sortableColumns = computed(() => {
         >
           <template #option="{option}">
             <Avatar
+              v-if="option.photo"
               :image="option.photo"
               shape="circle"
             />
