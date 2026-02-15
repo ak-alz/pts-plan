@@ -1,12 +1,12 @@
 <script setup>
 import dayjs from 'dayjs';
-import { orderBy } from 'lodash-es';
+import {orderBy, sumBy} from 'lodash-es';
 import { Avatar, Badge, Button, Column, ColumnGroup, DataTable, Dialog, Row } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, provide, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
-import { getTaskPointsFromName, simplifyColumnName } from '../../../utils.js';
+import {getTaskPointsFromName, pluralize, simplifyColumnName} from '../../../utils.js';
 import { defaultSortColumn } from '../variables.js';
 import ColumnTable from './ColumnTable.vue';
 import CompleteTasksTable from './CompleteTasksTable.vue';
@@ -196,6 +196,7 @@ function onCompleteTasks() {
   fetchData();
 }
 
+/* Подсказка для колонки "Итого" */
 const formattedExcludedColumns = computed(() => {
   if (!settings.value.excludeFromTotal?.length) return '';
 
@@ -212,6 +213,49 @@ const formattedExcludedColumns = computed(() => {
 
   return `Исключены колонки: ${excludedColumns.join(', ')}`;
 });
+
+function formatPointsCount(count) {
+  return `${count} ${pluralize(count, ['балл', 'балла', 'баллов'])}`;
+}
+
+/* Кнопка "Копировать итоги" */
+async function copySummary(column) {
+  const usersData = visibleUsers.value.map((user) => ({
+    name: user.name,
+    url: user.url,
+    totalPoints: user.columns[column.id].totalPoints,
+  }));
+
+  const ordered = orderBy(usersData, ['totalPoints', 'name'], ['desc', 'asc']);
+
+  const totalPoints = sumBy(usersData, (item) => item.totalPoints);
+
+  const summary = `Итог 123 спринта
+
+${formatPointsCount(totalPoints)}
+[LIST]
+${ordered.map((user) => `[*][URL=${user.url}]${user.name}[/URL] — ${formatPointsCount(user.totalPoints)}`).join('\n')}
+[/LIST]`;
+
+  try {
+    await window.navigator.clipboard.writeText(summary);
+
+    toast.add({
+      severity: 'success',
+      summary: 'Успешно',
+      detail: '[pts-plan]: Итоги скопированы в буфер обмена',
+      life: 5000,
+    });
+  } catch (e) {
+    console.warn(e);
+    toast.add({
+      severity: 'error',
+      summary: 'Ошибка',
+      detail: `[pts-plan]: ${e.message}`,
+      life: 5000,
+    });
+  }
+}
 
 onMounted(() => {
   fetchData();
@@ -338,7 +382,7 @@ onMounted(() => {
     </Column>
 
     <ColumnGroup
-      v-if="settings.showCompleteTasksButton?.length"
+      v-if="settings.showCompleteTasksButton?.length || settings.showCopyButton?.length"
       type="footer"
     >
       <Row>
@@ -348,17 +392,30 @@ onMounted(() => {
           :key="column.id"
         >
           <template #footer>
-            <Button
-              v-if="settings.showCompleteTasksButton?.includes(column.id)"
-              v-tooltip="`Завершить все задачи в колонке «${column.name}»`"
-              icon="pi pi-flag"
-              size="small"
-              rounded
-              variant="text"
-              severity="secondary"
-              :disabled="isLoading"
-              @click="completeTasks(column)"
-            />
+            <div class="flex gap-3">
+              <Button
+                v-if="settings.showCompleteTasksButton?.includes(column.id)"
+                v-tooltip="`Завершить все задачи в колонке «${column.name}»`"
+                icon="pi pi-flag"
+                size="small"
+                rounded
+                variant="text"
+                severity="secondary"
+                :disabled="isLoading"
+                @click="completeTasks(column)"
+              />
+              <Button
+                v-if="settings.showCopyButton?.includes(column.id)"
+                v-tooltip="`Копировать итоги для колонки «${column.name}»`"
+                icon="pi pi-clipboard"
+                size="small"
+                rounded
+                variant="text"
+                severity="secondary"
+                :disabled="isLoading"
+                @click="copySummary(column)"
+              />
+            </div>
           </template>
         </Column>
         <Column />

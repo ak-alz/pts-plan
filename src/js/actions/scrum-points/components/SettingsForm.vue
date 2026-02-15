@@ -54,6 +54,7 @@ const form = reactive({
   sortColumn: props.initial.sortColumn ? toRaw(props.initial.sortColumn) : defaultSortColumn,
   excludeFromTotal: props.initial.excludeFromTotal ? toRaw(props.initial.excludeFromTotal) : [],
   ignoreCompleted: props.initial.ignoreCompleted || false,
+  showCopyButton: props.initial.showCopyButton ? toRaw(props.initial.showCopyButton) : [],
 });
 
 async function saveSettings() {
@@ -257,6 +258,30 @@ const sortableColumns = computed(() => {
                 class="pi pi-question-circle"
               />
             </div>
+
+            <FormField
+              id="settings_show_copy_button"
+              label="Копировать итоги"
+              tip="Функционал для тех, кто подводит итоги спринта. Для выбранных колонок появится кнопка для копирования итогов спринта в формате BBCode."
+            >
+              <MultiSelect
+                v-model="form.showCopyButton"
+                option-value="id"
+                option-label="name"
+                :options="columns"
+                filter
+                filter-placeholder="Поиск"
+                fluid
+                input-id="settings_show_copy_button"
+                :max-selected-labels="3"
+                placeholder="Выбрать"
+              >
+                <template #option="{option}">
+                  <Badge :style="`background-color: ${option.color};`" />
+                  {{ option.name }}
+                </template>
+              </MultiSelect>
+            </FormField>
           </div>
         </AccordionContent>
       </AccordionPanel>

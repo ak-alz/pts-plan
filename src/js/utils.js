@@ -425,7 +425,7 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
     childList: true,
     subtree: true,
     attributes: !!options?.attributes,
-    ...(Array.isArray(options?.attributes) && { attributeFilter: options.attributes }),
+    ...(Array.isArray(options?.attributes) && {attributeFilter: options.attributes}),
   };
 
   const throttledCallBack = throttle(() => {
@@ -468,4 +468,19 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
     observer.disconnect();
     window.removeEventListener('focus', handleWindowFocus);
   };
+}
+
+/**
+ * Склонение существительных после числительных
+ * @param {number} n - Число
+ * @param {Array} titles - Массив из 3-х форм [1, 2, 5]
+ * @returns {string} - Нужная форма слова
+ */
+export function pluralize(n, titles) {
+  const cases = [2, 0, 1, 1, 1, 2];
+  return titles[
+    (n % 100 > 4 && n % 100 < 20)
+      ? 2
+      : cases[(n % 10 < 5) ? n % 10 : 5]
+    ];
 }
