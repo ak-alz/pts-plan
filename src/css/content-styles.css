@@ -4,7 +4,8 @@
 @import 'tailwindcss-primeui';
 @import 'primeicons/primeicons.css';
 
-.commit-button {
+.commit-button,
+.decompose-task-button {
   font-size: 16px;
   color: inherit;
   padding: 0;
@@ -12,9 +13,11 @@
   background: none;
   cursor: pointer;
   transition: color 0.3s, opacity 0.3s;
+  margin-left: 10px;
 }
 
-.commit-button:not(.commit-button--success):hover {
+.commit-button:not(.commit-button--success):hover,
+.decompose-task-button:hover {
   opacity: 0.8;
 }
 

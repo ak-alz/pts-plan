@@ -26,3 +26,5 @@ secrets.*.js
 public/assets/fonts/primeicons.*
 public/assets/content-styles.css
 *.zip
+
+CLAUDE.md

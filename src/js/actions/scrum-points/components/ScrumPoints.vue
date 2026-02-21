@@ -221,8 +221,8 @@ function formatPointsCount(count) {
 /* Кнопка "Копировать итоги" */
 async function copySummary(column) {
   const usersData = visibleUsers.value.map((user) => ({
+    id: user.id,
     name: user.name,
-    url: user.url,
     totalPoints: user.columns[column.id].totalPoints,
   }));
 
@@ -234,7 +234,7 @@ async function copySummary(column) {
 
 ${formatPointsCount(totalPoints)}
 [LIST]
-${ordered.map((user) => `[*][URL=${user.url}]${user.name}[/URL] — ${formatPointsCount(user.totalPoints)}`).join('\n')}
+${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPointsCount(user.totalPoints)}`).join('\n')}
 [/LIST]`;
 
   try {

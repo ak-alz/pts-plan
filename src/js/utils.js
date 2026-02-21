@@ -471,6 +471,20 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
 }
 
 /**
+ * Возвращает список стадий задачи из DOM-виджета переключения стадий
+ * @returns {{ id: string, title: string, color: string }[]}
+ */
+export function getStagesFromDom() {
+  const steps = document.querySelectorAll('.task-section-status-container-flex .task-section-status-step');
+
+  return [...steps].map((el) => ({
+    id: el.dataset.stageid,
+    title: el.title,
+    color: el.style.borderBottomColor,
+  }));
+}
+
+/**
  * Склонение существительных после числительных
  * @param {number} n - Число
  * @param {Array} titles - Массив из 3-х форм [1, 2, 5]

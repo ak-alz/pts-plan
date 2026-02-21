@@ -148,6 +148,17 @@ export default [
     },
   },
   {
+    key: 'decomposeTask',
+    name: 'Декомпозиция задачи',
+    tip: 'Добавляет кнопку для быстрого создания подзадач с исполнителями и стадиями. Необходимо указать ID пользователя',
+    new: true,
+    disabled: (options) => !options.userId,
+    action: async ({sessionId, options}) => {
+      const {decomposeTask} = await import('/src/js/actions/decompose-task');
+      decomposeTask(sessionId, options.userId);
+    },
+  },
+  {
     key: 'commitButton',
     name: 'Кнопка названия коммита',
     tip: 'Добавляет кнопку, которая генерирует готовое название коммита из заголовка задачи',

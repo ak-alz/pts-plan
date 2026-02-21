@@ -102,6 +102,46 @@ export default class BitrixApi {
       });
   }
 
+  tasksV2TaskAdd({ title, description = '', creatorId, responsibleId, auditorIds = [], groupId, parentId }) {
+    return axios.post('/bitrix/services/main/ajax.php?action=tasks.v2.Task.add', {
+      task: {
+        title,
+        description,
+        creator: { id: creatorId },
+        responsible: { id: responsibleId },
+        responsibleCollection: [{ id: responsibleId }],
+        auditors: auditorIds.map((id) => ({ id })),
+        group: { id: groupId },
+        parent: { id: parentId },
+      },
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
+  moveStage(taskId, stageId) {
+    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix%3Atasks.task&action=moveStage', {
+      taskId,
+      stageId,
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
+  loadSocGroupUsersForWidget(groupId) {
+    return axios.postForm('/bitrix/services/main/ajax.php?mode=ajax&c=pixelplus%3Atask.edit.modification&action=loadSocGroupUsersForWidget', {
+      groupId,
+    }, {
+      headers: {
+        'x-bitrix-csrf-token': this.sessionId,
+      },
+    });
+  }
+
   removeNotifications(ids) {
     return axios.postForm('/rest/im.notify.delete.json', {
       sessid: this.sessionId,
