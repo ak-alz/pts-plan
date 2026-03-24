@@ -4,7 +4,7 @@ import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
   const ids = getTaskAndGroupIdsFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
-  function fix() {
+  function fixLinks() {
     const links = document.querySelectorAll('.task-detail-description a:not(.js-link-fixed), .feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner a:not(.js-link-fixed)');
     links.forEach((link) => {
       if (link.textContent.includes('...')) {
@@ -14,10 +14,10 @@ import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
     });
   }
 
-  fix();
+  fixLinks();
 
   rehydrateOnChanges(
-    fix,
+    fixLinks,
     document.querySelector('.feed-comments-block'),
     {
       filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),

@@ -18,7 +18,7 @@ export function kanbanUserCards(backgroundColor, firstName, lastName) {
 
   insertCSS(css);
 
-  function highlight() {
+  function highlightCards() {
     const kanbanCards = kanbanGrid.querySelectorAll('.main-kanban-item[data-id] .tasks-kanban-item:not(.js-processed)');
 
     kanbanCards.forEach((card) => {
@@ -32,7 +32,7 @@ export function kanbanUserCards(backgroundColor, firstName, lastName) {
     });
   }
 
-  highlight();
+  highlightCards();
 
-  rehydrateOnChanges(highlight, kanbanGrid);
+  rehydrateOnChanges(highlightCards, kanbanGrid);
 }

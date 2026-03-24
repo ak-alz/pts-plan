@@ -432,6 +432,8 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
     observer.disconnect();
 
     try {
+      // DEBUG
+      // console.count(`rehydrate:${callBack.name || 'unknown'}`);
       callBack();
     } finally {
       observer.observe(target, observerConfig);
@@ -439,34 +441,26 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
   }, 1000);
 
   const observer = new MutationObserver((mutations) => {
-    let shouldRehydrate = false;
-
-    for (const mutation of mutations) {
-      if (typeof options?.filterMutation === 'function' && !options.filterMutation(mutation)) continue;
-
-      const isChildChange = mutation.type === 'childList' && (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0);
-      const isAttrChange = mutation.type === 'attributes';
-
-      if (isChildChange || isAttrChange) {
-        shouldRehydrate = true;
-        break;
-      }
+    if (typeof options?.filterMutation !== 'function') {
+      throttledCallBack();
+      return;
     }
 
-    if (shouldRehydrate) {
-      throttledCallBack();
+    for (const mutation of mutations) {
+      if (options.filterMutation(mutation)) {
+        throttledCallBack();
+        return;
+      }
     }
   });
 
   observer.observe(target, observerConfig);
 
-  const handleWindowFocus = () => throttledCallBack();
-
-  window.addEventListener('focus', handleWindowFocus);
+  window.addEventListener('focus', throttledCallBack);
 
   return () => {
     observer.disconnect();
-    window.removeEventListener('focus', handleWindowFocus);
+    window.removeEventListener('focus', throttledCallBack);
   };
 }
 

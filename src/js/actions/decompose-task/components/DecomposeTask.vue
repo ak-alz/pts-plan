@@ -13,7 +13,11 @@ const props = defineProps({
     required: true,
   },
   userId: {
-    type: String,
+    type: Number,
+    required: true,
+  },
+  responsiveId: {
+    type: Number,
     required: true,
   },
   taskTitle: {
@@ -50,7 +54,8 @@ function createRow() {
   return {
     _id: rowIdCounter++,
     title: props.taskTitle,
-    responsibleId: props.userId,
+    description: '',
+    responsibleId: !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit' ? props.responsiveId : props.userId,
     stageId: settings.value.defaultStageId ?? null,
     auditorIds: settings.value.allAuditorsDefault ? users.value.map((u) => u.id) : [props.userId],
   };
@@ -88,6 +93,7 @@ async function submit() {
     const promises = rows.value.map((row) =>
       bitrixApi.tasksV2TaskAdd({
         title: row.title,
+        description: row.description,
         creatorId: props.userId,
         responsibleId: row.responsibleId,
         auditorIds: row.auditorIds,
@@ -189,7 +195,40 @@ onMounted(() => {
           <Textarea
             v-model="row.title"
             fluid
-            rows="1"
+            rows="2"
+            cols="40"
+            :pt="{
+              root: {
+                style: {
+                  minHeight: '35px',
+                  resize: 'vertical',
+                  display: 'block',
+                }
+              }
+            }"
+          />
+        </template>
+      </Column>
+
+      <Column
+        v-if="settings.description"
+        header="Описание"
+      >
+        <template #body="{ data: row }">
+          <Textarea
+            v-model="row.description"
+            fluid
+            rows="2"
+            cols="20"
+            :pt="{
+              root: {
+                style: {
+                  minHeight: '35px',
+                  resize: 'vertical',
+                  display: 'block',
+                }
+              }
+            }"
           />
         </template>
       </Column>
@@ -282,7 +321,7 @@ onMounted(() => {
       <template #footer>
         <div class="flex gap-2 items-center">
           <Button
-            label="Добавить строку"
+            label="Добавить"
             icon="pi pi-plus"
             text
             severity="secondary"

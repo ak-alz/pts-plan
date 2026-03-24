@@ -197,10 +197,31 @@ export default [
     name: 'Кнопка «Удалить системные уведомления»',
     tip: 'Добавляет кнопку для удаления всех системных уведомлений. Например: все сообщения с серым колокольчиком; сообщения, которые начинаются на «Изменил(а) задачу» и на «Закрыл(а) задачу».',
     new: true,
-    action: async ({sessionId}) => {
+    action: async ({sessionId, options}) => {
       const {removeSystemNotifications} = await import('/src/js/actions/remove-system-notifications');
-      removeSystemNotifications(sessionId);
+      removeSystemNotifications(sessionId, {
+        dedupe: options.removeSystemNotificationsDedupe,
+        removeNew: options.removeSystemNotificationsNew,
+        removeReactions: options.removeSystemNotificationsReactions,
+      });
     },
+    options: [
+      {
+        key: 'removeSystemNotificationsDedupe',
+        name: 'Дубли (!!!)',
+        tip: 'Для каждой задачи оставляет только последнее уведомление, остальные удаляет. Осторожно: среди дублей могут быть важные упоминания.',
+      },
+      {
+        key: 'removeSystemNotificationsNew',
+        name: 'Новые задачи',
+        tip: 'Удаляет уведомления вида «Добавил(а) новую задачу».',
+      },
+      {
+        key: 'removeSystemNotificationsReactions',
+        name: 'Реакции',
+        tip: 'Удаляет уведомления вида «Отреагировал(а) на ваш комментарий».',
+      },
+    ],
   },
   {
     key: 'autoChoiceUser',
@@ -263,6 +284,15 @@ export default [
     new: true,
     action: () => {
       import('/src/js/actions/status-markers');
+    },
+  },
+  {
+    key: 'openInNewTab',
+    name: 'Действия в новой вкладке',
+    tip: 'При нажатии «Редактировать» у задачи открывает её в новой вкладке. В канбане кнопка «Создать задачу» также открывается в новой вкладке.',
+    new: true,
+    action: () => {
+      import('/src/js/actions/open-in-new-tab');
     },
   },
   {

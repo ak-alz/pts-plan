@@ -20,6 +20,10 @@ export function decomposeTask(sessionId, userId) {
   const initialized = !!titleBlock.querySelector('.js-decompose-task');
   if (initialized) return;
 
+  const responsiveBlock = document.querySelector('.task-user-selector.single:not(.readonly) [data-item-value]');
+  if (!responsiveBlock) return;
+  const responsiveId = Number(responsiveBlock.getAttribute('data-item-value'));
+
   const buttonContainer = titleBlock.querySelector('.ui-toolbar-after-title');
   if (!buttonContainer) return;
 
@@ -34,6 +38,7 @@ export function decomposeTask(sessionId, userId) {
   const app = createApp(DecomposeTaskApp, {
     sessionId,
     userId,
+    responsiveId,
     taskTitle,
     groupId: ids.groupId,
     taskId: ids.taskId,

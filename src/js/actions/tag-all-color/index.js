@@ -17,7 +17,7 @@ export function tagAllColor(color) {
 
   const regex = /\bTAGALL\b/gi;
 
-  function highlight() {
+  function highlightTagAll() {
     const comments = document.querySelectorAll('.feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner');
     if (!comments.length) return;
 
@@ -28,10 +28,10 @@ export function tagAllColor(color) {
     });
   }
 
-  highlight();
+  highlightTagAll();
 
   rehydrateOnChanges(
-    highlight,
+    highlightTagAll,
     document.querySelector('.feed-comments-block'),
     {
       filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),

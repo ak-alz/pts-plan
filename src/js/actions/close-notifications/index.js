@@ -3,7 +3,7 @@ import {rehydrateOnChanges} from '../../utils.js';
 export function closeNotifications(firstName, lastName) {
   if (!firstName || !lastName) return;
 
-  function close() {
+  function closeVisibleNotifications() {
     const notifications = document.querySelectorAll('.ui-notification-manager-browser-balloon:not(.js-notification-processed)');
     notifications.forEach((notification) => {
       notification.classList.add('js-notification-processed');
@@ -26,7 +26,7 @@ export function closeNotifications(firstName, lastName) {
   }
 
   rehydrateOnChanges(
-    close,
+    closeVisibleNotifications,
     document.body,
     {
       filterMutation: (mutation) => mutation.type === 'childList'

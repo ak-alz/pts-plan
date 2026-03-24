@@ -16,7 +16,7 @@ import {getTaskAndGroupIdsFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '.
     });
   }
 
-  function highlight() {
+  function highlightMentions() {
     const comments = document.querySelectorAll('.feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner:not(.js-comment-processed)');
     comments.forEach((comment) => {
       comment.classList.add('js-comment-processed');
@@ -47,10 +47,10 @@ import {getTaskAndGroupIdsFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '.
     });
   }
 
-  highlight();
+  highlightMentions();
 
   rehydrateOnChanges(
-    highlight,
+    highlightMentions,
     document.querySelector('.feed-comments-block'),
     {
       filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),

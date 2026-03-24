@@ -31,7 +31,9 @@ const isLoading = ref(false);
 
 const form = reactive({
   defaultStageId: props.initial.defaultStageId ?? null,
+  defaultResponsible: props.initial.defaultResponsible ?? 'inherit',
   allAuditorsDefault: props.initial.allAuditorsDefault ?? false,
+  description: props.initial.description ?? false,
 });
 
 async function saveSettings() {
@@ -56,6 +58,17 @@ async function saveSettings() {
     isLoading.value = false;
   }
 }
+
+const responsibleOptions = [
+  {
+    label: 'Наследовать',
+    value: 'inherit',
+  },
+  {
+    label: 'Вы',
+    value: 'user',
+  },
+];
 </script>
 
 <template>
@@ -88,6 +101,21 @@ async function saveSettings() {
       </Select>
     </FormField>
 
+    <FormField
+      id="dt_default_responsible"
+      label="Исполнитель по умолчанию"
+    >
+      <Select
+        v-model="form.defaultResponsible"
+        option-value="value"
+        option-label="label"
+        :options="responsibleOptions"
+        fluid
+        input-id="dt_default_responsible"
+        placeholder="Не выбран"
+      />
+    </FormField>
+
     <div class="flex gap-1 items-center">
       <Checkbox
         v-model="form.allAuditorsDefault"
@@ -95,6 +123,15 @@ async function saveSettings() {
         input-id="dt_all_auditors_default"
       />
       <label for="dt_all_auditors_default">Все участники группы как наблюдатели</label>
+    </div>
+
+    <div class="flex gap-1 items-center">
+      <Checkbox
+        v-model="form.description"
+        binary
+        input-id="dt_all_description_default"
+      />
+      <label for="dt_all_description_default">Выводить поле «Описание»</label>
     </div>
 
     <Button
