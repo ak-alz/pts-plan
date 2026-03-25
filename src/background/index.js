@@ -52,4 +52,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       message: notificationMessage,
     });
   }
+
+  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
 });

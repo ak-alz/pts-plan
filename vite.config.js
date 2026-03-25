@@ -21,6 +21,9 @@ export default defineConfig(() => {
       emptyOutDir: true,
       outDir: 'build',
       rollupOptions: {
+        input: {
+          'whats-new': 'whats-new.html',
+        },
         output: {
           chunkFileNames: 'assets/chunk-[hash].js',
         },

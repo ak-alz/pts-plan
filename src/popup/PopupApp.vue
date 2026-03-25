@@ -71,6 +71,10 @@ async function saveSettings() {
 
 const infoModalOpened = ref(false);
 
+function openWhatsNew() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
+}
+
 onMounted(() => {
   loadSettings();
 });
@@ -105,6 +109,14 @@ onMounted(() => {
           fluid
           size="small"
           type="submit"
+        />
+        <Button
+          v-tooltip="'Что нового'"
+          size="small"
+          severity="secondary"
+          link
+          icon="pi pi-sparkles"
+          @click="openWhatsNew"
         />
         <Button
           v-tooltip="'О расширении'"

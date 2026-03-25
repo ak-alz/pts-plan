@@ -1,4 +1,4 @@
-import '/src/css/popup.css';
+import '/src/css/app.css';
 
 import dayjs from 'dayjs';
 import ru from 'dayjs/locale/ru';
