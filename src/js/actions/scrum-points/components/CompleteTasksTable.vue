@@ -19,7 +19,6 @@ const props = defineProps({
 const emits = defineEmits(['success']);
 
 const toast = useToast();
-const groupId = inject('groupId');
 const bitrixApi = inject('bitrixApi');
 
 const tasks = computed(() => {
@@ -44,20 +43,13 @@ const progress = ref(null);
 const isLoading = ref(false);
 
 async function completeSelectedTasks() {
-  progress.value = null;
+  progress.value = 0;
   isLoading.value = true;
 
   try {
-    const promises = selectedTasks.value
-      .map((task) => {
-        return bitrixApi.completeTask(groupId, props.column.id, task.id)
-          .finally(() => {
-            progress.value += Math.floor(100 / selectedTasks.value.length);
-          });
-      });
+    const taskIds = selectedTasks.value.map((task) => task.id);
 
-    progress.value = 0;
-    await Promise.allSettled(promises);
+    await bitrixApi.completeTasksBatch(taskIds);
     progress.value = 100;
 
     toast.add({

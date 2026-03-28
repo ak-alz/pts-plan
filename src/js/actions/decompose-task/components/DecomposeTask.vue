@@ -4,7 +4,6 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
-import { getStagesFromDom } from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
@@ -86,30 +85,20 @@ async function onSaveSettings() {
 async function submit() {
   progress.value = null;
   isLoading.value = true;
-
   const total = rows.value.length;
 
   try {
-    const promises = rows.value.map((row) =>
-      bitrixApi.tasksV2TaskAdd({
-        title: row.title,
-        description: row.description,
-        creatorId: props.userId,
-        responsibleId: row.responsibleId,
-        auditorIds: row.auditorIds,
-        groupId: props.groupId,
-        parentId: props.taskId,
-      }).then(async ({ data }) => {
-        if (row.stageId && data?.data?.id) {
-          await bitrixApi.moveStage(data.data.id, row.stageId);
-        }
-      }).finally(() => {
-        progress.value += Math.floor(100 / total);
-      }),
-    );
-
     progress.value = 0;
-    await Promise.allSettled(promises);
+    await bitrixApi.addTasksBatch(rows.value.map((row) => ({
+      TITLE: row.title,
+      DESCRIPTION: row.description,
+      CREATED_BY: props.userId,
+      RESPONSIBLE_ID: row.responsibleId,
+      AUDITORS: row.auditorIds,
+      GROUP_ID: props.groupId,
+      PARENT_ID: props.taskId,
+      STAGE_ID: row.stageId || 0,
+    })));
     progress.value = 100;
 
     toast.add({
@@ -138,10 +127,19 @@ async function fetchData() {
 
   try {
     await loadSettings();
-    const groupUsers = await bitrixApi.loadSocGroupUsersForWidget(props.groupId);
+    const [groupUsers, stagesResponse] = await Promise.all([
+      bitrixApi.getGroupUsers(props.groupId),
+      bitrixApi.getStages(props.groupId),
+    ]);
 
-    users.value = groupUsers.data?.data?.items ?? [];
-    stages.value = getStagesFromDom();
+    users.value = groupUsers.map((u) => ({
+      id: Number(u.ID),
+      title: [u.NAME, u.LAST_NAME].filter(Boolean).join(' '),
+      avatar: u.PERSONAL_PHOTO ?? '',
+    }));
+    stages.value = Object.values(stagesResponse.data?.result ?? {})
+      .sort((a, b) => a.SORT - b.SORT)
+      .map((s) => ({ id: s.ID, title: s.TITLE, color: `#${s.COLOR}` }));
     addRow();
   } catch (e) {
     console.warn(e);

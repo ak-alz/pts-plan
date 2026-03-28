@@ -36,4 +36,9 @@ export default {
   },
   ripple: true,
   locale: ru,
+  pt: {
+    avatar: {
+      image: { class: 'object-cover' },
+    },
+  },
 };

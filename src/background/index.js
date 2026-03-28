@@ -53,5 +53,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     });
   }
 
-  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
+  const currentVersion = chrome.runtime.getManifest().version;
+  const [prevMajor, prevMinor] = previousVersion.split('.');
+  const [curMajor, curMinor] = currentVersion.split('.');
+
+  if (curMajor !== prevMajor || curMinor !== prevMinor) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
+  }
 });

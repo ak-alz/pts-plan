@@ -94,10 +94,13 @@ const badgeLabels = {
             <Galleria
               :value="entry.images"
               :num-visible="5"
+              show-item-navigators
+              circular
+              :show-thumbnail-navigators="false"
             >
               <template #item="{ item }">
                 <div
-                  class="relative w-full"
+                  class="relative w-full pointer-events-none"
                   style="aspect-ratio: 16/9;"
                 >
                   <img

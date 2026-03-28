@@ -6,7 +6,7 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
-import {getUserIdFromUrl, stringToPastelColor} from '../../../utils.js';
+import {stringToPastelColor} from '../../../utils.js';
 import { defaultIgnorePoints, defaultMaxSprints } from '../variables.js';
 import SettingsForm from './SettingsForm.vue';
 import SummaryChart from './SummaryChart.vue';
@@ -90,55 +90,58 @@ async function fetchData() {
   isLoading.value = true;
 
   try {
-    const comments = await bitrixApi.getTaskComments(props.groupId, settings.value.taskId);
+    const { data } = await bitrixApi.getComments(settings.value.taskId);
+    const comments = data.result;
 
     if (!comments.length) {
       throw new Error(`Не удалось найти комментарии для задачи ${settings.value.taskId}`);
     }
 
     // Паттерн отбирает из всех комментариев задачи только комментарии с итогами спринта
-    const pattern = /итог[и]?[^]*?\b(\d+)[^]*?спринт[ау]?[\s\S]*?(?:[А-Яа-я]+\s[А-Яа-я]+ — \d+ балл(?:ов|а)\n?)+/gi;
+    const sprintPattern = /итоги?[^]*?(\d+)[^]*?спринт/gi;
+    // Новый формат: [URL=.../user/ID/]Имя[/URL] — N балл
+    const urlUserPattern = /\[URL=([^\]]*\/company\/personal\/user\/(\d+)\/)]([^[]+)\[\/URL]\D*(\d+)\s+балл/g;
+    // Старый формат: [USER=ID]Имя[/USER] — N балл
+    const bbUserPattern = /\[USER=(\d+)]([^[]+)\[\/USER]\D*(\d+)\s+балл/g;
 
     const sprintsAcc = [];
     const usersMap = {};
 
     forEachRight(comments, (comment) => {
-      pattern.lastIndex = 0;
+      sprintPattern.lastIndex = 0;
 
-      const match = pattern.exec(comment.textContent);
+      const match = sprintPattern.exec(comment.POST_MESSAGE);
       if (!match) return;
 
-      const userLinks = [...comment.querySelectorAll('li a[href*="/company/personal/user/"]')];
-      if (!userLinks.length) return;
-
       const sprintNumber = Number(match[1]);
+      const dateTs = dayjs(comment.POST_DATE).valueOf();
+
+      urlUserPattern.lastIndex = 0;
+      bbUserPattern.lastIndex = 0;
+      const hasUsers = urlUserPattern.test(comment.POST_MESSAGE) || bbUserPattern.test(comment.POST_MESSAGE);
+      if (!hasUsers) return;
+
       sprintsAcc.push(sprintNumber);
 
-      userLinks.forEach((link) => {
-        const id = getUserIdFromUrl(link.href);
-        if (!id) return;
-
-        const m = /(\d+)\s+балл(?:ов|а|)/g.exec(link.closest('li').textContent);
-        const points = m?.[1] ? Number(m[1]) : 0;
-        if (!points) return;
-
+      const addUser = (id, name, url, points) => {
         if (!usersMap[id]) {
-          usersMap[id] = {
-            id,
-            name: link.textContent,
-            url: link.href,
-            sprints: [],
-            color: stringToPastelColor(link.textContent),
-          };
+          usersMap[id] = { id, name, url, sprints: [], color: stringToPastelColor(name) };
         }
+        usersMap[id].sprints.push({ x: dateTs, y: points, sprint: sprintNumber });
+      };
 
-        const sprint = {
-          x: sprintNumber,
-          y: points,
-        };
+      let userMatch;
+      urlUserPattern.lastIndex = 0;
+      while ((userMatch = urlUserPattern.exec(comment.POST_MESSAGE)) !== null) {
+        const [, url, id, name, pointsStr] = userMatch;
+        addUser(id, name, url, Number(pointsStr));
+      }
 
-        usersMap[id].sprints.push(sprint);
-      });
+      bbUserPattern.lastIndex = 0;
+      while ((userMatch = bbUserPattern.exec(comment.POST_MESSAGE)) !== null) {
+        const [, id, name, pointsStr] = userMatch;
+        addUser(id, name, `/company/personal/user/${id}/`, Number(pointsStr));
+      }
     });
 
     sprints.value = sprintsAcc;

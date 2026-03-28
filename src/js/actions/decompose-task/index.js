@@ -4,15 +4,31 @@ import ToastService from 'primevue/toastservice';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
+import BitrixApi from '../../BitrixApi.js';
 import primeVueOptions from '../../primeVueOptions.js';
 import { getTaskAndGroupIdsFromUrl } from '../../utils.js';
 import DecomposeTaskApp from './DecomposeTaskApp.vue';
 
-export function decomposeTask(sessionId, userId) {
+export async function decomposeTask(sessionId, userId) {
   if (!userId) return;
 
   const ids = getTaskAndGroupIdsFromUrl(window.location.href);
   if (!ids?.taskId) return;
+
+  let groupId = ids.groupId;
+
+  // На личных задачах URL вида /company/personal/user/{userId}/tasks/task/view/{taskId}/
+  // getTaskAndGroupIdsFromUrl возвращает userId вместо groupId — получаем настоящий groupId через API
+  if (window.location.pathname.includes('/company/personal/user/')) {
+    try {
+      const api = new BitrixApi(sessionId);
+      const { data } = await api.getTask(ids.taskId);
+      groupId = String(data?.result?.task?.groupId ?? '');
+    } catch {
+      return;
+    }
+    if (!groupId || groupId === '0') return;
+  }
 
   const titleBlock = document.querySelector('.ui-toolbar-title-item-box');
   if (!titleBlock) return;
@@ -40,7 +56,7 @@ export function decomposeTask(sessionId, userId) {
     userId,
     responsiveId,
     taskTitle,
-    groupId: ids.groupId,
+    groupId,
     taskId: ids.taskId,
   });
   app.use(PrimeVue, primeVueOptions);

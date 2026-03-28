@@ -1,4 +1,5 @@
 <script setup>
+import dayjs from 'dayjs';
 import Chart from 'primevue/chart';
 import { computed } from 'vue';
 
@@ -49,7 +50,8 @@ const chartOptions = computed(() => {
         },
         callbacks: {
           title(tooltipItems) {
-            return `Итоги спринта №${tooltipItems[0]?.parsed?.x}`;
+            const { sprint, x } = tooltipItems[0]?.raw ?? {};
+            return `Итоги спринта №${sprint} (${dayjs(x).format('DD.MM.YYYY')})`;
           },
           label(context) {
             return `${context.dataset.label}: ${context.parsed.y}`;
@@ -69,9 +71,12 @@ const chartOptions = computed(() => {
     scales: {
       x: {
         title: {
-          text: 'Спринт',
+          text: 'Дата спринта',
           align: 'end',
           display: true,
+        },
+        ticks: {
+          callback: (value) => dayjs(value).format('DD.MM.YY'),
         },
       },
       y: {

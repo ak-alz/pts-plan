@@ -52,92 +52,106 @@ async function fetchData() {
   }
 
   try {
-    const { data } = await bitrixApi.applyFilter(props.groupId);
+    // Запускаем параллельно: метаданные колонок + первые страницы задач
+    // Для batch используем settings.value.columns (уже загружены выше)
+    const PAGE_SIZE = 50;
+    const savedColumnIds = settings.value.columns || [];
+    const firstPageRequests = savedColumnIds.map((id) => ({ key: `col_${id}`, stageId: id, start: 0 }));
 
-    let tasks = data.data.items;
+    progress.value = 0;
+    const [stagesResponse, firstRoundResponses] = await Promise.all([
+      bitrixApi.getStages(props.groupId),
+      bitrixApi.getTasksBatch(firstPageRequests, props.groupId),
+    ]);
 
-    columns.value = data.data.columns.map((column) => ({
-      id: column.id,
-      name: column.name,
-      shortName: simplifyColumnName(column.name),
-      color: `#${column.color}`,
-      total: column.total,
-    }));
+    let tasks;
 
-    // Получаем остальные задачи из каждой колонки
-    const promises = [];
-    visibleColumns.value
-      .filter((column) => column.total > 20)
-      .forEach((column) => {
-        for (let page = 2; page <= Math.ceil(column.total / 20); page += 1) {
-          promises.push(
-            bitrixApi.getColumnItems(props.groupId, column.id, page)
-              .finally(() => {
-                progress.value += Math.floor(100 / promises.length);
-              }),
-          );
+    columns.value = Object.values(stagesResponse.data.result)
+      .sort((a, b) => a.SORT - b.SORT)
+      .map((stage) => ({
+        id: stage.ID,
+        name: stage.TITLE,
+        shortName: simplifyColumnName(stage.TITLE),
+        color: `#${stage.COLOR}`,
+      }));
+
+    tasks = [];
+    const remainingRequests = [];
+
+    firstRoundResponses.forEach((response) => {
+      const { result, result_total } = response.data.result;
+      Object.entries(result).forEach(([key, stageResult]) => {
+        tasks = tasks.concat(stageResult.tasks || []);
+
+        // Если задач больше PAGE_SIZE — дозапрашиваем остальные страницы
+        const total = result_total?.[key] ?? 0;
+        if (total > PAGE_SIZE) {
+          const stageId = key.slice('col_'.length);
+          const pages = Math.ceil(total / PAGE_SIZE);
+          for (let page = 1; page < pages; page++) {
+            remainingRequests.push({ key: `${key}_p${page}`, stageId, start: page * PAGE_SIZE });
+          }
         }
       });
+    });
 
-    // Если промисов больше 10, то предупреждаем
-    if (promises.length <= 10 || window.confirm(`[pts-plan]: Вы собираетесь сделать много запросов на сервер (${promises.length}). Возможно, выбраны неверные фильтры. Продолжить?`)) {
-      progress.value = 0;
-      const chunks = await Promise.all(promises);
-      progress.value = 100;
-      chunks.forEach((chunk) => {
-        tasks = tasks.concat(chunk.data.data);
+    // Шаг 2: дозагружаем оставшиеся страницы (только если нужно)
+    if (remainingRequests.length > 0) {
+      const remainingResponses = await bitrixApi.getTasksBatch(remainingRequests, props.groupId);
+      remainingResponses.forEach((response) => {
+        Object.values(response.data.result.result).forEach((stageResult) => {
+          tasks = tasks.concat(stageResult.tasks || []);
+        });
       });
     }
 
-    // Дальше получаем всех исполнителей
-    // Раскидываем задачи, группируя их по колонкам
+    progress.value = 100;
+
+    // Раскидываем задачи по исполнителям и колонкам
     const usersMap = {};
 
-    tasks
-      .filter((task) => !settings.value.ignoreCompleted || !task.data.completed)
-      .forEach((task) => {
-        const points = getTaskPointsFromName(task.data.name);
+    tasks.forEach((task) => {
+      const points = getTaskPointsFromName(task.title);
+      const stageId = task.stageId;
+      const { responsible } = task;
 
-        if (!usersMap[task.data.responsible.id]) {
-          usersMap[task.data.responsible.id] = {
-            id: task.data.responsible.id,
-            photo: task.data.responsible.photo?.src || false, // Может не быть фото
-            name: task.data.responsible.name,
-            url: task.data.responsible.url,
-            columns: data.data.columns.reduce((acc, column) => {
-              acc[column.id] = {
-                tasks: [],
-                totalPoints: 0,
-              };
-              return acc;
-            }, {}),
-            visibleTotalPoints: 0, // visible - считаем только для видимых колонок
-            visibleTasksCount: 0,
-            totalPoints: 0,
-            tasksCount: 0,
-          };
+      if (!usersMap[responsible.id]) {
+        usersMap[responsible.id] = {
+          id: responsible.id,
+          photo: responsible.icon || false,
+          name: responsible.name,
+          url: responsible.link,
+          columns: columns.value.reduce((acc, column) => {
+            acc[column.id] = { tasks: [], totalPoints: 0 };
+            return acc;
+          }, {}),
+          visibleTotalPoints: 0,
+          visibleTasksCount: 0,
+          totalPoints: 0,
+          tasksCount: 0,
+        };
+      }
+
+      if (visibleColumns.value.find((column) => column.id === stageId)) {
+        usersMap[responsible.id].columns[stageId].tasks.push({
+          id: task.id,
+          name: task.title,
+          url: `/workgroups/group/${props.groupId}/tasks/task/view/${task.id}/`,
+          dateUpdated: dayjs(task.activityDate).unix(),
+          formattedDateUpdated: dayjs(task.activityDate).format('DD.MM.YYYY HH:mm:ss'),
+          points,
+        });
+        usersMap[responsible.id].columns[stageId].totalPoints += points;
+
+        if (!settings.value.excludeFromTotal?.includes(stageId)) {
+          usersMap[responsible.id].visibleTotalPoints += points;
+          usersMap[responsible.id].visibleTasksCount += 1;
         }
+      }
 
-        if (visibleColumns.value.find((column) => column.id === task.columnId)) {
-          usersMap[task.data.responsible.id].columns[task.columnId].tasks.push({
-            id: task.id,
-            name: task.data.name,
-            url: `/workgroups/group/${props.groupId}/tasks/task/view/${task.id}/`,
-            dateUpdated: task.data.date_activity_ts,
-            formattedDateUpdated: dayjs.unix(task.data.date_activity_ts).format('DD.MM.YYYY HH:mm:ss'),
-            points,
-          });
-          usersMap[task.data.responsible.id].columns[task.columnId].totalPoints += points;
-
-          if (!settings.value.excludeFromTotal?.includes(task.columnId)) {
-            usersMap[task.data.responsible.id].visibleTotalPoints += points;
-            usersMap[task.data.responsible.id].visibleTasksCount += 1;
-          }
-        }
-
-        usersMap[task.data.responsible.id].totalPoints += points;
-        usersMap[task.data.responsible.id].tasksCount += 1;
-      });
+      usersMap[responsible.id].totalPoints += points;
+      usersMap[responsible.id].tasksCount += 1;
+    });
 
     // Сортируем для вывода в настройках
     users.value = orderBy(Object.values(usersMap), ['totalPoints', 'tasksCount'], 'desc');

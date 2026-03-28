@@ -6,57 +6,14 @@ export default class BitrixApi {
   }
 
   /**
-   * Возвращает все колонки канбана, а также максимум 20 задач для каждой из колонок
-   * @param groupId
+   * Возвращает колонки (стадии) канбана без задач
+   * @param {string} groupId
    * @return {Promise<axios.AxiosResponse<any>>}
    */
-  applyFilter(groupId) {
-    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.kanban&action=applyFilter', {
-      params: {
-        GROUP_ID: groupId,
-      },
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
-    });
-  }
-
-  getColumnItems(groupId, columnId, page) {
-    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.kanban&action=getColumnItems', {
-      pageId: page,
-      columnId,
-      params: {
-        GROUP_ID: groupId,
-      },
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
-    });
-  }
-
-  completeTask(groupId, columnId, taskId) {
-    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.kanban&action=completeTask', {
-      columnId,
-      taskId,
-      params: {
-        GROUP_ID: groupId,
-      },
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
-    });
-  }
-
-  renewTask(taskId) {
-    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix:tasks.task&action=renew', {
-      taskId,
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
+  getStages(groupId) {
+    return axios.postForm('/rest/task.stages.get.json', {
+      sessid: this.sessionId,
+      entityId: groupId,
     });
   }
 
@@ -64,81 +21,162 @@ export default class BitrixApi {
     return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/?MID=1`;
   }
 
-  getTaskCommentsRaw(groupId, taskId) {
-    return axios.get(BitrixApi.getTaskCommentsUrl(groupId, taskId), {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
+  static getUserNotifications(taskId) {
+    const request = taskId
+      ? axios.postForm('/alert/', {
+        notifyFilterIn: {
+          taskId,
+          countOnPage: 999999,
+        },
+      })
+      : axios.get('/alert/');
+
+    return request.then(({data}) => {
+      const parser = new DOMParser();
+      const html = parser.parseFromString(data, 'text/html');
+
+      if (taskId) {
+        return [...html.querySelectorAll(`.message-item:has(a[href*="/tasks/task/view/${taskId}/"]) .message-delete-checkbox[data-id]:not([data-id=""])`)];
+      }
+
+      return [...html.querySelectorAll('.message-delete-checkbox[data-id]:not([data-id=""])')];
     });
   }
 
   /**
-   *
-   * @param groupId
-   * @param taskId
-   * @return {Promise<*[HTMLElement]>}
+   * Batch-создание подзадач через tasks.task.add (до 50 задач на запрос).
+   * STAGE_ID передаётся напрямую — отдельный moveStage не нужен.
+   * @param {Array<{TITLE, DESCRIPTION, CREATED_BY, RESPONSIBLE_ID, AUDITORS, GROUP_ID, PARENT_ID, STAGE_ID}>} tasks
+   * @return {Promise<axios.AxiosResponse<any>[]>}
    */
-  getTaskComments(groupId, taskId) {
-    return this.getTaskCommentsRaw(groupId, taskId)
-      .then(({data}) => {
-        const parser = new DOMParser();
-        const html = parser.parseFromString(data, 'text/html');
+  addTasksBatch(tasks) {
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < tasks.length; i += CHUNK_SIZE) {
+      chunks.push(tasks.slice(i, i + CHUNK_SIZE));
+    }
 
-        return [...html.querySelectorAll('.feed-com-block:not(.mpl-comment-aux) .feed-com-text-inner-inner')];
-      });
-  }
-
-  static getUserNotifications(taskId) {
-    return axios.get('/alert/')
-      .then(({data}) => {
-        const parser = new DOMParser();
-        const html = parser.parseFromString(data, 'text/html');
-
-        if (taskId) {
-          return [...html.querySelectorAll(`.message-item:has(a[href*="/tasks/task/view/${taskId}/"]) .message-delete-checkbox[data-id]:not([data-id=""])`)];
+    return Promise.all(chunks.map((chunk, chunkIndex) => {
+      const cmd = {};
+      chunk.forEach((task, i) => {
+        const params = new URLSearchParams({
+          'fields[TITLE]': task.TITLE,
+          'fields[CREATED_BY]': task.CREATED_BY,
+          'fields[RESPONSIBLE_ID]': task.RESPONSIBLE_ID,
+          'fields[GROUP_ID]': task.GROUP_ID,
+          'fields[PARENT_ID]': task.PARENT_ID,
+        });
+        if (task.DESCRIPTION) {
+          params.set('fields[DESCRIPTION]', task.DESCRIPTION);
         }
+        if (task.STAGE_ID) {
+          params.set('fields[STAGE_ID]', task.STAGE_ID);
+        }
+        (task.AUDITORS ?? []).forEach((id) => params.append('fields[AUDITORS][]', id));
 
-        return [...html.querySelectorAll('.message-delete-checkbox[data-id]:not([data-id=""])')];
+        cmd[`t${chunkIndex * CHUNK_SIZE + i}`] = `tasks.task.add?${params.toString()}`;
       });
+
+      return axios.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      });
+    }));
   }
 
-  tasksV2TaskAdd({ title, description = '', creatorId, responsibleId, auditorIds = [], groupId, parentId }) {
-    return axios.post('/bitrix/services/main/ajax.php?action=tasks.v2.Task.add', {
-      task: {
-        title,
-        description,
-        creator: { id: creatorId },
-        responsible: { id: responsibleId },
-        responsibleCollection: [{ id: responsibleId }],
-        auditors: auditorIds.map((id) => ({ id })),
-        group: { id: groupId },
-        parent: { id: parentId },
-      },
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
+  /**
+   * Возвращает участников группы (сырые объекты user.get).
+   * @param {string} groupId
+   * @return {Promise<any[]>}
+   */
+  getGroupUsers(groupId) {
+    return axios.postForm('/rest/sonet_group.user.get.json', {
+      sessid: this.sessionId,
+      ID: groupId,
+    }).then(({ data }) => {
+      const memberIds = (data?.result ?? []).map((m) => m.USER_ID);
+      if (!memberIds.length) return [];
+
+      const params = new URLSearchParams({ sessid: this.sessionId });
+      memberIds.forEach((id) => params.append('filter[ID][]', id));
+
+      return axios.post('/rest/user.get.json', params)
+        .then(({ data: usersData }) => usersData?.result ?? []);
     });
   }
 
-  moveStage(taskId, stageId) {
-    return axios.postForm('/bitrix/services/main/ajax.php?mode=class&c=bitrix%3Atasks.task&action=moveStage', {
+  /**
+   * Batch-запросы tasks.task.list по колонкам, исключая завершённые задачи.
+   * @param {Array<{key: string, stageId: string, start: number}>} stageRequests
+   * @param {string} groupId
+   * @return {Promise<axios.AxiosResponse<any>[]>}
+   */
+  getTasksBatch(stageRequests, groupId) {
+    if (!stageRequests.length) return Promise.resolve([]);
+
+    const BATCH_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < stageRequests.length; i += BATCH_SIZE) {
+      chunks.push(stageRequests.slice(i, i + BATCH_SIZE));
+    }
+
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach(({ key, stageId, start }) => {
+        const params = new URLSearchParams({
+          'filter[GROUP_ID]': groupId,
+          'filter[STAGE_ID]': stageId,
+          'filter[!STATUS]': 5,
+          start,
+        });
+        // Только нужные поля — исключаем description, auditorsData, accomplicesData и т.д.
+        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE'].forEach((field) => {
+          params.append('select[]', field);
+        });
+        cmd[key] = `tasks.task.list?${params.toString()}`;
+      });
+
+      return axios.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      });
+    }));
+  }
+
+  completeTasksBatch(taskIds) {
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
+    }
+
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((id, i) => {
+        cmd[`t${i}`] = `tasks.task.complete?taskId=${id}`;
+      });
+
+      return axios.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      });
+    }));
+  }
+
+  getComments(taskId) {
+    return axios.postForm('/rest/task.commentitem.getlist.json', {
+      sessid: this.sessionId,
+      TASKID: taskId,
+    });
+  }
+
+  getTask(taskId) {
+    return axios.postForm('/rest/tasks.task.get.json', {
+      sessid: this.sessionId,
       taskId,
-      stageId,
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
-    });
-  }
-
-  loadSocGroupUsersForWidget(groupId) {
-    return axios.postForm('/bitrix/services/main/ajax.php?mode=ajax&c=pixelplus%3Atask.edit.modification&action=loadSocGroupUsersForWidget', {
-      groupId,
-    }, {
-      headers: {
-        'x-bitrix-csrf-token': this.sessionId,
-      },
     });
   }
 
