@@ -1,12 +1,11 @@
 import {throttle, toUpper} from 'lodash-es';
 
-export function getTaskAndGroupIdsFromUrl(url) {
+export function getTaskIdFromUrl(url) {
   const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)(?:\/|\?|$)/;
   const match = url.match(pattern);
 
   if (match && match[1] && match[2]) {
     return {
-      groupId: match[1],
       taskId: match[2],
     };
   }
@@ -462,20 +461,6 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
     observer.disconnect();
     window.removeEventListener('focus', throttledCallBack);
   };
-}
-
-/**
- * Возвращает список стадий задачи из DOM-виджета переключения стадий
- * @returns {{ id: string, title: string, color: string }[]}
- */
-export function getStagesFromDom() {
-  const steps = document.querySelectorAll('.task-section-status-container-flex .task-section-status-step');
-
-  return [...steps].map((el) => ({
-    id: el.dataset.stageid,
-    title: el.title,
-    color: el.style.borderBottomColor,
-  }));
 }
 
 /**

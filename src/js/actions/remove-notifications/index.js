@@ -1,8 +1,8 @@
 import BitrixApi from '../../BitrixApi.js';
-import {getTaskAndGroupIdsFromUrl} from '../../utils.js';
+import {getTaskIdFromUrl} from '../../utils.js';
 
 export function removeNotifications(sessionId) {
-  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const buttonContainer = document.querySelector('.task-detail-extra-right');

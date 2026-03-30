@@ -1,9 +1,9 @@
-import {getTaskAndGroupIdsFromUrl, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
 
 export function tagAllColor(color) {
   if (!validateHexColor(color)) return;
 
-  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const className = 'tag-all-highlight';

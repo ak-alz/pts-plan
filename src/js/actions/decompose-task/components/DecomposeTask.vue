@@ -23,10 +23,6 @@ const props = defineProps({
     type: String,
     default: '',
   },
-  groupId: {
-    type: String,
-    required: true,
-  },
   taskId: {
     type: String,
     required: true,
@@ -35,8 +31,21 @@ const props = defineProps({
 
 const emits = defineEmits(['success']);
 
+async function resolveGroupId(url, sessionId, taskId) {
+  if (!url.includes('/company/personal/user/')) {
+    const match = url.match(/\/(\d+)\/tasks\/task\/view\/\d+/);
+    if (match?.[1]) return match[1];
+  }
+  const api = new BitrixApi(sessionId);
+  const { data } = await api.getTask(taskId);
+  const id = String(data?.result?.task?.groupId ?? '');
+  return id && id !== '0' ? id : null;
+}
+
 const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
+
+const groupId = ref('');
 
 const users = ref([]);
 const stages = ref([]);
@@ -44,7 +53,7 @@ const isLoading = ref(false);
 const progress = ref(null);
 
 const settings = ref({});
-const settingsStorageKey = computed(() => `decompose-task-settings-${props.groupId}`);
+const settingsStorageKey = computed(() => `decompose-task-settings-${groupId.value}`);
 const isSettingsModalOpened = ref(false);
 
 let rowIdCounter = 0;
@@ -95,7 +104,7 @@ async function submit() {
       CREATED_BY: props.userId,
       RESPONSIBLE_ID: row.responsibleId,
       AUDITORS: row.auditorIds,
-      GROUP_ID: props.groupId,
+      GROUP_ID: groupId.value,
       PARENT_ID: props.taskId,
       STAGE_ID: row.stageId || 0,
     })));
@@ -126,10 +135,14 @@ async function fetchData() {
   isLoading.value = true;
 
   try {
+    const resolved = await resolveGroupId(window.location.href, props.sessionId, props.taskId);
+    if (!resolved) throw new Error('Не удалось определить группу задачи');
+    groupId.value = resolved;
+
     await loadSettings();
     const [groupUsers, stagesResponse] = await Promise.all([
-      bitrixApi.getGroupUsers(props.groupId),
-      bitrixApi.getStages(props.groupId),
+      bitrixApi.getGroupUsers(groupId.value),
+      bitrixApi.getStages(groupId.value),
     ]);
 
     users.value = groupUsers.map((u) => ({

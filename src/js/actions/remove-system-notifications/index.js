@@ -1,5 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
-import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 export function removeSystemNotifications(sessionId, {dedupe = false, removeNew = false, removeReactions = false} = {}) {
   const bitrixApi = new BitrixApi(sessionId);
@@ -46,7 +46,7 @@ export function removeSystemNotifications(sessionId, {dedupe = false, removeNew 
             if (systemIds.includes(id)) continue;
 
             const taskLink = notification.querySelector('a[href*="/tasks/task/view/"]');
-            const ids = getTaskAndGroupIdsFromUrl(taskLink?.getAttribute('href') ?? '');
+            const ids = getTaskIdFromUrl(taskLink?.getAttribute('href') ?? '');
             if (!ids) continue;
 
             const {taskId} = ids;

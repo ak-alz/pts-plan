@@ -21,10 +21,6 @@ defineProps({
     type: String,
     default: '',
   },
-  groupId: {
-    type: String,
-    required: true,
-  },
   taskId: {
     type: String,
     required: true,
@@ -54,7 +50,6 @@ const modalOpened = ref(false);
       :user-id
       :responsive-id
       :task-title
-      :group-id
       :task-id
       @success="modalOpened = false"
     />

@@ -1,7 +1,7 @@
 {
   "name": "pts-plan",
   "displayName": "Pixel Plan Injection",
-  "version": "2.4.2",
+  "version": "2.5.0",
   "description": "Расширение функционала сайта plan.pixelplus.ru",
   "keywords": [
     "chrome-extension",
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@primeuix/themes": "^2.0.3",
-    "axios": "^1.13.6",
+    "axios": "^1.14.0",
     "chart.js": "^4.5.1",
     "dayjs": "^1.11.20",
     "lodash-es": "^4.17.23",

@@ -1,4 +1,4 @@
-import { getTaskAndGroupIdsFromUrl } from '../../utils.js';
+import { getTaskIdFromUrl } from '../../utils.js';
 
 (() => {
   function replaceLastTaskIdInTitle(title, taskId) {
@@ -25,7 +25,7 @@ import { getTaskAndGroupIdsFromUrl } from '../../utils.js';
   }
 
   async function init() {
-    const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+    const ids = getTaskIdFromUrl(window.location.href);
     if (!ids?.taskId) return;
 
     const titleBlock = document.querySelector('.ui-toolbar-title-item-box');

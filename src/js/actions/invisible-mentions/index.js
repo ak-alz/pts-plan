@@ -1,7 +1,7 @@
-import {getTaskAndGroupIdsFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getTaskIdFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const auditorIds = [...document.querySelectorAll('.task-detail-sidebar-info-user-wrap[data-item-value]:not([data-item-value=""])')]

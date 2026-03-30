@@ -1,7 +1,7 @@
-import {getGroupIdFromUrl, getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getGroupIdFromUrl, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.href);
   const groupId = getGroupIdFromUrl(window.location.href);
   if (!groupId && !ids?.taskId) return;
 

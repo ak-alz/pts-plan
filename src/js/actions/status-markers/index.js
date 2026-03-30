@@ -1,7 +1,7 @@
-import {getTaskAndGroupIdsFromUrl, insertCSS, rehydrateOnChanges} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const statusContainer = document.querySelector('.task-section-status-container-flex');

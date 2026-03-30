@@ -4,6 +4,8 @@ export const optionTypes = {
   TEXT: 'text',
   NUMBER: 'number',
   COLOR: 'color',
+  SELECT: 'select',
+  RADIO: 'radio',
 };
 
 export default [
@@ -159,6 +161,16 @@ export default [
     },
   },
   {
+    key: 'editTaskTitle',
+    name: 'Редактирование заголовка задачи',
+    tip: 'Позволяет кликнуть на заголовок задачи и сразу переименовать её, без перехода в режим редактирования',
+    new: true,
+    action: async ({sessionId}) => {
+      const {editTaskTitle} = await import('/src/js/actions/edit-task-title');
+      editTaskTitle(sessionId);
+    },
+  },
+  {
     key: 'commitButton',
     name: 'Кнопка названия коммита',
     tip: 'Добавляет кнопку, которая генерирует готовое название коммита из заголовка задачи',
@@ -177,11 +189,22 @@ export default [
   },
   {
     key: 'showComments',
-    name: 'Кнопка «Все комментарии»',
-    tip: 'Добавляет кнопку для загрузки всех комментариев в задаче',
-    action: () => {
-      import('/src/js/actions/show-comments');
+    name: 'Кнопка «Загрузить комментарии»',
+    tip: 'Добавляет кнопку для пакетной загрузки комментариев в задаче без перезагрузки страницы',
+    action: async ({ options }) => {
+      const { showComments } = await import('/src/js/actions/show-comments');
+      showComments(options.showCommentsCount);
     },
+    options: [
+      {
+        key: 'showCommentsCount',
+        name: 'Количество комментариев',
+        tip: 'Сколько комментариев загружать за один раз. Округляется до кратного 10, так как Bitrix загружает по 10 штук за запрос.',
+        type: optionTypes.NUMBER,
+        default: 50,
+        width: '80px',
+      },
+    ],
   },
   {
     key: 'removeNotifications',
@@ -298,9 +321,21 @@ export default [
   {
     key: 'showCats',
     name: 'Баннер с котами',
-    tip: 'Добавляет баннер с котами в боковое меню (работает с VPN, 10 случайных фото меняются каждые 6 минут)',
-    action: () => {
-      import('/src/js/actions/show-cats');
+    tip: 'Добавляет баннер с котами в боковое меню (10 случайных фото меняются каждые 6 минут)',
+    action: async ({options}) => {
+      const {showCats} = await import('/src/js/actions/show-cats');
+      showCats(options);
     },
+    options: [
+      {
+        key: 'showCatsProvider',
+        type: optionTypes.RADIO,
+        default: 'thecatapi',
+        choices: [
+          {label: 'The Cat API (нужен VPN)', value: 'thecatapi'},
+          {label: 'Cat as a service (нужен VPN)', value: 'cataas'},
+        ],
+      },
+    ],
   },
 ];

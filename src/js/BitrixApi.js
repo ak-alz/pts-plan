@@ -17,10 +17,6 @@ export default class BitrixApi {
     });
   }
 
-  static getTaskCommentsUrl(groupId, taskId) {
-    return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/?MID=1`;
-  }
-
   static getUserNotifications(taskId) {
     const request = taskId
       ? axios.postForm('/alert/', {
@@ -174,10 +170,9 @@ export default class BitrixApi {
   }
 
   getTask(taskId) {
-    return axios.postForm('/rest/tasks.task.get.json', {
-      sessid: this.sessionId,
-      taskId,
-    });
+    const params = new URLSearchParams({ sessid: this.sessionId, taskId });
+    params.append('select[]', 'GROUP_ID');
+    return axios.post('/rest/tasks.task.get.json', params);
   }
 
   removeNotifications(ids) {
@@ -185,5 +180,21 @@ export default class BitrixApi {
       sessid: this.sessionId,
       id: ids,
     });
+  }
+
+  /**
+   * Обновляет поля задачи (tasks.task.update).
+   * @param {string|number} taskId
+   * @param {Record<string, any>} fields — объект с полями задачи, например { TITLE: 'Новое название' }
+   */
+  updateTask(taskId, fields) {
+    const params = new URLSearchParams({
+      sessid: this.sessionId,
+      taskId,
+    });
+    Object.entries(fields).forEach(([key, value]) => {
+      params.set(`fields[${key}]`, value);
+    });
+    return axios.post('/rest/tasks.task.update.json', params);
   }
 }

@@ -1,7 +1,7 @@
-import {getTaskAndGroupIdsFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskAndGroupIdsFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   function autoChoiceUser() {

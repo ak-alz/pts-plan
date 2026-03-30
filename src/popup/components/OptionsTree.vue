@@ -1,5 +1,5 @@
 <script setup>
-import { Checkbox, InputNumber, InputText } from 'primevue';
+import { Checkbox, InputNumber, InputText, RadioButton, Select } from 'primevue';
 import { computed } from 'vue';
 
 import { optionTypes } from '../../js/options.js';
@@ -38,19 +38,43 @@ const style = computed(() => {
     class="flex gap-1 flex-col"
     :style
   >
-    <div class="flex gap-1 items-center">
+    <div
+      v-if="option.type === optionTypes.RADIO"
+      class="flex gap-2 flex-wrap"
+    >
+      <div
+        v-for="choice in option.choices"
+        :key="choice.value"
+        class="flex gap-1 items-center"
+      >
+        <RadioButton
+          v-model="model[option.key]"
+          :input-id="`option_${option.key}_${choice.value}`"
+          :value="choice.value"
+          size="small"
+        />
+        <label
+          class="cursor-pointer"
+          :for="`option_${option.key}_${choice.value}`"
+        >{{ choice.label }}</label>
+      </div>
+    </div>
+    <div
+      v-else
+      class="flex gap-1 items-center"
+    >
       <InputText
         v-if="option.type === optionTypes.TEXT"
         :id="`option_${option.key}`"
         v-model="model[option.key]"
-        class="w-[180px]"
+        :style="{ width: option.width ?? '180px' }"
         size="small"
         :disabled="typeof option.disabled === 'function' ? option.disabled(model) : !!option.disabled"
       />
       <InputNumber
         v-else-if="option.type === optionTypes.NUMBER"
         v-model="model[option.key]"
-        input-class="w-[180px]"
+        :input-style="{ width: option.width ?? '180px' }"
         :input-id="`option_${option.key}`"
         size="small"
         :use-grouping="false"
@@ -75,6 +99,15 @@ const style = computed(() => {
           />
         </template>
       </ColorPicker>
+      <Select
+        v-else-if="option.type === optionTypes.SELECT"
+        v-model="model[option.key]"
+        :options="option.choices"
+        option-label="label"
+        option-value="value"
+        size="small"
+        fluid
+      />
       <Checkbox
         v-else
         v-model="model[option.key]"
