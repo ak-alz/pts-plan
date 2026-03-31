@@ -1,5 +1,5 @@
 <script setup>
-import { Avatar, Badge, Button, Column, DataTable, Dialog, MultiSelect, Select,Textarea } from 'primevue';
+import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, MultiSelect, Select, Textarea } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
@@ -37,7 +37,7 @@ async function resolveGroupId(url, sessionId, taskId) {
     if (match?.[1]) return match[1];
   }
   const api = new BitrixApi(sessionId);
-  const { data } = await api.getTask(taskId);
+  const { data } = await api.getTask(taskId, ['GROUP_ID']);
   const id = String(data?.result?.task?.groupId ?? '');
   return id && id !== '0' ? id : null;
 }
@@ -55,17 +55,28 @@ const progress = ref(null);
 const settings = ref({});
 const settingsStorageKey = computed(() => `decompose-task-settings-${groupId.value}`);
 const isSettingsModalOpened = ref(false);
+const parentAuditorIds = ref([]);
+const defaultAuditors = computed(() => settings.value.defaultAuditors ?? 'inherit');
 
 let rowIdCounter = 0;
+
+function onCopyContentChange(row) {
+  if (row.copyContent) row.description = '';
+}
 
 function createRow() {
   return {
     _id: rowIdCounter++,
     title: props.taskTitle,
     description: '',
+    copyContent: settings.value.copyContentDefault ?? false,
     responsibleId: !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit' ? props.responsiveId : props.userId,
     stageId: settings.value.defaultStageId ?? null,
-    auditorIds: settings.value.allAuditorsDefault ? users.value.map((u) => u.id) : [props.userId],
+    auditorIds: defaultAuditors.value === 'all'
+      ? users.value.map((u) => u.id)
+      : defaultAuditors.value === 'inherit'
+        ? [...parentAuditorIds.value]
+        : [props.userId],
   };
 }
 
@@ -98,9 +109,16 @@ async function submit() {
 
   try {
     progress.value = 0;
+
+    let parentDescription = '';
+    if (rows.value.some((r) => r.copyContent)) {
+      const { data } = await bitrixApi.getTask(props.taskId, ['DESCRIPTION']);
+      parentDescription = data?.result?.task?.description ?? '';
+    }
+
     await bitrixApi.addTasksBatch(rows.value.map((row) => ({
       TITLE: row.title,
-      DESCRIPTION: row.description,
+      DESCRIPTION: row.copyContent ? parentDescription : row.description,
       CREATED_BY: props.userId,
       RESPONSIBLE_ID: row.responsibleId,
       AUDITORS: row.auditorIds,
@@ -144,6 +162,11 @@ async function fetchData() {
       bitrixApi.getGroupUsers(groupId.value),
       bitrixApi.getStages(groupId.value),
     ]);
+
+    if (defaultAuditors.value === 'inherit') {
+      const { data } = await bitrixApi.getTask(props.taskId, ['AUDITORS']);
+      parentAuditorIds.value = (data?.result?.task?.auditors ?? []).map(Number);
+    }
 
     users.value = groupUsers.map((u) => ({
       id: Number(u.ID),
@@ -226,21 +249,40 @@ onMounted(() => {
         header="Описание"
       >
         <template #body="{ data: row }">
-          <Textarea
-            v-model="row.description"
-            fluid
-            rows="2"
-            cols="20"
-            :pt="{
-              root: {
-                style: {
-                  minHeight: '35px',
-                  resize: 'vertical',
-                  display: 'block',
+          <div class="flex flex-col gap-1">
+            <div class="flex gap-1 items-center">
+              <Checkbox
+                v-model="row.copyContent"
+                binary
+                :input-id="`copy-content-${row._id}`"
+                @change="onCopyContentChange(row)"
+              />
+              <label
+                :for="`copy-content-${row._id}`"
+                class="text-sm cursor-pointer select-none"
+              >Скопировать описание</label>
+              <i
+                class="pi pi-question-circle"
+                v-tooltip.top="'Файловые вложения не копируются'"
+              />
+            </div>
+            <Textarea
+              v-if="!row.copyContent"
+              v-model="row.description"
+              fluid
+              rows="2"
+              cols="20"
+              :pt="{
+                root: {
+                  style: {
+                    minHeight: '35px',
+                    resize: 'vertical',
+                    display: 'block',
+                  }
                 }
-              }
-            }"
-          />
+              }"
+            />
+          </div>
         </template>
       </Column>
 

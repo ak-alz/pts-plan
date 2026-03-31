@@ -312,11 +312,35 @@ export default [
   {
     key: 'openInNewTab',
     name: 'Действия в новой вкладке',
-    tip: 'При нажатии «Редактировать» у задачи открывает её в новой вкладке. В канбане кнопка «Создать задачу» также открывается в новой вкладке.',
-    new: true,
-    action: () => {
-      import('/src/js/actions/open-in-new-tab');
+    tip: 'Открывает выбранные действия с задачами в новой вкладке.',
+    action: async ({options}) => {
+      const {openInNewTab} = await import('/src/js/actions/open-in-new-tab');
+      openInNewTab(options);
     },
+    options: [
+      {
+        key: 'openInNewTabCreate',
+        name: 'Создать задачу',
+        tip: 'В канбане кнопка «Создать задачу» открывает форму в новой вкладке.',
+        default: true,
+      },
+      {
+        key: 'openInNewTabEdit',
+        name: 'Редактировать задачу',
+        tip: 'При нажатии «Редактировать» задача открывается в новой вкладке.',
+        default: true,
+      },
+      {
+        key: 'openInNewTabCopy',
+        name: 'Копировать задачу',
+        tip: 'Копирование задачи открывается в новой вкладке.',
+      },
+      {
+        key: 'openInNewTabSubtask',
+        name: 'Добавить подзадачу',
+        tip: 'Создание подзадачи открывается в новой вкладке.',
+      },
+    ],
   },
   {
     key: 'showCats',

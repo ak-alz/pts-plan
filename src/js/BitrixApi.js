@@ -169,9 +169,9 @@ export default class BitrixApi {
     });
   }
 
-  getTask(taskId) {
+  getTask(taskId, select = []) {
     const params = new URLSearchParams({ sessid: this.sessionId, taskId });
-    params.append('select[]', 'GROUP_ID');
+    select.forEach((field) => params.append('select[]', field));
     return axios.post('/rest/tasks.task.get.json', params);
   }
 

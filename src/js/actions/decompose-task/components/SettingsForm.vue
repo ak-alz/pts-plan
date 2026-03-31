@@ -32,8 +32,9 @@ const isLoading = ref(false);
 const form = reactive({
   defaultStageId: props.initial.defaultStageId ?? null,
   defaultResponsible: props.initial.defaultResponsible ?? 'inherit',
-  allAuditorsDefault: props.initial.allAuditorsDefault ?? false,
+  defaultAuditors: props.initial.defaultAuditors ?? 'inherit',
   description: props.initial.description ?? false,
+  copyContentDefault: props.initial.copyContentDefault ?? false,
 });
 
 async function saveSettings() {
@@ -69,6 +70,17 @@ const responsibleOptions = [
     value: 'user',
   },
 ];
+
+const auditorOptions = [
+  {
+    label: 'Наследовать',
+    value: 'inherit',
+  },
+  {
+    label: 'Все',
+    value: 'all',
+  },
+];
 </script>
 
 <template>
@@ -80,7 +92,6 @@ const responsibleOptions = [
     <FormField
       id="dt_default_stage"
       label="Стадия по умолчанию"
-      tip="Будет автоматически выбрана при добавлении новой строки"
     >
       <Select
         v-model="form.defaultStageId"
@@ -116,14 +127,21 @@ const responsibleOptions = [
       />
     </FormField>
 
-    <div class="flex gap-1 items-center">
-      <Checkbox
-        v-model="form.allAuditorsDefault"
-        binary
-        input-id="dt_all_auditors_default"
+    <FormField
+      id="dt_default_auditors"
+      label="Наблюдатели по умолчанию"
+    >
+      <Select
+        v-model="form.defaultAuditors"
+        option-value="value"
+        option-label="label"
+        :options="auditorOptions"
+        show-clear
+        fluid
+        input-id="dt_default_auditors"
+        placeholder="Вы"
       />
-      <label for="dt_all_auditors_default">Все участники группы как наблюдатели</label>
-    </div>
+    </FormField>
 
     <div class="flex gap-1 items-center">
       <Checkbox
@@ -132,6 +150,19 @@ const responsibleOptions = [
         input-id="dt_all_description_default"
       />
       <label for="dt_all_description_default">Выводить поле «Описание»</label>
+    </div>
+
+    <div class="flex gap-1 items-center">
+      <Checkbox
+        v-model="form.copyContentDefault"
+        binary
+        input-id="dt_copy_content_default"
+      />
+      <label for="dt_copy_content_default">Скопировать описание по умолчанию</label>
+      <i
+        v-tooltip.top="'Файловые вложения не копируются'"
+        class="pi pi-question-circle"
+      />
     </div>
 
     <Button
