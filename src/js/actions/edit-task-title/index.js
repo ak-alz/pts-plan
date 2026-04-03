@@ -15,9 +15,8 @@ export async function editTaskTitle(sessionId) {
     }
     .ui-toolbar-title-item[contenteditable="true"] {
       outline: none;
-      border-bottom: 2px solid #6366f1;
+      box-shadow: 0 2px 0 0 #6366f1;
       min-width: 60px;
-      white-space: nowrap;
     }
     .ui-toolbar-title-item[data-saving="true"] {
       opacity: 0.6;
