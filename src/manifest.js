@@ -26,7 +26,10 @@ export default defineManifest({
   content_scripts: [
     {
       all_frames: true,
-      matches: ['https://plan.pixelplus.ru/*'],
+      matches: [
+        'https://plan.pixelplus.ru/*',
+        'https://*.bitrix24.ru/*',
+      ],
       js: ['src/content-scripts/isolated.js'],
       type: 'module',
       world: 'ISOLATED',
@@ -39,7 +42,10 @@ export default defineManifest({
         'assets/*',
         'img/logo.png',
       ],
-      matches: ['https://plan.pixelplus.ru/*'],
+      matches: [
+        'https://plan.pixelplus.ru/*',
+        'https://*.bitrix24.ru/*',
+      ],
     },
   ],
   permissions: [
@@ -48,5 +54,8 @@ export default defineManifest({
   ],
   host_permissions: isDev
     ? ['http://*/*', 'https://*/*']
-    : ['https://plan.pixelplus.ru/*'],
+    : [
+        'https://plan.pixelplus.ru/*',
+        'https://*.bitrix24.ru/*',
+      ],
 });

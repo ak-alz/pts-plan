@@ -6,6 +6,17 @@ function images(glob) {
 
 export default [
   {
+    version: '2.6',
+    date: '2026-04-06',
+    items: [
+      {
+        type: 'new',
+        text: 'История спринта: новая кнопка «История» в канбане — показывает завершённые задачи за выбранный период с фильтром по исполнителю и сортировкой по баллам',
+      },
+    ],
+    images: images(import.meta.glob('../assets/whats-new/2.6/*', {eager: true, import: 'default'})),
+  },
+  {
     version: '2.5.2',
     date: '2026-04-03',
     items: [

@@ -6,26 +6,26 @@ import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
 import { getGroupIdFromUrl } from '../../utils.js';
-import ScrumSummaryApp from './ScrumSummaryApp.vue';
+import SprintHistoryApp from './SprintHistoryApp.vue';
 
-export function scrumSummary(sessionId) {
+export function sprintHistory(sessionId) {
   const groupId = getGroupIdFromUrl(window.location.href);
   if (!groupId) return;
 
   const buttonsContainer = document.querySelector('.ui-actions-bar__buttons');
   if (!buttonsContainer) return;
 
-  const initialized = !!buttonsContainer.querySelector('.js-scrum-summary');
+  const initialized = !!buttonsContainer.querySelector('.js-sprint-history');
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-scrum-summary',
-    style: 'order: 3;',
+    className: 'js-sprint-history',
+    style: 'order: 2;',
   });
 
   buttonsContainer.appendChild(appContainer);
 
-  const app = createApp(ScrumSummaryApp, {
+  const app = createApp(SprintHistoryApp, {
     sessionId,
     groupId,
   });

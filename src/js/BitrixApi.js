@@ -197,4 +197,70 @@ export default class BitrixApi {
     });
     return axios.post('/rest/tasks.task.update.json', params);
   }
+
+  /**
+   * Возвращает все завершённые задачи группы за указанный диапазон дат (по CLOSED_DATE).
+   * Первый запрос получает total, остальные страницы загружаются batch-ем.
+   * @param {string} groupId
+   * @param {string} dateFrom — формат 'YYYY-MM-DD HH:mm:ss'
+   * @param {string} dateTo — формат 'YYYY-MM-DD HH:mm:ss'
+   * @return {Promise<any[]>}
+   */
+  async getClosedTasks(groupId, dateFrom, dateTo) {
+    const PAGE_SIZE = 50;
+    const BATCH_SIZE = 50;
+
+    function buildParams(start) {
+      const params = new URLSearchParams({
+        'filter[GROUP_ID]': groupId,
+        'filter[STATUS]': 5,
+        'filter[>=CLOSED_DATE]': dateFrom,
+        'filter[<=CLOSED_DATE]': dateTo,
+        start,
+      });
+      ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CLOSED_DATE'].forEach((f) => params.append('select[]', f));
+      return params;
+    }
+
+    // Первая страница — получаем задачи и total
+    const firstParams = buildParams(0);
+    firstParams.set('sessid', this.sessionId);
+    const { data: firstData } = await axios.post('/rest/tasks.task.list.json', firstParams);
+    const firstTasks = firstData?.result?.tasks ?? [];
+    const total = firstData?.total ?? 0;
+
+    if (total <= PAGE_SIZE) return firstTasks;
+
+    // Оставшиеся страницы batch-ем
+    const remainingStarts = [];
+    for (let start = PAGE_SIZE; start < total; start += PAGE_SIZE) {
+      remainingStarts.push(start);
+    }
+
+    const chunks = [];
+    for (let i = 0; i < remainingStarts.length; i += BATCH_SIZE) {
+      chunks.push(remainingStarts.slice(i, i + BATCH_SIZE));
+    }
+
+    const batchResponses = await Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((start) => {
+        cmd[`p${start}`] = `tasks.task.list?${buildParams(start).toString()}`;
+      });
+      return axios.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      });
+    }));
+
+    const allTasks = [...firstTasks];
+    batchResponses.forEach((response) => {
+      Object.values(response.data.result.result).forEach((pageResult) => {
+        allTasks.push(...(pageResult.tasks ?? []));
+      });
+    });
+
+    return allTasks;
+  }
 }

@@ -140,6 +140,16 @@ export default [
     },
   },
   {
+    key: 'sprintHistory',
+    name: 'История спринта',
+    tip: 'Добавляет кнопку для просмотра завершённых задач за произвольный период с фильтром по исполнителю и сортировкой по баллам',
+    new: true,
+    action: async ({sessionId}) => {
+      const {sprintHistory} = await import('/src/js/actions/sprint-history');
+      sprintHistory(sessionId);
+    },
+  },
+  {
     key: 'scrumSummary',
     name: 'Сводка спринтов',
     tip: 'Показывает итоги по завершённым спринтам в канбане',
