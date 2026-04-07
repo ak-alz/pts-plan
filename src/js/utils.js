@@ -47,7 +47,7 @@ export function simplifyColumnName(columnName) {
 }
 
 export function getTaskPointsFromName(taskName) {
-  const parts = taskName.split('|');
+  const parts = taskName.split(/[|I]/); // | или I (большая буква I как разделитель)
   const lastPart = parts[parts.length - 1].trim();
   const match = lastPart.match(/^(\d+)\+?$/);
   if (match) {

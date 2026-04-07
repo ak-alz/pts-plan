@@ -6,6 +6,17 @@ function images(glob) {
 
 export default [
   {
+    version: '2.6.1',
+    date: '2026-04-07',
+    items: [
+      {
+        type: 'fix',
+        text: 'Скрам-баллы: исправлена обработка разделителя — теперь поддерживается как «|», так и «I» (большая буква I)',
+      },
+    ],
+    images: [],
+  },
+  {
     version: '2.6',
     date: '2026-04-06',
     items: [
