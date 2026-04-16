@@ -199,6 +199,86 @@ export default class BitrixApi {
   }
 
   /**
+   * Поиск задач по фильтрам с постраничной загрузкой через batch.
+   * @param {Object} params
+   * @param {string|null} params.title - поиск по названию (LIKE)
+   * @param {'active'|'closed'|null} params.status - 'active' = не завершённые, 'closed' = завершённые, null = все
+   * @param {string|null} params.groupId - ID группы (null = глобальный поиск)
+   * @param {string|number|null} params.createdBy - ID постановщика
+   * @param {string|number|null} params.responsibleId - ID исполнителя
+   * @param {string|null} params.createdDateFrom - дата создания от ('YYYY-MM-DD HH:mm:ss')
+   * @param {string|null} params.createdDateTo - дата создания до
+   * @param {string|null} params.changedDateFrom - дата изменения от
+   * @param {string|null} params.changedDateTo - дата изменения до
+   * @return {Promise<any[]>}
+   */
+  async searchTasks({ title, status, groupId, createdBy, responsibleId, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
+    const PAGE_SIZE = 50;
+    const BATCH_SIZE = 50;
+
+    const filter = {};
+    if (title) filter['%TITLE'] = title;
+    if (status === 'active') filter['!STATUS'] = 5;
+    if (status === 'closed') filter['STATUS'] = 5;
+    if (groupId) filter['GROUP_ID'] = groupId;
+    if (createdBy) filter['CREATED_BY'] = createdBy;
+    if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
+    if (createdDateFrom) filter['>=CREATED_DATE'] = createdDateFrom;
+    if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
+    if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
+    if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
+
+    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'GROUP_ID'];
+
+    const buildParams = (start) => {
+      const params = new URLSearchParams({ start });
+      Object.entries(filter).forEach(([key, value]) => {
+        params.set(`filter[${key}]`, value);
+      });
+      selectFields.forEach((f) => params.append('select[]', f));
+      return params;
+    };
+
+    const firstParams = buildParams(0);
+    firstParams.set('sessid', this.sessionId);
+    const { data: firstData } = await axios.post('/rest/tasks.task.list.json', firstParams);
+    const tasks = firstData?.result?.tasks ?? [];
+    const total = firstData?.total ?? 0;
+
+    if (total > PAGE_SIZE) {
+      const remainingStarts = [];
+      for (let start = PAGE_SIZE; start < total; start += PAGE_SIZE) {
+        remainingStarts.push(start);
+      }
+
+      const chunks = [];
+      for (let i = 0; i < remainingStarts.length; i += BATCH_SIZE) {
+        chunks.push(remainingStarts.slice(i, i + BATCH_SIZE));
+      }
+
+      const batchResponses = await Promise.all(chunks.map((chunk) => {
+        const cmd = {};
+        chunk.forEach((start) => {
+          cmd[`p${start}`] = `tasks.task.list?${buildParams(start).toString()}`;
+        });
+        return axios.postForm('/rest/batch.json', {
+          sessid: this.sessionId,
+          halt: false,
+          cmd,
+        });
+      }));
+
+      batchResponses.forEach((response) => {
+        Object.values(response.data.result.result).forEach((pageResult) => {
+          tasks.push(...(pageResult.tasks ?? []));
+        });
+      });
+    }
+
+    return tasks;
+  }
+
+  /**
    * Возвращает все завершённые задачи группы за указанный диапазон дат (по CLOSED_DATE).
    * Первый запрос получает total, остальные страницы загружаются batch-ем.
    * @param {string} groupId

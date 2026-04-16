@@ -1,5 +1,9 @@
 import {throttle, toUpper} from 'lodash-es';
 
+export function getTaskUrl(groupId, taskId) {
+  return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/`;
+}
+
 export function getTaskIdFromUrl(url) {
   const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)(?:\/|\?|$)/;
   const match = url.match(pattern);

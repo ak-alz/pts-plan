@@ -6,7 +6,7 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, provide, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
-import {getTaskPointsFromName, pluralize, simplifyColumnName} from '../../../utils.js';
+import {getTaskPointsFromName, getTaskUrl, pluralize, simplifyColumnName} from '../../../utils.js';
 import { defaultSortColumn } from '../variables.js';
 import ColumnTable from './ColumnTable.vue';
 import CompleteTasksTable from './CompleteTasksTable.vue';
@@ -136,7 +136,7 @@ async function fetchData() {
         usersMap[responsible.id].columns[stageId].tasks.push({
           id: task.id,
           name: task.title,
-          url: `/workgroups/group/${props.groupId}/tasks/task/view/${task.id}/`,
+          url: getTaskUrl(props.groupId, task.id),
           dateUpdated: dayjs(task.activityDate).unix(),
           formattedDateUpdated: dayjs(task.activityDate).format('DD.MM.YYYY HH:mm:ss'),
           points,

@@ -130,6 +130,16 @@ export default [
     ],
   },
   {
+    key: 'taskSearch',
+    name: 'Поиск по задачам',
+    tip: 'Добавляет кнопку «Поиск» в канбане для поиска задач по названию, постановщику, исполнителю и датам',
+    new: true,
+    action: async ({sessionId}) => {
+      const {taskSearch} = await import('/src/js/actions/task-search');
+      taskSearch(sessionId);
+    },
+  },
+  {
     key: 'scrumPoints',
     name: 'Таблица баллов спринта',
     tip: 'Добавляет счётчик story points в канбан-доске.',

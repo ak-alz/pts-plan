@@ -5,7 +5,8 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
-import { getTaskPointsFromName } from '../../../utils.js';
+import FormField from '../../../ui/FormField.vue';
+import { getTaskPointsFromName, getTaskUrl } from '../../../utils.js';
 
 const props = defineProps({
   sessionId: {
@@ -94,10 +95,7 @@ onMounted(() => {
 <template>
   <div style="min-width: 640px;">
     <div class="flex gap-3 mb-4 items-end flex-wrap">
-      <div>
-        <div class="text-sm mb-1">
-          Период
-        </div>
+      <FormField label="Период">
         <DatePicker
           v-model="dateRange"
           selection-mode="range"
@@ -106,11 +104,8 @@ onMounted(() => {
           show-button-bar
           size="small"
         />
-      </div>
-      <div>
-        <div class="text-sm mb-1">
-          Исполнитель
-        </div>
+      </FormField>
+      <FormField label="Исполнитель">
         <Select
           v-model="selectedUserId"
           :options="users"
@@ -134,7 +129,7 @@ onMounted(() => {
             </div>
           </template>
         </Select>
-      </div>
+      </FormField>
       <Button
         label="Загрузить"
         :loading="isLoading"
@@ -170,7 +165,7 @@ onMounted(() => {
       <Column header="Задача">
         <template #body="{ data }">
           <a
-            :href="`/workgroups/group/${groupId}/tasks/task/view/${data.id}/`"
+            :href="getTaskUrl(groupId, data.id)"
             target="_top"
           >
             {{ data.title }}

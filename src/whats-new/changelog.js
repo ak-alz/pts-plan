@@ -6,6 +6,17 @@ function images(glob) {
 
 export default [
   {
+    version: '2.7',
+    date: '2026-04-16',
+    items: [
+      {
+        type: 'new',
+        text: 'Поиск по задачам: новая кнопка «Поиск» в канбане — ищет задачи по названию, постановщику, исполнителю, статусу и диапазонам дат создания/изменения. Сортировка и пагинация на фронте',
+      },
+    ],
+    images: images(import.meta.glob('../assets/whats-new/2.7/*', {eager: true, import: 'default'})),
+  },
+  {
     version: '2.6.1',
     date: '2026-04-07',
     items: [
