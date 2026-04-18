@@ -20,8 +20,9 @@ const modalOpened = ref(false);
 
 <template>
   <button
-    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round"
+    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round --with-left-icon --with-collapsed-icon pts-btn-task-search"
     type="button"
+    title="Поиск по задачам"
     @click="modalOpened = true"
   >
     Поиск

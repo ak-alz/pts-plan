@@ -1,7 +1,7 @@
 {
   "name": "pts-plan",
   "displayName": "Pixel Plan Injection",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Неофициальное расширение для улучшения интерфейса Bitrix24",
   "keywords": [
     "chrome-extension",
@@ -21,13 +21,13 @@
   },
   "dependencies": {
     "@primeuix/themes": "^2.0.3",
-    "axios": "^1.14.0",
+    "axios": "^1.15.0",
     "chart.js": "^4.5.1",
     "dayjs": "^1.11.20",
     "lodash-es": "^4.18.1",
     "primeicons": "^7.0.0",
     "primelocale": "^2.3.1",
-    "primevue": "^4.5.4",
+    "primevue": "^4.5.5",
     "vue": "^3.5.24",
     "vue-color": "^3.3.3"
   },
@@ -36,12 +36,12 @@
     "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.2.2",
     "@tailwindcss/vite": "^4.2.2",
-    "@vitejs/plugin-vue": "^6.0.5",
+    "@vitejs/plugin-vue": "^6.0.6",
     "chrome-types": "^0.1.425",
-    "eslint": "^10.2.0",
-    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint": "^10.2.1",
+    "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-vue": "^10.8.0",
-    "globals": "^17.4.0",
+    "globals": "^17.5.0",
     "tailwindcss": "^4.1.17",
     "tailwindcss-primeui": "^0.6.1",
     "vite": "^7.3.2"

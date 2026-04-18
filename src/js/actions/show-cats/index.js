@@ -17,7 +17,7 @@ const providers = {
 
       return data
         .filter((cat) => isValidAspectRatio(cat.width, cat.height))
-        .map((cat) => ({url: cat.url}));
+        .map((cat) => ({url: cat.url, fullUrl: cat.url}));
     },
   },
 
@@ -30,7 +30,10 @@ const providers = {
 
       return data
         .filter((cat) => cat.mimetype !== 'image/gif')
-        .map((cat) => ({url: `https://cataas.com/cat/${cat.id}?width=212`}));
+        .map((cat) => ({
+          url: `https://cataas.com/cat/${cat.id}?width=212`,
+          fullUrl: `https://cataas.com/cat/${cat.id}`,
+        }));
     },
   },
 };
@@ -56,7 +59,8 @@ export async function showCats(options) {
     alt: 'cats',
     title: 'Открыть в новой вкладке',
     onclick() {
-      this.src && window.open(this.src);
+      const target = this.dataset.fullUrl || this.src;
+      target && window.open(target);
     },
   });
 
@@ -71,6 +75,7 @@ export async function showCats(options) {
   function updateCat() {
     const cat = cats[catIndex % cats.length];
     catIndex += 1;
+    image.dataset.fullUrl = cat.fullUrl;
     image.src = cat.url;
   }
 
