@@ -1,7 +1,7 @@
 <script setup>
 import dayjs from 'dayjs';
 import { isEqual } from 'lodash-es';
-import { Avatar, Button, Column, DataTable, DatePicker, InputText, Select, ToggleSwitch } from 'primevue';
+import { Avatar, Badge, Button, Column, DataTable, DatePicker, InputText, MultiSelect, Select, ToggleSwitch } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, reactive, ref } from 'vue';
 
@@ -26,13 +26,22 @@ const STATUS_OPTIONS = [
   { label: 'Завершённые', value: 'closed' },
 ];
 
+const PARENT_TYPE_OPTIONS = [
+  { label: 'Все', value: 'all' },
+  { label: 'Корневые', value: 'root' },
+  { label: 'Подзадачи', value: 'subtask' },
+];
+
 function getDefaults() {
   return {
     title: '',
+    smartTitleSearch: true,
     status: 'active',
+    parentType: 'all',
     useGroupFilter: true,
     createdBy: null,
     responsibleId: null,
+    stageIds: [],
     createdDateRange: null,
     changedDateRange: null,
   };
@@ -45,8 +54,10 @@ const form = reactive(getDefaults());
 
 const isLoading = ref(false);
 const isUsersLoading = ref(false);
+const isStagesLoading = ref(false);
 const tasks = ref([]);
 const groupUsers = ref([]);
+const stages = ref([]);
 const hasSearched = ref(false);
 
 const userOptions = computed(() => groupUsers.value.map((u) => ({
@@ -55,14 +66,25 @@ const userOptions = computed(() => groupUsers.value.map((u) => ({
   avatar: u.PERSONAL_PHOTO ?? '',
 })));
 
+const stageMap = computed(() => Object.fromEntries(stages.value.map((s) => [String(s.id), s])));
+
 onMounted(async () => {
   isUsersLoading.value = true;
+  isStagesLoading.value = true;
   try {
-    groupUsers.value = await bitrixApi.getGroupUsers(props.groupId);
+    const [groupUsersResult, stagesResponse] = await Promise.all([
+      bitrixApi.getGroupUsers(props.groupId),
+      bitrixApi.getStages(props.groupId),
+    ]);
+    groupUsers.value = groupUsersResult;
+    stages.value = Object.values(stagesResponse.data?.result ?? {})
+      .sort((a, b) => a.SORT - b.SORT)
+      .map((s) => ({ id: s.ID, title: s.TITLE, color: `#${s.COLOR}` }));
   } catch (e) {
-    console.warn('[task-search] failed to load group users:', e);
+    console.warn('[task-search] failed to load filters data:', e);
   } finally {
     isUsersLoading.value = false;
+    isStagesLoading.value = false;
   }
 });
 
@@ -75,10 +97,13 @@ async function search() {
   try {
     tasks.value = await bitrixApi.searchTasks({
       title: form.title.trim() || null,
+      smartTitleSearch: form.smartTitleSearch,
       status: form.status,
+      parentType: form.parentType,
       groupId: form.useGroupFilter ? props.groupId : null,
       createdBy: form.createdBy,
       responsibleId: form.responsibleId,
+      stageIds: form.useGroupFilter ? form.stageIds : [],
       createdDateFrom: form.createdDateRange?.[0]
         ? dayjs(form.createdDateRange[0]).format('YYYY-MM-DD 00:00:00')
         : null,
@@ -113,7 +138,7 @@ function formatDate(dateStr) {
 
 <template>
   <div>
-    <div class="grid grid-cols-2 gap-3 mb-3">
+    <div class="grid grid-cols-3 gap-3 mb-3">
       <FormField label="Название">
         <InputText
           v-model="form.title"
@@ -127,6 +152,16 @@ function formatDate(dateStr) {
         <Select
           v-model="form.status"
           :options="STATUS_OPTIONS"
+          option-label="label"
+          option-value="value"
+          size="small"
+          class="w-full"
+        />
+      </FormField>
+      <FormField label="Тип задачи">
+        <Select
+          v-model="form.parentType"
+          :options="PARENT_TYPE_OPTIONS"
           option-label="label"
           option-value="value"
           size="small"
@@ -183,6 +218,32 @@ function formatDate(dateStr) {
           </template>
         </Select>
       </FormField>
+      <FormField
+        v-if="form.useGroupFilter"
+        label="Колонка канбана"
+      >
+        <MultiSelect
+          v-model="form.stageIds"
+          :options="stages"
+          option-label="title"
+          option-value="id"
+          placeholder="Любая"
+          filter
+          filter-placeholder="Поиск"
+          :max-selected-labels="3"
+          :loading="isStagesLoading"
+          show-clear
+          size="small"
+          class="w-full"
+        >
+          <template #option="{ option }">
+            <div class="flex gap-2 items-center">
+              <Badge :style="`background-color: ${option.color};`" />
+              {{ option.title }}
+            </div>
+          </template>
+        </MultiSelect>
+      </FormField>
       <FormField label="Дата создания">
         <DatePicker
           v-model="form.createdDateRange"
@@ -220,6 +281,21 @@ function formatDate(dateStr) {
           style="cursor: pointer;"
         >
           Только текущая группа
+        </label>
+      </div>
+      <div class="flex gap-2 items-center">
+        <ToggleSwitch
+          v-model="form.smartTitleSearch"
+          input-id="smart-title-toggle"
+          size="small"
+        />
+        <label
+          v-tooltip.top="'Разбивает запрос на слова: в названии задачи должно встретиться каждое слово, но порядок не важен'"
+          for="smart-title-toggle"
+          class="text-sm"
+          style="cursor: pointer;"
+        >
+          Искать по каждому слову
         </label>
       </div>
       <Button
@@ -279,6 +355,22 @@ function formatDate(dateStr) {
             {{ data.responsible?.name }}
           </a>
           <span v-else>{{ data.responsible?.name ?? '—' }}</span>
+        </template>
+      </Column>
+      <Column
+        field="stageId"
+        header="Колонка"
+        sortable
+        style="min-width: 140px;"
+      >
+        <template #body="{ data }">
+          <template v-if="stageMap[data.stageId]">
+            <div class="flex gap-2 items-center">
+              <Badge :style="`background-color: ${stageMap[data.stageId].color};`" />
+              {{ stageMap[data.stageId].title }}
+            </div>
+          </template>
+          <span v-else>—</span>
         </template>
       </Column>
       <Column

@@ -202,38 +202,64 @@ export default class BitrixApi {
    * Поиск задач по фильтрам с постраничной загрузкой через batch.
    * @param {Object} params
    * @param {string|null} params.title - поиск по названию (LIKE)
+   * @param {boolean} params.smartTitleSearch - разбивать title по пробелам и искать каждое слово через AND
    * @param {'active'|'closed'|null} params.status - 'active' = не завершённые, 'closed' = завершённые, null = все
+   * @param {'all'|'root'|'subtask'} params.parentType - 'root' = только корневые задачи, 'subtask' = только подзадачи, 'all' = все
    * @param {string|null} params.groupId - ID группы (null = глобальный поиск)
    * @param {string|number|null} params.createdBy - ID постановщика
    * @param {string|number|null} params.responsibleId - ID исполнителя
+   * @param {Array<string|number>|null} params.stageIds - ID колонок канбана (мультиселект)
    * @param {string|null} params.createdDateFrom - дата создания от ('YYYY-MM-DD HH:mm:ss')
    * @param {string|null} params.createdDateTo - дата создания до
    * @param {string|null} params.changedDateFrom - дата изменения от
    * @param {string|null} params.changedDateTo - дата изменения до
    * @return {Promise<any[]>}
    */
-  async searchTasks({ title, status, groupId, createdBy, responsibleId, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
+  async searchTasks({ title, smartTitleSearch, status, parentType, groupId, createdBy, responsibleId, stageIds, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
     const PAGE_SIZE = 50;
     const BATCH_SIZE = 50;
 
     const filter = {};
-    if (title) filter['%TITLE'] = title;
+    if (title) {
+      const words = smartTitleSearch ? title.trim().split(/\s+/).filter(Boolean) : [];
+      if (words.length > 1) {
+        filter['::LOGIC'] = 'AND';
+        words.forEach((word, i) => {
+          filter[`::SUBFILTER-w${i}`] = { '%TITLE': word };
+        });
+      } else {
+        filter['%TITLE'] = title;
+      }
+    }
     if (status === 'active') filter['!STATUS'] = 5;
     if (status === 'closed') filter['STATUS'] = 5;
+    if (parentType === 'root') filter['PARENT_ID'] = 0;
+    if (parentType === 'subtask') filter['!PARENT_ID'] = 0;
     if (groupId) filter['GROUP_ID'] = groupId;
     if (createdBy) filter['CREATED_BY'] = createdBy;
     if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
+    if (stageIds?.length) filter['STAGE_ID'] = stageIds;
     if (createdDateFrom) filter['>=CREATED_DATE'] = createdDateFrom;
     if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
     if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
     if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
 
-    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'GROUP_ID'];
+    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'GROUP_ID', 'STAGE_ID'];
+
+    const appendFilter = (params, keyPath, value) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => params.append(`${keyPath}[]`, v));
+      } else if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([k, v]) => appendFilter(params, `${keyPath}[${k}]`, v));
+      } else {
+        params.set(keyPath, value);
+      }
+    };
 
     const buildParams = (start) => {
       const params = new URLSearchParams({ start });
       Object.entries(filter).forEach(([key, value]) => {
-        params.set(`filter[${key}]`, value);
+        appendFilter(params, `filter[${key}]`, value);
       });
       selectFields.forEach((f) => params.append('select[]', f));
       return params;

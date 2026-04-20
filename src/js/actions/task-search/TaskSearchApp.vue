@@ -33,7 +33,7 @@ const modalOpened = ref(false);
     header="Поиск по задачам"
     dismissable-mask
     modal
-    style="width: 900px; max-width: 95vw;"
+    style="width: 1200px; max-width: 95vw;"
   >
     <TaskSearchMain
       :session-id
