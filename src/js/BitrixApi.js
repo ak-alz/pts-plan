@@ -42,6 +42,7 @@ export default class BitrixApi {
   /**
    * Batch-создание подзадач через tasks.task.add (до 50 задач на запрос).
    * STAGE_ID передаётся напрямую — отдельный moveStage не нужен.
+   * Команды именуются `t{globalIndex}`, чтобы вызывающий код мог сопоставить ответы с исходным массивом.
    * @param {Array<{TITLE, DESCRIPTION, CREATED_BY, RESPONSIBLE_ID, AUDITORS, GROUP_ID, PARENT_ID, STAGE_ID}>} tasks
    * @return {Promise<axios.AxiosResponse<any>[]>}
    */

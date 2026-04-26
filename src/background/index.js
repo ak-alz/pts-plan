@@ -1,3 +1,16 @@
+function compareVersions(a, b) {
+  const aParts = a.split('.').map((part) => parseInt(part, 10) || 0);
+  const bParts = b.split('.').map((part) => parseInt(part, 10) || 0);
+  const length = Math.max(aParts.length, bParts.length);
+
+  for (let i = 0; i < length; i++) {
+    const diff = (aParts[i] || 0) - (bParts[i] || 0);
+    if (diff !== 0) return diff;
+  }
+
+  return 0;
+}
+
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason !== 'update') return;
 
@@ -41,6 +54,17 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     if (needsSave) {
       await chrome.storage.local.set({options});
       notificationMessage = 'Устаревшие настройки удалены для оптимизации. Проверьте опции, если нужно.';
+    }
+  }
+
+  if (compareVersions(previousVersion, '2.7.4') < 0) {
+    const {options} = await chrome.storage.local.get(['options']);
+
+    if (options?.removeSystemNotifications) {
+      options.removeSystemNotificationsSystem = true;
+      options.removeSystemNotificationsChanges = true;
+      options.removeSystemNotificationsClosed = true;
+      await chrome.storage.local.set({options});
     }
   }
 

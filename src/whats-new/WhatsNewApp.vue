@@ -16,13 +16,13 @@ function formatDate(dateStr) {
 const badgeClasses = {
   new: 'bg-green-100 text-green-700',
   fix: 'bg-red-100 text-red-600',
-  improve: 'bg-blue-100 text-blue-700',
+  upd: 'bg-blue-100 text-blue-700',
 };
 
 const badgeLabels = {
   new: 'NEW',
   fix: 'FIX',
-  improve: 'UPD',
+  upd: 'UPD',
 };
 </script>
 

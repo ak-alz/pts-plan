@@ -1,7 +1,7 @@
 import BitrixApi from '../../BitrixApi.js';
 import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
-export function removeSystemNotifications(sessionId, {dedupe = false, removeNew = false, removeReactions = false} = {}) {
+export function removeSystemNotifications(sessionId, {dedupe = false, removeSystem = false, removeChanges = false, removeClosed = false, removeNew = false, removeReactions = false} = {}) {
   const bitrixApi = new BitrixApi(sessionId);
 
   function init() {
@@ -27,10 +27,11 @@ export function removeSystemNotifications(sessionId, {dedupe = false, removeNew 
         const systemIds = allNotifications
           .filter((notification) => {
             // Если вместо аватарки серый колокольчик (в новых версиях синяя системная иконка)
-            if (notification.querySelector('.bx-im-content-notification-item-avatar__system-icon')) return true;
+            if (removeSystem && notification.querySelector('.bx-im-content-notification-item-avatar__system-icon')) return true;
 
             const notificationText = notification.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent?.trim();
-            if (/^((Изменила?|Закрыла?) задачу|Изменена задача) \[#/.test(notificationText)) return true;
+            if (removeChanges && /^(Изменила? задачу|Изменена задача) \[#/.test(notificationText)) return true;
+            if (removeClosed && /^Закрыла? задачу \[#/.test(notificationText)) return true;
             if (removeNew && /^Добавила? новую задачу \[#/.test(notificationText)) return true;
             if (removeReactions && /^Отреагировала? на ваш комментарий/.test(notificationText)) return true;
 

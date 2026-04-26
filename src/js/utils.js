@@ -50,6 +50,20 @@ export function simplifyColumnName(columnName) {
   return toUpper(words.map((chunk) => chunk[0]).join(''));
 }
 
+export function getCommitMessage(title, taskId) {
+  if (!title || typeof title !== 'string') return `| ${taskId}`;
+
+  const trimmed = title.trimEnd();
+
+  // После последнего "|" может стоять блок баллов: число (с возможным "+"), "?", "-" или пусто
+  const regex = /\|\s*(\d+\+?|\?|-)?\s*$/;
+
+  if (regex.test(trimmed)) {
+    return trimmed.replace(regex, `| ${taskId}`);
+  }
+  return `${trimmed} | ${taskId}`;
+}
+
 export function getTaskPointsFromName(taskName) {
   const parts = taskName.split(/[|I/\\]/); // | или I (большая буква I как разделитель), а также / и \
   const lastPart = parts[parts.length - 1].trim();

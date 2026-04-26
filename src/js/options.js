@@ -238,17 +238,35 @@ export default [
   {
     key: 'removeSystemNotifications',
     name: 'Кнопка «Удалить системные уведомления»',
-    tip: 'Добавляет кнопку для удаления всех системных уведомлений. Например: все сообщения с серым колокольчиком; сообщения, которые начинаются на «Изменил(а) задачу» и на «Закрыл(а) задачу».',
+    tip: 'Добавляет кнопку для удаления системных уведомлений. Виды удаляемых уведомлений настраиваются галочками ниже.',
     new: true,
     action: async ({sessionId, options}) => {
       const {removeSystemNotifications} = await import('/src/js/actions/remove-system-notifications');
       removeSystemNotifications(sessionId, {
+        removeSystem: options.removeSystemNotificationsSystem,
+        removeChanges: options.removeSystemNotificationsChanges,
+        removeClosed: options.removeSystemNotificationsClosed,
         dedupe: options.removeSystemNotificationsDedupe,
         removeNew: options.removeSystemNotificationsNew,
         removeReactions: options.removeSystemNotificationsReactions,
       });
     },
     options: [
+      {
+        key: 'removeSystemNotificationsSystem',
+        name: 'Системная иконка',
+        tip: 'Удаляет уведомления, у которых вместо аватарки системная иконка (серый колокольчик).',
+      },
+      {
+        key: 'removeSystemNotificationsChanges',
+        name: 'Изменения задач',
+        tip: 'Удаляет уведомления вида «Изменил(а) задачу» и «Изменена задача».',
+      },
+      {
+        key: 'removeSystemNotificationsClosed',
+        name: 'Закрытия задач',
+        tip: 'Удаляет уведомления вида «Закрыл(а) задачу».',
+      },
       {
         key: 'removeSystemNotificationsDedupe',
         name: 'Дубли (!!!)',

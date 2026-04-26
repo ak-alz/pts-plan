@@ -35,6 +35,9 @@ const form = reactive({
   defaultAuditors: props.initial.defaultAuditors ?? 'inherit',
   description: props.initial.description ?? false,
   copyContentDefault: props.initial.copyContentDefault ?? false,
+  showCreatedTasks: props.initial.showCreatedTasks ?? false,
+  showCommitCheckbox: props.initial.showCommitCheckbox ?? false,
+  copyCommitDefault: props.initial.copyCommitDefault ?? false,
 });
 
 async function saveSettings() {
@@ -163,6 +166,37 @@ const auditorOptions = [
         v-tooltip.top="'Файловые вложения не копируются'"
         class="pi pi-question-circle"
       />
+    </div>
+
+    <div class="flex gap-1 items-center">
+      <Checkbox
+        v-model="form.showCreatedTasks"
+        binary
+        input-id="dt_show_created_tasks"
+      />
+      <label for="dt_show_created_tasks">Показывать список созданных задач</label>
+    </div>
+
+    <div class="flex gap-1 items-center">
+      <Checkbox
+        v-model="form.showCommitCheckbox"
+        binary
+        input-id="dt_show_commit_checkbox"
+      />
+      <label for="dt_show_commit_checkbox">Показывать «Копировать текст коммита»</label>
+      <i
+        v-tooltip.top="'Можно отметить только одну задачу — после создания текст коммита для неё попадёт в буфер обмена'"
+        class="pi pi-question-circle"
+      />
+    </div>
+
+    <div class="flex gap-1 items-center">
+      <Checkbox
+        v-model="form.copyCommitDefault"
+        binary
+        input-id="dt_copy_commit_default"
+      />
+      <label for="dt_copy_commit_default">«Копировать текст коммита» по умолчанию для первой задачи</label>
     </div>
 
     <Button

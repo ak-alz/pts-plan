@@ -4,6 +4,7 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { getCommitMessage, getTaskUrl } from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
@@ -64,12 +65,20 @@ function onCopyContentChange(row) {
   if (row.copyContent) row.description = '';
 }
 
+function onCopyCommitChange(row) {
+  if (!row.copyCommit) return;
+  rows.value.forEach((other) => {
+    if (other._id !== row._id) other.copyCommit = false;
+  });
+}
+
 function createRow() {
   return {
     _id: rowIdCounter++,
     title: props.taskTitle,
     description: '',
     copyContent: settings.value.copyContentDefault ?? false,
+    copyCommit: rows.value.length === 0 && (settings.value.copyCommitDefault ?? false),
     responsibleId: !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit' ? props.responsiveId : props.userId,
     stageId: settings.value.defaultStageId ?? null,
     auditorIds: defaultAuditors.value === 'all'
@@ -116,7 +125,7 @@ async function submit() {
       parentDescription = data?.result?.task?.description ?? '';
     }
 
-    await bitrixApi.addTasksBatch(rows.value.map((row) => ({
+    const responses = await bitrixApi.addTasksBatch(rows.value.map((row) => ({
       TITLE: row.title,
       DESCRIPTION: row.copyContent ? parentDescription : row.description,
       CREATED_BY: props.userId,
@@ -128,11 +137,47 @@ async function submit() {
     })));
     progress.value = 100;
 
+    const createdIds = new Array(rows.value.length).fill(null);
+    responses.forEach((response) => {
+      const results = response.data?.result?.result ?? {};
+      Object.entries(results).forEach(([key, value]) => {
+        const index = parseInt(key.slice(1), 10);
+        if (Number.isInteger(index)) {
+          const id = value?.task?.id ?? value?.task?.ID ?? null;
+          createdIds[index] = id ? String(id) : null;
+        }
+      });
+    });
+
+    const createdTasks = rows.value
+      .map((row, i) => createdIds[i] ? { id: createdIds[i], title: row.title, url: getTaskUrl(groupId.value, createdIds[i]) } : null)
+      .filter(Boolean);
+
+    const commitRowIndex = rows.value.findIndex((r) => r.copyCommit);
+    if (commitRowIndex !== -1 && createdIds[commitRowIndex]) {
+      const commitRow = rows.value[commitRowIndex];
+      const commitId = createdIds[commitRowIndex];
+      const commitMessage = getCommitMessage(commitRow.title, commitId);
+      try {
+        await navigator.clipboard.writeText(commitMessage);
+        toast.add({
+          severity: 'info',
+          summary: 'Текст коммита скопирован',
+          detail: commitMessage,
+          life: 5000,
+        });
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+
+    const showTasks = settings.value.showCreatedTasks && createdTasks.length > 0;
     toast.add({
       severity: 'success',
       summary: 'Готово',
       detail: `[pts-plan]: Создано подзадач: ${total}`,
-      life: 5000,
+      tasks: showTasks ? createdTasks : undefined,
+      life: showTasks ? 15000 : 5000,
     });
 
     emits('success');
@@ -202,6 +247,7 @@ onMounted(() => {
       :loading="isLoading"
       data-key="_id"
       size="small"
+      striped-rows
     >
       <template #loading>
         <template v-if="typeof progress === 'number'">
@@ -226,21 +272,42 @@ onMounted(() => {
 
       <Column header="Название">
         <template #body="{ data: row }">
-          <Textarea
-            v-model="row.title"
-            fluid
-            rows="2"
-            cols="40"
-            :pt="{
-              root: {
-                style: {
-                  minHeight: '35px',
-                  resize: 'vertical',
-                  display: 'block',
+          <div class="flex flex-col gap-1">
+            <Textarea
+              v-model="row.title"
+              fluid
+              rows="2"
+              cols="40"
+              :pt="{
+                root: {
+                  style: {
+                    minHeight: '35px',
+                    resize: 'vertical',
+                    display: 'block',
+                  }
                 }
-              }
-            }"
-          />
+              }"
+            />
+            <div
+              v-if="settings.showCommitCheckbox"
+              class="flex gap-1 items-center"
+            >
+              <Checkbox
+                v-model="row.copyCommit"
+                binary
+                :input-id="`copy-commit-${row._id}`"
+                @change="onCopyCommitChange(row)"
+              />
+              <label
+                :for="`copy-commit-${row._id}`"
+                class="text-sm cursor-pointer select-none"
+              >Копировать текст коммита</label>
+              <i
+                v-tooltip.top="'После создания задач текст коммита для этой задачи будет скопирован в буфер обмена'"
+                class="pi pi-question-circle"
+              />
+            </div>
+          </div>
         </template>
       </Column>
 
@@ -250,22 +317,6 @@ onMounted(() => {
       >
         <template #body="{ data: row }">
           <div class="flex flex-col gap-1">
-            <div class="flex gap-1 items-center">
-              <Checkbox
-                v-model="row.copyContent"
-                binary
-                :input-id="`copy-content-${row._id}`"
-                @change="onCopyContentChange(row)"
-              />
-              <label
-                :for="`copy-content-${row._id}`"
-                class="text-sm cursor-pointer select-none"
-              >Скопировать описание</label>
-              <i
-                class="pi pi-question-circle"
-                v-tooltip.top="'Файловые вложения не копируются'"
-              />
-            </div>
             <Textarea
               v-if="!row.copyContent"
               v-model="row.description"
@@ -282,6 +333,22 @@ onMounted(() => {
                 }
               }"
             />
+            <div class="flex gap-1 items-center">
+              <Checkbox
+                v-model="row.copyContent"
+                binary
+                :input-id="`copy-content-${row._id}`"
+                @change="onCopyContentChange(row)"
+              />
+              <label
+                :for="`copy-content-${row._id}`"
+                class="text-sm cursor-pointer select-none"
+              >Скопировать описание</label>
+              <i
+                v-tooltip.top="'Файловые вложения не копируются'"
+                class="pi pi-question-circle"
+              />
+            </div>
           </div>
         </template>
       </Column>

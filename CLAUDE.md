@@ -22,6 +22,8 @@ There are no test commands — no test framework is configured.
 
 Linting: ESLint with flat config (`eslint.config.js`). Rules: semicolons required, single quotes, trailing commas in multiline, sorted imports.
 
+**Не запускай команды сборщика и линтера самостоятельно** (`npm run dev`, `npm run build`, `npm run build-css`, `eslint` и т. п.). Сборку, dev-режим и линт пользователь запускает сам — просто вноси изменения в код. Команды выше приведены только как справка по проекту.
+
 ## Architecture
 
 ### Extension flow
