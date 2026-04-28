@@ -185,10 +185,17 @@ export default [
     name: 'Редактирование заголовка задачи',
     tip: 'Позволяет кликнуть на заголовок задачи и сразу переименовать её, без перехода в режим редактирования',
     new: true,
-    action: async ({sessionId}) => {
+    action: async ({sessionId, options}) => {
       const {editTaskTitle} = await import('/src/js/actions/edit-task-title');
-      editTaskTitle(sessionId);
+      editTaskTitle(sessionId, options);
     },
+    options: [
+      {
+        key: 'editTaskTitleDoubleClick',
+        name: 'Редактирование на двойной клик',
+        tip: 'Вместо одного клика для начала редактирования требуется двойной.',
+      },
+    ],
   },
   {
     key: 'commitButton',
@@ -379,6 +386,15 @@ export default [
         tip: 'Создание подзадачи открывается в новой вкладке.',
       },
     ],
+  },
+  {
+    key: 'autoAuditor',
+    name: 'Все наблюдатели при создании',
+    tip: 'При открытии формы создания новой задачи или подзадачи автоматически нажимает кнопку добавления наблюдателя',
+    new: true,
+    action: () => {
+      import('/src/js/actions/auto-auditor');
+    },
   },
   {
     key: 'showCats',

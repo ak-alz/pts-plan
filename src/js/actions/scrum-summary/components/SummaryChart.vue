@@ -1,7 +1,7 @@
 <script setup>
 import dayjs from 'dayjs';
 import Chart from 'primevue/chart';
-import { computed } from 'vue';
+import {computed} from 'vue';
 
 const props = defineProps({
   users: {
@@ -10,17 +10,21 @@ const props = defineProps({
       return [];
     },
   },
+  trendMode: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const chartData = computed(() => {
   return {
     datasets: props.users.map((user) => ({
       label: user.name,
-      data: user.visibleSprints,
+      data: props.trendMode ? (user.trendLine ?? user.visibleSprints) : user.visibleSprints,
       showLine: true,
-      borderWidth: 1,
-      tension: 0.1,
-      cubicInterpolationMode: 'monotone',
+      borderWidth: props.trendMode ? 2 : 1,
+      tension: props.trendMode ? 0 : 0.1,
+      cubicInterpolationMode: props.trendMode ? undefined : 'monotone',
       borderColor: user.color,
       pointBackgroundColor: user.color,
     })),
@@ -28,6 +32,8 @@ const chartData = computed(() => {
 });
 
 const chartOptions = computed(() => {
+  const isTrend = props.trendMode;
+
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -51,18 +57,27 @@ const chartOptions = computed(() => {
         callbacks: {
           title(tooltipItems) {
             const { sprint, x } = tooltipItems[0]?.raw ?? {};
+            if (isTrend) {
+              const isEnd = tooltipItems[0].dataIndex === 1;
+              return `${isEnd ? 'Конец' : 'Начало'} тренда (${dayjs(x).format('DD.MM.YYYY')})`;
+            }
             return `Итоги спринта №${sprint} (${dayjs(x).format('DD.MM.YYYY')})`;
           },
           label(context) {
+            if (isTrend) {
+              const [start, end] = context.dataset.data;
+              const delta = end.y - start.y;
+              const sign = delta >= 0 ? '+' : '';
+              const pct = start.y === 0 ? 100 : Math.round((delta / start.y) * 100);
+              return `${context.dataset.label}: ${context.parsed.y} (${sign}${delta}, ${sign}${pct}%)`;
+            }
             return `${context.dataset.label}: ${context.parsed.y}`;
           },
-          footer(tooltipItems) {
+          footer: isTrend ? undefined : function(tooltipItems) {
             let sum = 0;
-
             tooltipItems.forEach((tooltipItem) => {
               sum += tooltipItem.parsed.y;
             });
-
             return `Итого: ${sum}`;
           },
         },

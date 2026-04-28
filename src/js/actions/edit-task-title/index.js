@@ -1,7 +1,7 @@
 import BitrixApi from '../../BitrixApi.js';
 import { getTaskIdFromUrl, insertCSS } from '../../utils.js';
 
-export async function editTaskTitle(sessionId) {
+export async function editTaskTitle(sessionId, options = {}) {
   const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
@@ -24,9 +24,13 @@ export async function editTaskTitle(sessionId) {
     }
   `);
 
+  const doubleClick = !!options.editTaskTitleDoubleClick;
+
   titleEl.dataset.editInitialized = 'true';
   titleEl.dataset.editReady = 'true';
-  titleEl.title = 'Нажмите, чтобы переименовать задачу (Enter — сохранить, Esc — отменить)';
+  titleEl.title = doubleClick
+    ? 'Дважды нажмите, чтобы переименовать задачу (Enter — сохранить, Esc — отменить)'
+    : 'Нажмите, чтобы переименовать задачу (Enter — сохранить, Esc — отменить)';
 
   const api = new BitrixApi(sessionId);
   let originalTitle = '';
@@ -72,7 +76,7 @@ export async function editTaskTitle(sessionId) {
     titleEl.textContent = originalTitle;
   }
 
-  titleEl.addEventListener('click', (e) => {
+  titleEl.addEventListener(doubleClick ? 'dblclick' : 'click', (e) => {
     if (titleEl.contentEditable === 'true') return;
     e.stopPropagation();
     startEdit();

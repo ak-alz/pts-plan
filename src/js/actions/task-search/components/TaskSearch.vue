@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { isEqual } from 'lodash-es';
 import { Avatar, Badge, Button, Column, DataTable, DatePicker, InputText, MultiSelect, Select, ToggleSwitch } from 'primevue';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import FormField from '../../../ui/FormField.vue';
@@ -35,6 +35,7 @@ const PARENT_TYPE_OPTIONS = [
 function getDefaults() {
   return {
     title: '',
+    excludeTitle: '',
     smartTitleSearch: true,
     status: 'active',
     parentType: 'all',
@@ -46,6 +47,8 @@ function getDefaults() {
     changedDateRange: null,
   };
 }
+
+const FAVORITES_KEY = 'taskSearchFavorites';
 
 const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
@@ -59,6 +62,8 @@ const tasks = ref([]);
 const groupUsers = ref([]);
 const stages = ref([]);
 const hasSearched = ref(false);
+const favorites = ref(new Set());
+const filterFavorites = ref(false);
 
 const userOptions = computed(() => groupUsers.value.map((u) => ({
   id: Number(u.ID),
@@ -72,14 +77,16 @@ onMounted(async () => {
   isUsersLoading.value = true;
   isStagesLoading.value = true;
   try {
-    const [groupUsersResult, stagesResponse] = await Promise.all([
+    const [groupUsersResult, stagesResponse, stored] = await Promise.all([
       bitrixApi.getGroupUsers(props.groupId),
       bitrixApi.getStages(props.groupId),
+      chrome.storage.local.get(FAVORITES_KEY),
     ]);
     groupUsers.value = groupUsersResult;
     stages.value = Object.values(stagesResponse.data?.result ?? {})
       .sort((a, b) => a.SORT - b.SORT)
       .map((s) => ({ id: s.ID, title: s.TITLE, color: `#${s.COLOR}` }));
+    favorites.value = new Set((stored[FAVORITES_KEY] ?? []).map(String));
   } catch (e) {
     console.warn('[task-search] failed to load filters data:', e);
   } finally {
@@ -88,35 +95,58 @@ onMounted(async () => {
   }
 });
 
+async function toggleFavorite(taskId) {
+  const id = String(taskId);
+  if (favorites.value.has(id)) {
+    favorites.value.delete(id);
+  } else {
+    favorites.value.add(id);
+  }
+  favorites.value = new Set(favorites.value);
+  await chrome.storage.local.set({ [FAVORITES_KEY]: [...favorites.value] });
+}
+
+watch(filterFavorites, (val) => {
+  if (val) search();
+});
+
 async function search() {
-  if (isEqual(form, getDefaults())) return;
+  if (!filterFavorites.value && isEqual(form, getDefaults())) return;
+  if (filterFavorites.value && !favorites.value.size) {
+    tasks.value = [];
+    hasSearched.value = true;
+    return;
+  }
 
   isLoading.value = true;
   hasSearched.value = true;
 
   try {
-    tasks.value = await bitrixApi.searchTasks({
-      title: form.title.trim() || null,
-      smartTitleSearch: form.smartTitleSearch,
-      status: form.status,
-      parentType: form.parentType,
-      groupId: form.useGroupFilter ? props.groupId : null,
-      createdBy: form.createdBy,
-      responsibleId: form.responsibleId,
-      stageIds: form.useGroupFilter ? form.stageIds : [],
-      createdDateFrom: form.createdDateRange?.[0]
-        ? dayjs(form.createdDateRange[0]).format('YYYY-MM-DD 00:00:00')
-        : null,
-      createdDateTo: form.createdDateRange?.[1]
-        ? dayjs(form.createdDateRange[1]).format('YYYY-MM-DD 23:59:59')
-        : null,
-      changedDateFrom: form.changedDateRange?.[0]
-        ? dayjs(form.changedDateRange[0]).format('YYYY-MM-DD 00:00:00')
-        : null,
-      changedDateTo: form.changedDateRange?.[1]
-        ? dayjs(form.changedDateRange[1]).format('YYYY-MM-DD 23:59:59')
-        : null,
-    });
+    tasks.value = await bitrixApi.searchTasks(filterFavorites.value
+      ? { ids: [...favorites.value] }
+      : {
+          title: form.title.trim() || null,
+          excludeTitle: form.excludeTitle.trim() || null,
+          smartTitleSearch: form.smartTitleSearch,
+          status: form.status,
+          parentType: form.parentType,
+          groupId: form.useGroupFilter ? props.groupId : null,
+          createdBy: form.createdBy,
+          responsibleId: form.responsibleId,
+          stageIds: form.useGroupFilter ? form.stageIds : [],
+          createdDateFrom: form.createdDateRange?.[0]
+            ? dayjs(form.createdDateRange[0]).format('YYYY-MM-DD 00:00:00')
+            : null,
+          createdDateTo: form.createdDateRange?.[1]
+            ? dayjs(form.createdDateRange[1]).format('YYYY-MM-DD 23:59:59')
+            : null,
+          changedDateFrom: form.changedDateRange?.[0]
+            ? dayjs(form.changedDateRange[0]).format('YYYY-MM-DD 00:00:00')
+            : null,
+          changedDateTo: form.changedDateRange?.[1]
+            ? dayjs(form.changedDateRange[1]).format('YYYY-MM-DD 23:59:59')
+            : null,
+        });
   } catch (e) {
     console.warn('[task-search]', e);
     toast.add({
@@ -138,12 +168,45 @@ function formatDate(dateStr) {
 
 <template>
   <div>
-    <div class="grid grid-cols-3 gap-3 mb-3">
+    <div class="flex gap-2 items-center mb-3">
+      <ToggleSwitch
+        v-model="filterFavorites"
+        input-id="favorites-toggle"
+        size="small"
+      />
+      <label
+        for="favorites-toggle"
+        class="text-sm"
+        style="cursor: pointer;"
+      >
+        <i
+          class="pi pi-star-fill"
+          style="color: #facc15; font-size: 0.85em;"
+        /> Избранные
+      </label>
+    </div>
+
+    <div
+      v-if="!filterFavorites"
+      class="grid grid-cols-3 gap-3 mb-3"
+    >
       <FormField label="Название">
         <InputText
           v-model="form.title"
           size="small"
           placeholder="Поиск по названию..."
+          class="w-full"
+          @keydown.enter="search"
+        />
+      </FormField>
+      <FormField
+        v-tooltip.top="'Слова через пробел: задачи, содержащие хотя бы одно из них, будут исключены'"
+        label="Исключить из названия"
+      >
+        <InputText
+          v-model="form.excludeTitle"
+          size="small"
+          placeholder="Исключить задачи с этим в названии..."
           class="w-full"
           @keydown.enter="search"
         />
@@ -269,7 +332,10 @@ function formatDate(dateStr) {
     </div>
 
     <div class="flex gap-4 items-center mb-4">
-      <div class="flex gap-2 items-center">
+      <div
+        v-if="!filterFavorites"
+        class="flex gap-2 items-center"
+      >
         <ToggleSwitch
           v-model="form.useGroupFilter"
           input-id="group-filter-toggle"
@@ -283,7 +349,10 @@ function formatDate(dateStr) {
           Только текущая группа
         </label>
       </div>
-      <div class="flex gap-2 items-center">
+      <div
+        v-if="!filterFavorites"
+        class="flex gap-2 items-center"
+      >
         <ToggleSwitch
           v-model="form.smartTitleSearch"
           input-id="smart-title-toggle"
@@ -325,6 +394,19 @@ function formatDate(dateStr) {
       size="small"
       style="min-width: 600px;"
     >
+      <Column style="width: 36px; min-width: 36px;">
+        <template #body="{ data }">
+          <button
+            style="background: none; border: none; padding: 0; cursor: pointer; line-height: 1; display: flex; align-items: center;"
+            @click.prevent="toggleFavorite(data.id)"
+          >
+            <i
+              :class="favorites.has(String(data.id)) ? 'pi pi-star-fill' : 'pi pi-star'"
+              :style="favorites.has(String(data.id)) ? 'color: #facc15;' : 'color: #9ca3af;'"
+            />
+          </button>
+        </template>
+      </Column>
       <Column
         field="title"
         header="Название"

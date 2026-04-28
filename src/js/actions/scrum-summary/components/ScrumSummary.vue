@@ -1,13 +1,13 @@
 <script setup>
 import dayjs from 'dayjs';
 import { forEachRight, orderBy, sum } from 'lodash-es';
-import { Button, Dialog, Skeleton } from 'primevue';
+import { Button, Dialog, Skeleton, ToggleButton } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {stringToPastelColor} from '../../../utils.js';
-import { defaultIgnorePoints, defaultMaxSprints } from '../variables.js';
+import { computeTrendLine, defaultIgnorePoints, defaultMaxSprints } from '../variables.js';
 import SettingsForm from './SettingsForm.vue';
 import SummaryChart from './SummaryChart.vue';
 import SummaryTable from './SummaryTable.vue';
@@ -52,6 +52,14 @@ const computedUsers = computed(() => {
       const prevAvg = prevPoints.length ? Math.round(sum(prevPoints) / prevPoints.length) : 0;
       const prevMedian = prevPoints.length ? Math.round(getMedian(prevPoints)) : 0;
 
+      const trendLine = currentPeriod.length >= 2 ? computeTrendLine(currentPeriod) : null;
+      const trendStart = trendLine?.[0].y ?? null;
+      const trendEnd = trendLine?.[trendLine.length - 1].y ?? null;
+      const trendDelta = trendStart !== null && trendEnd !== null ? trendEnd - trendStart : null;
+      const trendPct = trendDelta !== null && trendStart !== 0
+        ? Math.round((trendDelta / trendStart) * 100)
+        : trendDelta !== null ? 100 : null;
+
       return {
         ...user,
         visibleSprints: currentPeriod,
@@ -61,10 +69,17 @@ const computedUsers = computed(() => {
 
         deltaAvg: currentPeriod.length === prevPeriod.length ? avg - prevAvg : 0,
         deltaMedian: currentPeriod.length === prevPeriod.length ? median - prevMedian : 0,
+
+        trendLine,
+        trendStart,
+        trendEnd,
+        trendDelta,
+        trendPct,
       };
     });
 });
 const dateUpdated = ref(null);
+const trendMode = ref(false);
 
 function getMedian(values) {
   const mid = Math.floor(values.length / 2);
@@ -205,6 +220,15 @@ onMounted(async () => {
         variant="text"
         @click="fetchData"
       />
+      <ToggleButton
+        v-if="!isLoading"
+        v-model="trendMode"
+        on-label="Тренды"
+        off-label="Тренды"
+        on-icon="pi pi-chart-line"
+        off-icon="pi pi-chart-line"
+        size="small"
+      />
     </div>
 
     <Skeleton
@@ -216,6 +240,7 @@ onMounted(async () => {
     <SummaryTable
       v-else
       :users="computedUsers"
+      :trend-mode="trendMode"
       class="mb-3"
     />
 
@@ -227,6 +252,7 @@ onMounted(async () => {
     <SummaryChart
       v-show="!isLoading"
       :users="computedUsers"
+      :trend-mode="trendMode"
     />
   </div>
 

@@ -8,6 +8,10 @@ defineProps({
       return [];
     },
   },
+  trendMode: {
+    type: Boolean,
+    default: false,
+  },
 });
 </script>
 
@@ -83,6 +87,34 @@ defineProps({
         >
           <template v-if="data.deltaMedian > 0">+</template>{{ data.deltaMedian }}
         </span>
+      </template>
+    </Column>
+
+    <Column
+      v-if="trendMode"
+      field="trendPct"
+      header="Тренд"
+      sortable
+    >
+      <template #body="{data}">
+        <template v-if="data.trendDelta !== null">
+          <span class="text-surface-400">{{ data.trendStart }} → {{ data.trendEnd }}</span>
+          <span
+            class="ml-1 text-sm"
+            :class="{
+              'text-green-400': data.trendDelta > 0,
+              'text-red-400': data.trendDelta < 0,
+              'text-surface-400': data.trendDelta === 0,
+            }"
+          >
+            <template v-if="data.trendDelta > 0">+</template>{{ data.trendDelta }}
+            (<template v-if="data.trendPct > 0">+</template>{{ data.trendPct }}%)
+          </span>
+        </template>
+        <span
+          v-else
+          class="text-surface-400"
+        >—</span>
       </template>
     </Column>
 

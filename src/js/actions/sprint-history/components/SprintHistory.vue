@@ -1,6 +1,6 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Avatar, Button, Column, ColumnGroup, DataTable, DatePicker, Row, Select } from 'primevue';
+import { Avatar, Button, Checkbox, Column, ColumnGroup, DataTable, DatePicker, Row, Select } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
@@ -35,6 +35,7 @@ function getPrevWeekRange() {
 
 const dateRange = ref(getPrevWeekRange());
 const selectedUserId = ref(null);
+const excludeHotfixes = ref(false);
 const isLoading = ref(false);
 const allTasks = ref([]);
 
@@ -53,8 +54,10 @@ const users = computed(() => {
 });
 
 const filteredTasks = computed(() => {
-  if (!selectedUserId.value) return allTasks.value;
-  return allTasks.value.filter((t) => t.responsible.id === selectedUserId.value);
+  let tasks = allTasks.value;
+  if (excludeHotfixes.value) tasks = tasks.filter((t) => !t.title.toLowerCase().startsWith('hotfix'));
+  if (selectedUserId.value) tasks = tasks.filter((t) => t.responsible.id === selectedUserId.value);
+  return tasks;
 });
 
 const totalPoints = computed(() => filteredTasks.value.reduce((sum, t) => sum + t.points, 0));
@@ -137,6 +140,17 @@ onMounted(() => {
         size="small"
         @click="fetchData"
       />
+      <label class="flex gap-2 items-center cursor-pointer text-sm">
+        <Checkbox
+          v-model="excludeHotfixes"
+          binary
+        />
+        Исключить хотфиксы
+        <i
+          v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
+          class="pi pi-question-circle text-surface-400"
+        />
+      </label>
     </div>
 
     <DataTable

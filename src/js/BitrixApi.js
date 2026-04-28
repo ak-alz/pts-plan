@@ -216,11 +216,12 @@ export default class BitrixApi {
    * @param {string|null} params.changedDateTo - дата изменения до
    * @return {Promise<any[]>}
    */
-  async searchTasks({ title, smartTitleSearch, status, parentType, groupId, createdBy, responsibleId, stageIds, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
+  async searchTasks({ ids, title, smartTitleSearch, excludeTitle, status, parentType, groupId, createdBy, responsibleId, stageIds, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
     const PAGE_SIZE = 50;
     const BATCH_SIZE = 50;
 
     const filter = {};
+    if (ids?.length) filter['ID'] = ids;
     if (title) {
       const words = smartTitleSearch ? title.trim().split(/\s+/).filter(Boolean) : [];
       if (words.length > 1) {
@@ -231,6 +232,18 @@ export default class BitrixApi {
       } else {
         filter['%TITLE'] = title;
       }
+    }
+
+    const excludeWords = excludeTitle ? excludeTitle.trim().split(/\s+/).filter(Boolean) : [];
+    if (excludeWords.length) {
+      if (!filter['::LOGIC']) filter['::LOGIC'] = 'AND';
+      if (filter['%TITLE']) {
+        filter['::SUBFILTER-title'] = { '%TITLE': filter['%TITLE'] };
+        delete filter['%TITLE'];
+      }
+      excludeWords.forEach((word, i) => {
+        filter[`::SUBFILTER-ex${i}`] = { '!%TITLE': word };
+      });
     }
     if (status === 'active') filter['!STATUS'] = 5;
     if (status === 'closed') filter['STATUS'] = 5;

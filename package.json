@@ -1,7 +1,7 @@
 {
   "name": "pts-plan",
   "displayName": "Pixel Plan Injection",
-  "version": "2.7.4",
+  "version": "2.7.5",
   "description": "Бесплатное расширение, которое превращает стандартный Bitrix24 в удобный рабочий инструмент.",
   "keywords": [
     "chrome-extension",
