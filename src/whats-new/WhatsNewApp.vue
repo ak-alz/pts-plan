@@ -88,7 +88,7 @@ const badgeLabels = {
             </li>
           </ul>
           <div
-            v-if="entry.images.length"
+            v-if="entry.images?.length"
             class="mt-3"
           >
             <Galleria

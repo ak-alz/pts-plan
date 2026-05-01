@@ -68,6 +68,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
   }
 
+  if (compareVersions(previousVersion, '2.7.6') < 0) {
+    await chrome.storage.local.remove('taskSearchFavorites');
+  }
+
   if (notificationMessage) {
     await chrome.notifications.create({
       type: 'basic',

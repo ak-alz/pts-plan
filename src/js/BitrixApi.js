@@ -199,9 +199,24 @@ export default class BitrixApi {
     return axios.post('/rest/tasks.task.update.json', params);
   }
 
+  favoriteTask(taskId) {
+    return axios.postForm('/rest/tasks.task.favorite.add.json', {
+      sessid: this.sessionId,
+      taskId,
+    });
+  }
+
+  unfavoriteTask(taskId) {
+    return axios.postForm('/rest/tasks.task.favorite.remove.json', {
+      sessid: this.sessionId,
+      taskId,
+    });
+  }
+
   /**
    * Поиск задач по фильтрам с постраничной загрузкой через batch.
    * @param {Object} params
+   * @param {boolean} params.favorite - только избранные задачи (Bitrix native)
    * @param {string|null} params.title - поиск по названию (LIKE)
    * @param {boolean} params.smartTitleSearch - разбивать title по пробелам и искать каждое слово через AND
    * @param {'active'|'closed'|null} params.status - 'active' = не завершённые, 'closed' = завершённые, null = все
@@ -216,12 +231,13 @@ export default class BitrixApi {
    * @param {string|null} params.changedDateTo - дата изменения до
    * @return {Promise<any[]>}
    */
-  async searchTasks({ ids, title, smartTitleSearch, excludeTitle, status, parentType, groupId, createdBy, responsibleId, stageIds, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
+  async searchTasks({ ids, favorite, title, smartTitleSearch, excludeTitle, status, parentType, groupId, createdBy, responsibleId, stageIds, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
     const PAGE_SIZE = 50;
     const BATCH_SIZE = 50;
 
     const filter = {};
     if (ids?.length) filter['ID'] = ids;
+    if (favorite) filter['::SUBFILTER-PARAMS'] = { FAVORITE: 'Y' };
     if (title) {
       const words = smartTitleSearch ? title.trim().split(/\s+/).filter(Boolean) : [];
       if (words.length > 1) {
@@ -258,7 +274,7 @@ export default class BitrixApi {
     if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
     if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
 
-    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'GROUP_ID', 'STAGE_ID'];
+    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'GROUP_ID', 'STAGE_ID', 'FAVORITE'];
 
     const appendFilter = (params, keyPath, value) => {
       if (Array.isArray(value)) {
