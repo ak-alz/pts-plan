@@ -20,7 +20,7 @@ defineProps({
     <component
       :is="id ? 'label' : 'div'"
       v-if="label"
-      :for="id"
+      :for="id ? id : null"
       class="flex gap-2 mb-1 text-surface-500 text-sm font-semibold"
     >
       {{ label }}

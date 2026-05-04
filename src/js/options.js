@@ -170,6 +170,16 @@ export default [
     },
   },
   {
+    key: 'taskAnalysis',
+    name: 'Анализ задач',
+    tip: 'Показывает суммарные баллы по деревьям задач: находит все подзадачи любой вложенности, суммирует баллы и выводит таблицу по корневым задачам',
+    new: true,
+    action: async ({sessionId, options}) => {
+      const {taskAnalysis} = await import('/src/js/actions/task-analysis');
+      taskAnalysis(sessionId, options);
+    },
+  },
+  {
     key: 'decomposeTask',
     name: 'Декомпозиция задачи',
     tip: 'Добавляет кнопку для быстрого создания подзадач с исполнителями и стадиями. Необходимо указать ID пользователя',

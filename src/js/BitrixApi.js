@@ -274,7 +274,7 @@ export default class BitrixApi {
     if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
     if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
 
-    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'GROUP_ID', 'STAGE_ID', 'FAVORITE'];
+    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID'];
 
     const appendFilter = (params, keyPath, value) => {
       if (Array.isArray(value)) {
