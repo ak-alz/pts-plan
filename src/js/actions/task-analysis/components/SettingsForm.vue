@@ -56,7 +56,7 @@ const form = reactive({
   defaultUserIds: props.initial.defaultUserIds
     ? toRaw(props.initial.defaultUserIds)
     : (props.initial.defaultUserId ? [props.initial.defaultUserId] : []),
-  defaultStatus: props.initial.defaultStatus ?? 'all',
+  defaultStatus: props.initial.defaultStatus ?? 'closed',
   visibleUserIds: props.initial.visibleUserIds ? toRaw(props.initial.visibleUserIds) : [],
   copySeparator: props.initial.copySeparator ?? '\t',
   csvSeparator: props.initial.csvSeparator ?? ',',
