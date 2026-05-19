@@ -454,7 +454,7 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
 
     try {
       // DEBUG
-      console.count(`rehydrate:${callBack.name || 'unknown'}`);
+      // console.count(`rehydrate:${callBack.name || 'unknown'}`);
       callBack();
     } finally {
       observer.observe(target, observerConfig);

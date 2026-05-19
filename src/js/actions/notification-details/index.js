@@ -7,6 +7,7 @@ export function notificationDetails(sessionId, options = {}) {
   const shouldHighlight = !!(options.notificationDetailsHighlight && options.userId);
   const shouldHighlightCreator = !!(options.notificationDetailsHighlightCreator && options.userId);
   const shouldHighlightMention = !!(options.notificationDetailsHighlightMention && options.userFirstName && options.userLastName);
+  const shouldCompact = !!options.notificationDetailsCompact;
 
   // In-memory кэш на время сессии страницы
   const cache = {
@@ -18,11 +19,18 @@ export function notificationDetails(sessionId, options = {}) {
   };
 
   insertCSS(`
+    .bx-im-content-notification-item-header__title-container {
+      max-width: none !important;
+      width: 100%;
+    }
     .pts-nd {
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
-      margin-top: 6px;
+      margin-left: auto;
+      padding-left: 8px;
+      flex-shrink: 0;
+      align-items: center;
     }
     .pts-nd-chip {
       display: inline-flex;
@@ -34,7 +42,6 @@ export function notificationDetails(sessionId, options = {}) {
       color: #333;
       font-size: 11px;
       line-height: 1.4;
-      max-width: 200px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -65,13 +72,14 @@ export function notificationDetails(sessionId, options = {}) {
       flex-shrink: 0;
     }
     .pts-nd-skeleton {
-      height: 18px;
-      width: 220px;
+      height: 16px;
+      width: 100px;
       border-radius: 4px;
       background: linear-gradient(90deg, #ebebeb 25%, #f8f8f8 50%, #ebebeb 75%);
       background-size: 200% 100%;
       animation: pts-nd-shimmer 1.2s ease-in-out infinite;
-      margin-top: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
     }
     @keyframes pts-nd-shimmer {
       0% { background-position: 200% 0; }
@@ -79,10 +87,26 @@ export function notificationDetails(sessionId, options = {}) {
     }
   `);
 
+  if (shouldCompact) {
+    insertCSS(`
+      .bx-im-content-notification-quick-answer__container {
+        display: none !important;
+      }
+      .bx-im-content-notification-item__container {
+        margin-bottom: 10px !important;
+        border-radius: 8px !important;
+      }
+      .bx-im-content-notification-item-content__container {
+        max-width: none !important;
+        padding-bottom: 0 !important;
+      }
+    `);
+  }
+
   if (shouldHighlight) {
     insertCSS(`
       .pts-nd-my-task {
-        box-shadow: inset 3px 0 0 ${options.notificationDetailsHighlightBorder} !important;
+        border-color: ${options.notificationDetailsHighlightBorder} !important;
         background-color: ${options.notificationDetailsHighlightBackground} !important;
       }
     `);
@@ -91,7 +115,7 @@ export function notificationDetails(sessionId, options = {}) {
   if (shouldHighlightCreator) {
     insertCSS(`
       .pts-nd-my-creator-task {
-        box-shadow: inset 3px 0 0 ${options.notificationDetailsHighlightCreatorBorder} !important;
+        border-color: ${options.notificationDetailsHighlightCreatorBorder} !important;
         background-color: ${options.notificationDetailsHighlightCreatorBackground} !important;
       }
     `);
@@ -100,7 +124,7 @@ export function notificationDetails(sessionId, options = {}) {
   if (shouldHighlightMention) {
     insertCSS(`
       .pts-nd-my-mention {
-        box-shadow: inset 3px 0 0 ${options.notificationDetailsHighlightMentionBorder} !important;
+        border-color: ${options.notificationDetailsHighlightMentionBorder} !important;
         background-color: ${options.notificationDetailsHighlightMentionBackground} !important;
       }
     `);
@@ -121,7 +145,7 @@ export function notificationDetails(sessionId, options = {}) {
 
       const skeleton = document.createElement('div');
       skeleton.className = 'pts-nd-skeleton';
-      el.querySelector('.bx-im-content-notification-item-content__content-text')?.after(skeleton);
+      el.querySelector('.bx-im-content-notification-item-header__title-container')?.appendChild(skeleton);
 
       const href = el.querySelector('a[href*="/tasks/task/view/"]').getAttribute('href');
       const taskId = href.match(/\/tasks\/task\/view\/(\d+)\//)?.[1] ?? null;
@@ -199,9 +223,9 @@ export function notificationDetails(sessionId, options = {}) {
 
         const group = cache.groups.get(task.groupId);
         if (group) {
-          chips.push(createTextChip(group.NAME, '#e8eaf6', '#3949ab'));
+          chips.push(createGroupChip(group));
         } else if (task.groupId && task.groupId !== '0') {
-          chips.push(createTextChip(`#${task.groupId}`, '#e8eaf6', '#3949ab'));
+          chips.push(createTextChip(`#${task.groupId}`, '#f0f0f0', '#333', `Группа: #${task.groupId}`));
         }
 
         const stage = cache.stages.get(String(task.stageId));
@@ -220,7 +244,7 @@ export function notificationDetails(sessionId, options = {}) {
         const block = document.createElement('div');
         block.className = 'pts-nd';
         chips.forEach((chip) => block.appendChild(chip));
-        el.querySelector('.bx-im-content-notification-item-content__content-text')?.after(block);
+        el.querySelector('.bx-im-content-notification-item-header__title-container')?.appendChild(block);
       });
     } catch {
       items.forEach(({el, skeleton}) => {
@@ -230,13 +254,30 @@ export function notificationDetails(sessionId, options = {}) {
     }
   }
 
-  function createTextChip(text, bg, color) {
+  function createTextChip(text, bg, color, title) {
     const chip = document.createElement('span');
     chip.className = 'pts-nd-chip';
     chip.style.background = bg;
     if (color) chip.style.color = color;
-    chip.title = text;
+    chip.title = title ?? text;
     chip.textContent = text;
+    return chip;
+  }
+
+  function createGroupChip(group) {
+    const chip = document.createElement('span');
+    chip.className = 'pts-nd-chip';
+    chip.title = `Группа: ${group.NAME}`;
+
+    const dot = document.createElement('span');
+    dot.className = 'pts-nd-stage-dot';
+    dot.style.background = stringToPastelColor(group.NAME);
+
+    const label = document.createElement('span');
+    label.textContent = group.NAME;
+
+    chip.appendChild(dot);
+    chip.appendChild(label);
     return chip;
   }
 
@@ -246,7 +287,7 @@ export function notificationDetails(sessionId, options = {}) {
       : '#888888';
     const chip = document.createElement('span');
     chip.className = 'pts-nd-chip';
-    chip.title = stage.TITLE;
+    chip.title = `Стадия: ${stage.TITLE}`;
 
     const dot = document.createElement('span');
     dot.className = 'pts-nd-stage-dot';
