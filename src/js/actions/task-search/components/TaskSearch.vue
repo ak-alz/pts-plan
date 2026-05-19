@@ -59,6 +59,7 @@ function getDefaults() {
     title: '',
     excludeTitle: '',
     smartTitleSearch: settings.value.defaultSmartSearch !== false,
+    extendedSearch: settings.value.defaultExtendedSearch ?? false,
     status: settings.value.defaultStatus !== undefined ? settings.value.defaultStatus : 'active',
     parentType: settings.value.defaultParentType ?? 'all',
     useGroupFilter: settings.value.defaultUseGroupFilter !== false,
@@ -150,6 +151,8 @@ async function toggleFavorite(task) {
 }
 
 watch(filterFavorites, () => search());
+watch(() => form.extendedSearch, (val) => { if (val) form.smartTitleSearch = false; });
+watch(() => form.smartTitleSearch, (val) => { if (val) form.extendedSearch = false; });
 
 async function search() {
   if (!filterFavorites.value && isEqual(form, getDefaults())) {
@@ -162,9 +165,23 @@ async function search() {
   hasSearched.value = true;
 
   try {
+    const limit = settings.value.resultLimit !== undefined ? settings.value.resultLimit : 100;
+
+    let fulltextIds = null;
+    if (form.extendedSearch && form.title.trim()) {
+      const { data } = await bitrixApi.searchTasksByFulltext(form.title.trim());
+      const items = (data?.data?.items ?? []).filter((item) => item.type === 'TASK');
+      if (!items.length) {
+        tasks.value = [];
+        return;
+      }
+      fulltextIds = limit ? items.slice(0, limit).map((item) => item.id) : items.map((item) => item.id);
+    }
+
     tasks.value = await bitrixApi.searchTasks({
+      ids: fulltextIds,
       favorite: filterFavorites.value,
-      title: form.title.trim() || null,
+      title: form.extendedSearch ? null : (form.title.trim() || null),
       excludeTitle: form.excludeTitle.trim() || null,
       smartTitleSearch: form.smartTitleSearch,
       status: form.status,
@@ -185,6 +202,7 @@ async function search() {
       changedDateTo: form.changedDateRange?.[1]
         ? dayjs(form.changedDateRange[1]).format('YYYY-MM-DD 23:59:59')
         : null,
+      limit,
     });
   } catch (e) {
     console.warn('[task-search]', e);
@@ -358,9 +376,9 @@ function formatDate(dateStr) {
         >
           <DatePicker
             v-model="form.createdDateRange"
+            :number-of-months="2"
             selection-mode="range"
             date-format="dd.mm.yy"
-            :manual-input="false"
             show-button-bar
             size="small"
             class="w-full"
@@ -372,9 +390,9 @@ function formatDate(dateStr) {
         >
           <DatePicker
             v-model="form.changedDateRange"
+            :number-of-months="2"
             selection-mode="range"
             date-format="dd.mm.yy"
-            :manual-input="false"
             show-button-bar
             size="small"
             class="w-full"
@@ -391,8 +409,7 @@ function formatDate(dateStr) {
           />
           <label
             for="group-filter-toggle"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >
             Только текущая группа
           </label>
@@ -404,12 +421,28 @@ function formatDate(dateStr) {
             size="small"
           />
           <label
-            v-tooltip.top="'Разбивает запрос на слова: в названии задачи должно встретиться каждое слово, но порядок не важен'"
+            v-tooltip.top="'Разбивает запрос на слова и ищет каждое отдельно — порядок не важен. Работает только в обычном режиме (по названию); в расширенном поиске не применяется'"
             for="smart-title-toggle"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >
             Искать по каждому слову
+          </label>
+        </div>
+        <div
+          v-if="!settings.hideExtendedSearch"
+          class="flex gap-2 items-center"
+        >
+          <ToggleSwitch
+            v-model="form.extendedSearch"
+            input-id="extended-search-toggle"
+            size="small"
+          />
+          <label
+            v-tooltip.top="'Ищет по названию, описанию и комментариям задачи. Поиск по точной фразе — разбивка на слова не поддерживается'"
+            for="extended-search-toggle"
+            class="text-sm cursor-pointer"
+          >
+            Расширенный поиск
           </label>
         </div>
         <div class="flex gap-2 items-center">
@@ -420,13 +453,10 @@ function formatDate(dateStr) {
           />
           <label
             for="favorites-toggle"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >
-            <i
-              class="pi pi-star-fill"
-              style="color: #facc15; font-size: 0.85em;"
-            /> Избранные
+            <i class="pi pi-star-fill text-yellow-400 text-sm" />
+            Избранные
           </label>
         </div>
         <Button
@@ -459,13 +489,10 @@ function formatDate(dateStr) {
         <Column style="width: 36px; min-width: 36px;">
           <template #body="{ data }">
             <button
-              style="background: none; border: none; padding: 0; cursor: pointer; line-height: 1; display: flex; align-items: center;"
+              class="bg-transparent border-0 p-0 cursor-pointer leading-none flex items-center"
               @click.prevent="toggleFavorite(data)"
             >
-              <i
-                :class="isTaskFavorite(data) ? 'pi pi-star-fill' : 'pi pi-star'"
-                :style="isTaskFavorite(data) ? 'color: #facc15;' : 'color: #9ca3af;'"
-              />
+              <i :class="isTaskFavorite(data) ? 'pi pi-star-fill text-yellow-400' : 'pi pi-star text-gray-400'" />
             </button>
           </template>
         </Column>

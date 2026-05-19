@@ -1,5 +1,5 @@
 <script setup>
-import { Avatar, Button, MultiSelect, Select, ToggleSwitch } from 'primevue';
+import { Avatar, Button, Checkbox, MultiSelect, Select } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
@@ -45,8 +45,8 @@ const separatorOptions = [
 ];
 
 const tabOptions = [
-  { label: 'Динамика', value: 'timeline' },
   { label: 'Сводка', value: 'summary' },
+  { label: 'Динамика', value: 'timeline' },
   { label: 'Топ задач', value: 'top' },
   { label: 'Размеры задач', value: 'histogram' },
 ];
@@ -60,8 +60,9 @@ const form = reactive({
   visibleUserIds: props.initial.visibleUserIds ? toRaw(props.initial.visibleUserIds) : [],
   copySeparator: props.initial.copySeparator ?? '\t',
   csvSeparator: props.initial.csvSeparator ?? ',',
-  defaultTab: props.initial.defaultTab ?? 'timeline',
+  defaultTab: props.initial.defaultTab ?? 'summary',
   defaultCompareWithPrev: props.initial.defaultCompareWithPrev ?? false,
+  defaultExcludeHotfixes: props.initial.defaultExcludeHotfixes ?? false,
 });
 
 async function saveSettings() {
@@ -87,8 +88,7 @@ async function saveSettings() {
 
 <template>
   <form
-    class="flex flex-col gap-3"
-    style="width: 560px;"
+    class="flex flex-col gap-3 w-[560px]"
     @submit.prevent="saveSettings"
   >
     <div class="grid grid-cols-2 gap-x-2 gap-y-3">
@@ -185,9 +185,29 @@ async function saveSettings() {
         />
       </FormField>
 
-      <FormField label="Сравнивать с пред. периодом">
-        <ToggleSwitch v-model="form.defaultCompareWithPrev" />
-      </FormField>
+      <div class="flex gap-2 items-center">
+        <Checkbox
+          v-model="form.defaultCompareWithPrev"
+          binary
+          input-id="settings-default-compare-with-prev"
+        />
+        <label
+          for="settings-default-compare-with-prev"
+          class="text-sm cursor-pointer"
+        >Сравнивать с пред. периодом</label>
+      </div>
+
+      <div class="flex gap-2 items-center">
+        <Checkbox
+          v-model="form.defaultExcludeHotfixes"
+          binary
+          input-id="settings-default-exclude-hotfixes"
+        />
+        <label
+          for="settings-default-exclude-hotfixes"
+          class="text-sm cursor-pointer"
+        >Исключить хотфиксы</label>
+      </div>
 
       <FormField label="Разделитель копирования (сводка)">
         <Select

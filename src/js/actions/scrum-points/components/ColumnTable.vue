@@ -52,7 +52,7 @@ const totalPoints = computed(() => {
       <Row>
         <Column
           footer="Итого:"
-          footer-style="text-align: right;"
+          footer-class="text-right"
         />
         <Column :footer="totalPoints" />
       </Row>

@@ -99,10 +99,7 @@ const badgeLabels = {
               :show-thumbnail-navigators="false"
             >
               <template #item="{ item }">
-                <div
-                  class="relative w-full pointer-events-none"
-                  style="aspect-ratio: 16/9;"
-                >
+                <div class="relative w-full pointer-events-none aspect-video">
                   <img
                     :src="item"
                     alt="Скриншот"

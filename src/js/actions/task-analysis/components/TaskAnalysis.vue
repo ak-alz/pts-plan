@@ -1,16 +1,24 @@
 <script setup>
 import dayjs from 'dayjs';
 import {orderBy} from 'lodash-es';
-import {Avatar, Button, Column, DataTable, DatePicker, Dialog, MultiSelect, Select, Skeleton, ToggleSwitch} from 'primevue';
+import {
+  Avatar,
+  Button,
+  Checkbox,
+  Dialog,
+  MultiSelect,
+  Select,
+  Skeleton,
+} from 'primevue';
 import {useToast} from 'primevue/usetoast';
 import {computed, onMounted, reactive, ref} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import FormField from '../../../ui/FormField.vue';
-import {getTaskPointsFromName, getTaskUrl, stringToPastelColor} from '../../../utils.js';
+import {getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
+import DateRangePicker from './DateRangePicker.vue';
 import SettingsForm from './SettingsForm.vue';
-import TaskCharts from './TaskCharts.vue';
-import TaskList from './TaskList.vue';
+import TaskAnalysisTabs from './TaskAnalysisTabs.vue';
 
 const props = defineProps({
   sessionId: {
@@ -35,13 +43,6 @@ const groupFilterOptions = [
   {label: 'Все задачи', value: 'all'},
 ];
 
-const datePresets = [
-  {label: '1м', months: 1, tooltip: 'Последний месяц'},
-  {label: '2м', months: 2, tooltip: 'Последние 2 месяца'},
-  {label: '3м', months: 3, tooltip: 'Последние 3 месяца'},
-  {label: '6м', months: 6, tooltip: 'Последние 6 месяцев'},
-  {label: '12м', months: 12, tooltip: 'Последние 12 месяцев'},
-];
 
 const settingsStorageKey = `task-analysis-settings-${props.groupId}`;
 const settings = ref({});
@@ -58,14 +59,12 @@ function getDefaults() {
     selectedUserIds: userIds,
     statusFilter: s.defaultStatus || 'closed',
     compareWithPrev: s.defaultCompareWithPrev ?? false,
+    excludeHotfixes: s.defaultExcludeHotfixes ?? false,
   };
 }
 
-const form = reactive({...getDefaults(), groupFilter: 'current'});
+const form = reactive({...getDefaults(), groupFilter: 'current', excludeHotfixes: false});
 
-function applyPreset(months) {
-  form.dateRange = [dayjs().subtract(months, 'month').toDate(), dayjs().toDate()];
-}
 
 const users = ref([]);
 const visibleUsers = computed(() => {
@@ -81,6 +80,25 @@ const allUserTasksPerUser = ref([]);
 const MIN_POINTS = 1;
 const filteredRows = computed(() => rows.value.filter((r) => r.totalPoints >= MIN_POINTS));
 
+const displayRows = computed(() => {
+  if (!form.excludeHotfixes) return filteredRows.value;
+  return filteredRows.value
+    .map((row) => {
+      const tasks = row.tasks.filter((t) => !isHotfixTask(t.title));
+      const totalPoints = tasks.reduce((sum, t) => sum + t.points, 0);
+      return {...row, tasks, totalPoints};
+    })
+    .filter((row) => row.totalPoints >= MIN_POINTS);
+});
+
+const displayUserTasksPerUser = computed(() => {
+  if (!form.excludeHotfixes) return allUserTasksPerUser.value;
+  return allUserTasksPerUser.value.map(({userId, tasks}) => ({
+    userId,
+    tasks: tasks.filter((t) => !isHotfixTask(t.title)),
+  }));
+});
+
 const useWeeks = computed(() => {
   if (!form.dateRange?.[0]) return false;
   const start = dayjs(form.dateRange[0]);
@@ -89,7 +107,7 @@ const useWeeks = computed(() => {
 });
 
 const summaryTableData = computed(() => {
-  if (!filteredRows.value.length || !form.dateRange?.[0]) return null;
+  if (!displayRows.value.length || !form.dateRange?.[0]) return null;
 
   const start = dayjs(form.dateRange[0]);
   const end = dayjs(form.dateRange[1] ?? form.dateRange[0]);
@@ -99,13 +117,14 @@ const summaryTableData = computed(() => {
   const weeksLength = Math.max(1, end.diff(start, 'week', true));
 
   const byUser = {};
-  filteredRows.value.forEach((row) => {
+  displayRows.value.forEach((row) => {
     if (!byUser[row.userId]) {
-      byUser[row.userId] = {userId: row.userId, userName: row.userName, totalPoints: 0, totalTasks: 0, pointCounts: {}};
+      byUser[row.userId] = {userId: row.userId, userName: row.userName, totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}};
     }
     const u = byUser[row.userId];
     u.totalPoints += row.totalPoints;
     u.totalTasks += row.tasks.length;
+    u.totalRoots += 1;
     row.tasks.forEach((task) => {
       if (task.points > 0) u.pointCounts[task.points] = (u.pointCounts[task.points] || 0) + 1;
     });
@@ -113,9 +132,13 @@ const summaryTableData = computed(() => {
 
   const prevByUser = {};
   prevRows.value.filter((r) => r.totalPoints >= MIN_POINTS).forEach((row) => {
-    if (!prevByUser[row.userId]) prevByUser[row.userId] = {totalPoints: 0, totalTasks: 0};
+    if (!prevByUser[row.userId]) prevByUser[row.userId] = {totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}};
     prevByUser[row.userId].totalPoints += row.totalPoints;
     prevByUser[row.userId].totalTasks += row.tasks.length;
+    prevByUser[row.userId].totalRoots += 1;
+    row.tasks.forEach((task) => {
+      if (task.points > 0) prevByUser[row.userId].pointCounts[task.points] = (prevByUser[row.userId].pointCounts[task.points] || 0) + 1;
+    });
   });
 
   return {
@@ -127,17 +150,48 @@ const summaryTableData = computed(() => {
       const pointDistribution = Object.entries(u.pointCounts)
         .map(([pts, count]) => ({points: Number(pts), count, pct: totalWithPoints ? Math.round((count / totalWithPoints) * 100) : 0}))
         .sort((a, b) => a.points - b.points);
+      const decompRatio = u.totalRoots ? Math.round((u.totalTasks / u.totalRoots) * 10) / 10 : 0;
+      let entropyH = 0;
+      if (totalWithPoints > 0) {
+        for (const {count} of pointDistribution) {
+          const p = count / totalWithPoints;
+          if (p > 0) entropyH -= p * Math.log2(p);
+        }
+      }
+      const entropyNorm = totalWithPoints > 0 ? entropyH / Math.log2(6) : 0;
+      const rootsPerWeek = u.totalRoots / weeksLength;
+      const ptev1 = Math.round(Math.sqrt(avgPointsPerWeek * rootsPerWeek) * entropyNorm * 10) / 10;
+      let prevPtev1 = null;
+      if (prev != null) {
+        const prevTotalWithPoints = Object.values(prev.pointCounts).reduce((a, b) => a + b, 0);
+        let prevEntropyH = 0;
+        for (const count of Object.values(prev.pointCounts)) {
+          const p = count / prevTotalWithPoints;
+          if (p > 0) prevEntropyH -= p * Math.log2(p);
+        }
+        const prevEntropyNorm = prevTotalWithPoints > 0 ? prevEntropyH / Math.log2(6) : 0;
+        const prevRootsPerWeek = prev.totalRoots / weeksLength;
+        prevPtev1 = Math.round(Math.sqrt((prev.totalPoints / weeksLength) * prevRootsPerWeek) * prevEntropyNorm * 10) / 10;
+      }
+      const prevDecompRatio = prev?.totalRoots ? prev.totalTasks / prev.totalRoots : 0;
       return {
         userId: u.userId,
         userName: u.userName,
         totalPoints: u.totalPoints,
         totalTasks: u.totalTasks,
+        totalRoots: u.totalRoots,
+        decompRatio,
         avgPoints,
         avgPointsPerTask: u.totalTasks ? Math.round((u.totalPoints / u.totalTasks) * 10) / 10 : 0,
         avgPointsPerWeek,
+        ptev1,
+        deltaPtev1: prevPtev1 !== null ? Math.round((ptev1 - prevPtev1) * 10) / 10 : null,
+        uniformity: Math.round(entropyNorm * 100) / 100,
         pointDistribution,
         deltaTotal: prev != null ? u.totalPoints - prev.totalPoints : null,
         deltaTotalTasks: prev != null ? u.totalTasks - prev.totalTasks : null,
+        deltaTotalRoots: prev != null ? u.totalRoots - prev.totalRoots : null,
+        deltaDecompRatio: prev != null ? Math.round((decompRatio - prevDecompRatio) * 10) / 10 : null,
         deltaAvgPointsPerTask: prev != null ? Math.round(((u.totalTasks ? u.totalPoints / u.totalTasks : 0) - (prev.totalTasks ? prev.totalPoints / prev.totalTasks : 0)) * 10) / 10 : null,
         deltaAvgPoints: prev != null ? Math.round((avgPoints - Math.round((prev.totalPoints / periodLength) * 10) / 10) * 10) / 10 : null,
         deltaAvgPointsPerWeek: prev != null ? Math.round((avgPointsPerWeek - Math.round((prev.totalPoints / weeksLength) * 10) / 10) * 10) / 10 : null,
@@ -148,10 +202,10 @@ const summaryTableData = computed(() => {
 });
 
 const topTasksData = computed(() => {
-  if (!filteredRows.value.length || !form.dateRange?.[0]) return null;
+  if (!displayRows.value.length || !form.dateRange?.[0]) return null;
 
   const byTask = {};
-  filteredRows.value.forEach((row) => {
+  displayRows.value.forEach((row) => {
     if (!byTask[row.id]) {
       byTask[row.id] = {key: row.id, title: row.title, url: row.url, totalPoints: 0, createdDate: row.createdDate, maxDate: row.maxDate};
     }
@@ -220,9 +274,9 @@ const timelineChartData = computed(() => {
     ? dayjs(bucket).format('DD.MM')
     : dayjs(bucket).format('MM.YYYY');
 
-  const multiUser = allUserTasksPerUser.value.length > 1;
+  const multiUser = displayUserTasksPerUser.value.length > 1;
 
-  const datasets = allUserTasksPerUser.value.flatMap(({userId, tasks}) => {
+  const datasets = displayUserTasksPerUser.value.flatMap(({userId, tasks}) => {
     const userName = users.value.find((u) => u.id === userId)?.name ?? userId;
     const color = stringToPastelColor(userName);
 
@@ -420,14 +474,6 @@ async function fetchData() {
   }
 }
 
-const selectedRow = ref(null);
-const isTaskListOpened = ref(false);
-
-function openTaskList(row) {
-  selectedRow.value = row;
-  isTaskListOpened.value = true;
-}
-
 onMounted(async () => {
   const [, stored] = await Promise.all([
     loadUsers(),
@@ -443,7 +489,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div style="min-width: 580px;">
+  <div class="min-w-[1000px]">
     <template v-if="isInitialLoading">
       <Skeleton
         height="100px"
@@ -466,161 +512,107 @@ onMounted(async () => {
           @click="isSettingsOpened = true"
         />
       </div>
-      <div class="flex gap-3 mb-4 items-end flex-wrap">
-        <FormField label="Период">
-          <DatePicker
-            v-model="form.dateRange"
-            selection-mode="range"
-            date-format="dd.mm.yy"
-            :manual-input="false"
-            size="small"
-          >
-            <template #footer>
-              <div
-                class="flex gap-1"
-                style="border-top: 1px solid var(--p-datepicker-panel-border-color); padding-top: var(--spacing);"
-              >
-                <Button
-                  v-for="preset in datePresets"
-                  :key="preset.months"
-                  v-tooltip.bottom="preset.tooltip"
-                  :label="preset.label"
-                  size="small"
-                  severity="secondary"
-                  variant="text"
-                  class="flex-1"
-                  @click="applyPreset(preset.months)"
-                />
-              </div>
-            </template>
-          </DatePicker>
-        </FormField>
+      <div class="flex flex-col gap-3 mb-3">
+        <div class="grid grid-cols-3 gap-3 items-end">
+          <FormField label="Период">
+            <DateRangePicker v-model="form.dateRange" />
+          </FormField>
 
-        <FormField label="Исполнители">
-          <MultiSelect
-            v-model="form.selectedUserIds"
-            :options="visibleUsers"
-            option-label="name"
-            option-value="id"
-            placeholder="Выберите исполнителей"
-            :max-selected-labels="1"
-            filter
-            filter-placeholder="Поиск"
-            style="min-width: 180px;"
-            size="small"
-          >
-            <template #option="{ option }">
-              <div class="flex gap-2 items-center">
-                <Avatar
-                  v-if="option.photo"
-                  :image="option.photo"
-                  shape="circle"
-                  size="small"
-                />
-                {{ option.name }}
-              </div>
-            </template>
-          </MultiSelect>
-        </FormField>
+          <FormField label="Исполнители">
+            <MultiSelect
+              v-model="form.selectedUserIds"
+              :options="visibleUsers"
+              option-label="name"
+              option-value="id"
+              placeholder="Выберите исполнителей"
+              :max-selected-labels="1"
+              filter
+              filter-placeholder="Поиск"
+              size="small"
+              fluid
+            >
+              <template #option="{ option }">
+                <div class="flex gap-2 items-center">
+                  <Avatar
+                    v-if="option.photo"
+                    :image="option.photo"
+                    shape="circle"
+                    size="small"
+                  />
+                  {{ option.name }}
+                </div>
+              </template>
+            </MultiSelect>
+          </FormField>
 
-        <FormField label="Группа">
-          <Select
-            v-model="form.groupFilter"
-            :options="groupFilterOptions"
-            option-label="label"
-            option-value="value"
+          <FormField label="Группа">
+            <Select
+              v-model="form.groupFilter"
+              :options="groupFilterOptions"
+              option-label="label"
+              option-value="value"
+              size="small"
+              fluid
+            />
+          </FormField>
+        </div>
+
+        <div class="flex gap-3 items-center flex-wrap">
+          <div class="flex gap-2 items-center">
+            <Checkbox
+              v-model="form.compareWithPrev"
+              binary
+              input-id="task-analysis-compare-with-prev"
+            />
+            <label
+              for="task-analysis-compare-with-prev"
+              class="text-sm cursor-pointer"
+            >Сравнить с пред. периодом</label>
+          </div>
+
+          <Button
+            label="Загрузить"
+            :loading="isLoading"
+            icon="pi pi-search"
             size="small"
+            @click="fetchData"
           />
-        </FormField>
-
-        <FormField label="Сравнить с пред. периодом">
-          <ToggleSwitch v-model="form.compareWithPrev" />
-        </FormField>
-
-        <Button
-          label="Загрузить"
-          :loading="isLoading"
-          icon="pi pi-search"
-          size="small"
-          @click="fetchData"
-        />
+        </div>
       </div>
 
-      <TaskCharts
-        v-if="allUserTasksPerUser.length"
+      <div class="flex gap-2 items-center mb-4">
+        <Checkbox
+          v-model="form.excludeHotfixes"
+          binary
+          input-id="task-analysis-exclude-hotfixes"
+        />
+        <label
+          for="task-analysis-exclude-hotfixes"
+          class="text-sm cursor-pointer"
+        >
+          Исключить хотфиксы
+          <i
+            v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
+            class="pi pi-question-circle text-surface-400"
+          />
+        </label>
+      </div>
+
+      <TaskAnalysisTabs
+        v-if="displayUserTasksPerUser.length"
         :timeline-chart-data="timelineChartData"
-        :all-user-tasks-per-user="allUserTasksPerUser"
+        :all-user-tasks-per-user="displayUserTasksPerUser"
         :users="users"
         :summary-table-data="summaryTableData"
         :top-tasks-data="topTasksData"
+        :all-rows="displayRows"
+        :is-loading="isLoading"
         :multi-user="form.selectedUserIds.length > 1"
         :copy-separator="settings.copySeparator ?? '\t'"
         :csv-separator="settings.csvSeparator ?? ','"
-        :default-tab="settings.defaultTab ?? 'timeline'"
+        :default-tab="settings.defaultTab ?? 'summary'"
         class="mb-4"
       />
-
-      <DataTable
-        :value="filteredRows"
-        :loading="isLoading"
-        data-key="key"
-        sort-field="totalPoints"
-        :sort-order="-1"
-        :default-sort-order="-1"
-        paginator
-        :rows="20"
-        :rows-per-page-options="[10, 20, 50]"
-        size="small"
-      >
-        <Column
-          v-if="form.selectedUserIds.length > 1"
-          field="userName"
-          header="Исполнитель"
-          sortable
-        />
-        <Column header="Корневая задача">
-          <template #body="{ data }">
-            <a
-              :href="data.url"
-              target="_top"
-            >
-              {{ data.title }}
-            </a>
-          </template>
-        </Column>
-        <Column
-          field="createdDate"
-          header="Дата создания"
-          sortable
-        >
-          <template #body="{ data }">
-            {{ data.createdDate ? dayjs(data.createdDate).format('DD.MM.YYYY') : '—' }}<template v-if="data.maxDate && dayjs(data.maxDate).format('DD.MM.YYYY') !== dayjs(data.createdDate).format('DD.MM.YYYY')">
-              — {{ dayjs(data.maxDate).format('DD.MM.YYYY') }}
-            </template>
-          </template>
-        </Column>
-        <Column
-          field="totalPoints"
-          header="Баллы"
-          sortable
-        >
-          <template #body="{ data }">
-            <Button
-              size="small"
-              variant="text"
-              severity="secondary"
-              @click="openTaskList(data)"
-            >
-              {{ data.totalPoints }} ({{ data.tasks.length }})
-            </Button>
-          </template>
-        </Column>
-
-        <template #empty>
-          Нет данных за выбранный период
-        </template>
-      </DataTable>
-
     </template>
   </div>
 
@@ -636,14 +628,5 @@ onMounted(async () => {
       :settings-storage-key="settingsStorageKey"
       @success="onSaveSettings"
     />
-  </Dialog>
-
-  <Dialog
-    v-model:visible="isTaskListOpened"
-    :header="selectedRow?.title"
-    dismissable-mask
-    modal
-  >
-    <TaskList :tasks="selectedRow?.tasks ?? []" />
   </Dialog>
 </template>

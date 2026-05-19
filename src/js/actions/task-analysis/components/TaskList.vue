@@ -21,7 +21,6 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
-    style="min-width: 420px;"
   >
     <Column header="Задача">
       <template #body="{ data }">
@@ -53,7 +52,7 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
         <Column />
         <Column
           footer="Итого:"
-          footer-style="text-align: right;"
+          footer-class="text-right"
         />
         <Column :footer="totalPoints" />
       </Row>

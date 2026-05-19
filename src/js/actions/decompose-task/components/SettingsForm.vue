@@ -88,8 +88,7 @@ const auditorOptions = [
 
 <template>
   <form
-    class="flex flex-col gap-3"
-    style="width: 320px;"
+    class="flex flex-col gap-3 w-[320px]"
     @submit.prevent="saveSettings"
   >
     <FormField

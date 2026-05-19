@@ -1,12 +1,14 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Avatar, Button, Checkbox, Column, ColumnGroup, DataTable, DatePicker, Row, Select } from 'primevue';
+import { Avatar, Button, Checkbox, DatePicker, Select, ToggleSwitch } from 'primevue';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import FormField from '../../../ui/FormField.vue';
-import { getTaskPointsFromName, getTaskUrl } from '../../../utils.js';
+import { getTaskPointsFromName, isHotfixTask } from '../../../utils.js';
+import GroupedTasksTable from './GroupedTasksTable.vue';
+import TaskTable from './TaskTable.vue';
 
 const props = defineProps({
   sessionId: {
@@ -39,6 +41,11 @@ const excludeHotfixes = ref(false);
 const isLoading = ref(false);
 const allTasks = ref([]);
 
+const groupByParent = ref(false);
+const stages = ref([]);
+const parentTasksMap = ref({});
+const groupedDataLoaded = ref(false);
+
 const users = computed(() => {
   const map = {};
   allTasks.value.forEach((t) => {
@@ -55,28 +62,128 @@ const users = computed(() => {
 
 const filteredTasks = computed(() => {
   let tasks = allTasks.value;
-  if (excludeHotfixes.value) tasks = tasks.filter((t) => !t.title.toLowerCase().startsWith('hotfix'));
+  if (excludeHotfixes.value) tasks = tasks.filter((t) => !isHotfixTask(t.title));
   if (selectedUserId.value) tasks = tasks.filter((t) => t.responsible.id === selectedUserId.value);
   return tasks;
 });
 
-const totalPoints = computed(() => filteredTasks.value.reduce((sum, t) => sum + t.points, 0));
+const allTasksById = computed(() => {
+  const map = {};
+  allTasks.value.forEach((t) => {
+    map[String(t.id)] = t;
+  });
+  return map;
+});
+
+const groupedRows = computed(() => {
+  const groups = {};
+
+  filteredTasks.value.forEach((task) => {
+    const pid = String(task.parentId ?? 0);
+    const key = pid !== '0' ? pid : String(task.id);
+
+    if (!groups[key]) {
+      groups[key] = { key, isOwnRoot: pid === '0', tasks: [] };
+    }
+    if (pid !== '0') groups[key].isOwnRoot = false;
+    groups[key].tasks.push(task);
+  });
+
+  return Object.values(groups).map((group) => {
+    const parentData =
+      allTasksById.value[group.key] ??
+      parentTasksMap.value[group.key] ??
+      null;
+
+    const responsibles = Object.values(
+      group.tasks.reduce((map, t) => {
+        if (!map[t.responsible.id]) map[t.responsible.id] = t.responsible;
+        return map;
+      }, {}),
+    );
+
+    const subtasks = group.tasks.filter((t) => String(t.parentId ?? 0) === group.key);
+    const parentIsInTasks = group.tasks.some((t) => String(t.id) === group.key);
+    const parentPoints = getTaskPointsFromName(parentData?.title ?? '');
+    const totalTaskPoints = group.tasks.reduce((sum, t) => sum + t.points, 0) + (parentIsInTasks ? 0 : parentPoints);
+
+    const parentTask = parentData ? {
+      id: group.key,
+      title: parentData.title ?? `Задача #${group.key}`,
+      responsible: parentData.responsible ?? { id: '', name: '—', link: '#', icon: null },
+      closedDate: parentData.closedDate || null,
+      points: parentIsInTasks ? (allTasksById.value[group.key]?.points ?? parentPoints) : parentPoints,
+    } : null;
+
+    return {
+      parentId: group.key,
+      parentTitle: parentData?.title ?? `Задача #${group.key}`,
+      parentClosedDate: parentData?.closedDate || null,
+      parentStageId: parentData?.stageId ? String(parentData.stageId) : null,
+      responsibles,
+      tasks: group.tasks,
+      subtasks,
+      parentTask,
+      totalPoints: totalTaskPoints,
+      hasSubtasks: subtasks.length > 0,
+      totalTasks: subtasks.length + (parentTask ? 1 : 0),
+    };
+  });
+});
+
+async function fetchGroupedData() {
+  const knownIds = new Set(Object.keys(allTasksById.value));
+  const parentIds = [...new Set(
+    allTasks.value
+      .filter((t) => {
+        const pid = String(t.parentId ?? 0);
+        return pid !== '0' && !knownIds.has(pid);
+      })
+      .map((t) => String(t.parentId)),
+  )];
+
+  const [stagesResult, parentTasksList] = await Promise.all([
+    stages.value.length ? Promise.resolve(null) : bitrixApi.getStages(props.groupId),
+    bitrixApi.searchTasks({ ids: parentIds }),
+  ]);
+  const fetchedParents = Object.fromEntries(parentTasksList.map((t) => [String(t.id), t]));
+
+  if (stagesResult) {
+    stages.value = Object.values(stagesResult.data.result)
+      .sort((a, b) => a.SORT - b.SORT)
+      .map((s) => ({ id: String(s.ID), name: s.TITLE, color: `#${s.COLOR}` }));
+  }
+
+  parentTasksMap.value = fetchedParents;
+  groupedDataLoaded.value = true;
+}
 
 async function fetchData() {
   if (!dateRange.value?.[0]) return;
 
   isLoading.value = true;
   selectedUserId.value = null;
+  parentTasksMap.value = {};
+  groupedDataLoaded.value = false;
 
   try {
     const dateFrom = dayjs(dateRange.value[0]).format('YYYY-MM-DD 00:00:00');
     const dateTo = dayjs(dateRange.value[1] ?? dateRange.value[0]).format('YYYY-MM-DD 23:59:59');
-    const tasks = await bitrixApi.getClosedTasks(props.groupId, dateFrom, dateTo);
+    const tasks = await bitrixApi.searchTasks({
+      groupId: props.groupId,
+      status: 'closed',
+      closedDateFrom: dateFrom,
+      closedDateTo: dateTo,
+    });
 
     allTasks.value = tasks.map((t) => ({
       ...t,
       points: getTaskPointsFromName(t.title),
     }));
+
+    if (groupByParent.value) {
+      await fetchGroupedData();
+    }
   } catch (e) {
     console.warn(e);
     toast.add({
@@ -90,136 +197,124 @@ async function fetchData() {
   }
 }
 
+watch(groupByParent, async (val) => {
+  if (val && allTasks.value.length && !isLoading.value && !groupedDataLoaded.value) {
+    isLoading.value = true;
+    try {
+      await fetchGroupedData();
+    } catch (e) {
+      console.warn(e);
+      toast.add({
+        severity: 'error',
+        summary: 'Ошибка',
+        detail: `[pts-plan]: ${e.message}`,
+        life: 5000,
+      });
+    } finally {
+      isLoading.value = false;
+    }
+  }
+});
+
 onMounted(() => {
   fetchData();
 });
 </script>
 
 <template>
-  <div style="min-width: 640px;">
-    <div class="flex gap-3 mb-4 items-end flex-wrap">
-      <FormField label="Период">
-        <DatePicker
-          v-model="dateRange"
-          selection-mode="range"
-          date-format="dd.mm.yy"
-          :manual-input="false"
-          show-button-bar
+  <div class="min-w-[640px]">
+    <div class="flex flex-col items-start mb-4">
+      <div class="grid grid-cols-3 items-end gap-3">
+        <FormField label="Период">
+          <DatePicker
+            v-model="dateRange"
+            :number-of-months="2"
+            selection-mode="range"
+            date-format="dd.mm.yy"
+            show-button-bar
+            size="small"
+            fluid
+          />
+        </FormField>
+        <FormField label="Исполнитель">
+          <Select
+            v-model="selectedUserId"
+            :options="users"
+            option-label="name"
+            option-value="id"
+            placeholder="Все"
+            show-clear
+            :disabled="!allTasks.length"
+            size="small"
+            fluid
+          >
+            <template #option="{ option }">
+              <div class="flex gap-2 items-center">
+                <Avatar
+                  v-if="option.photo"
+                  :image="option.photo"
+                  shape="circle"
+                  size="small"
+                />
+                {{ option.name }}
+              </div>
+            </template>
+          </Select>
+        </FormField>
+        <Button
+          label="Загрузить"
+          :loading="isLoading"
+          icon="pi pi-search"
           size="small"
+          @click="fetchData"
         />
-      </FormField>
-      <FormField label="Исполнитель">
-        <Select
-          v-model="selectedUserId"
-          :options="users"
-          option-label="name"
-          option-value="id"
-          placeholder="Все"
-          show-clear
-          :disabled="!allTasks.length"
-          style="min-width: 180px;"
-          size="small"
-        >
-          <template #option="{ option }">
-            <div class="flex gap-2 items-center">
-              <Avatar
-                v-if="option.photo"
-                :image="option.photo"
-                shape="circle"
-                size="small"
-              />
-              {{ option.name }}
-            </div>
-          </template>
-        </Select>
-      </FormField>
-      <Button
-        label="Загрузить"
-        :loading="isLoading"
-        icon="pi pi-search"
+        <div class="flex gap-2 items-center">
+          <Checkbox
+            v-model="excludeHotfixes"
+            binary
+            input-id="sprint-history-exclude-hotfixes"
+          />
+          <label
+            for="sprint-history-exclude-hotfixes"
+            class="text-sm cursor-pointer"
+          >
+            Исключить хотфиксы
+            <i
+              v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
+              class="pi pi-question-circle text-surface-400"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-2 items-center mb-3">
+      <ToggleSwitch
+        v-model="groupByParent"
+        input-id="group-by-parent-toggle"
         size="small"
-        @click="fetchData"
       />
-      <label class="flex gap-2 items-center cursor-pointer text-sm">
-        <Checkbox
-          v-model="excludeHotfixes"
-          binary
-        />
-        Исключить хотфиксы
-        <i
-          v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
-          class="pi pi-question-circle text-surface-400"
-        />
+      <label
+        for="group-by-parent-toggle"
+        class="text-sm cursor-pointer"
+      >
+        Группировать по задаче
       </label>
     </div>
 
-    <DataTable
-      :value="filteredTasks"
+    <GroupedTasksTable
+      v-if="groupByParent"
+      :rows="groupedRows"
+      :group-id="groupId"
+      :stages="stages"
       :loading="isLoading"
-      data-key="id"
-      sort-field="points"
-      :sort-order="-1"
-      :default-sort-order="-1"
-      size="small"
-    >
-      <Column
-        field="responsible.name"
-        header="Исполнитель"
-        sortable
-      >
-        <template #body="{ data }">
-          <a
-            :href="data.responsible.link"
-            target="_top"
-          >
-            {{ data.responsible.name }}
-          </a>
-        </template>
-      </Column>
-      <Column header="Задача">
-        <template #body="{ data }">
-          <a
-            :href="getTaskUrl(groupId, data.id)"
-            target="_top"
-          >
-            {{ data.title }}
-          </a>
-        </template>
-      </Column>
-      <Column
-        field="points"
-        header="Баллы"
-        sortable
-      >
-        <template #body="{ data }">
-          {{ data.points }}
-        </template>
-      </Column>
-      <Column
-        field="closedDate"
-        header="Закрыта"
-        sortable
-      >
-        <template #body="{ data }">
-          {{ dayjs(data.closedDate).format('DD.MM.YYYY') }}
-        </template>
-      </Column>
+    />
 
-      <ColumnGroup type="footer">
-        <Row>
-          <Column
-            colspan="2"
-            footer="Итого:"
-            footer-style="text-align: right;"
-          />
-          <Column :footer="totalPoints" />
-          <Column />
-        </Row>
-      </ColumnGroup>
-
-      <template #empty>
-        Нет завершённых задач за выбранный период
-      </template>
-    </DataTable>
+    <TaskTable
+      v-else
+      :tasks="filteredTasks"
+      :group-id="groupId"
+      :loading="isLoading"
+    />
   </div>
 </template>

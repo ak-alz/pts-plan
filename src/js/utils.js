@@ -64,6 +64,10 @@ export function getCommitMessage(title, taskId) {
   return `${trimmed} | ${taskId}`;
 }
 
+export function isHotfixTask(taskName) {
+  return typeof taskName === 'string' && taskName.trim().toLowerCase().startsWith('hotfix');
+}
+
 export function getTaskPointsFromName(taskName) {
   const parts = taskName.split(/[|I/\\]/); // | или I (большая буква I как разделитель), а также / и \
   const lastPart = parts[parts.length - 1].trim();
@@ -117,7 +121,7 @@ export function validateHexColor(color) {
   return /^#[0-9A-Fa-f]{6}$|^#[0-9A-Fa-f]{3}$/.test(color);
 }
 
-const colors = {
+export const colors = {
   stone: {
     '50': '#fafaf9',
     '100': '#f5f5f4',
@@ -450,7 +454,7 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
 
     try {
       // DEBUG
-      // console.count(`rehydrate:${callBack.name || 'unknown'}`);
+      console.count(`rehydrate:${callBack.name || 'unknown'}`);
       callBack();
     } finally {
       observer.observe(target, observerConfig);
@@ -479,6 +483,22 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
     observer.disconnect();
     window.removeEventListener('focus', throttledCallBack);
   };
+}
+
+/**
+ * Проверяет, упомянут ли пользователь в тексте уведомления.
+ * Считается упоминанием: имя+фамилия (в любом порядке) или TAGALL.
+ * @param {string} text
+ * @param {string} firstName
+ * @param {string} lastName
+ * @returns {boolean}
+ */
+export function isUserMentioned(text, firstName, lastName) {
+  if (!text || !firstName || !lastName) return false;
+  if (text.includes('TAGALL')) return true;
+  if (text.includes(`${firstName} ${lastName}`)) return true;
+  if (text.includes(`${lastName} ${firstName}`)) return true;
+  return false;
 }
 
 /**

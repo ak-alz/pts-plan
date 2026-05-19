@@ -96,8 +96,7 @@ const sortableColumns = computed(() => {
 
 <template>
   <form
-    class="flex flex-col gap-3"
-    style="width: 600px;"
+    class="flex flex-col gap-3 w-[600px]"
     @submit.prevent="saveSettings"
   >
     <div class="grid grid-cols-2 gap-x-2 gap-y-3">

@@ -1,6 +1,8 @@
 <script setup>
 import {Button, Column, DataTable} from 'primevue';
-import {ref} from 'vue';
+import {computed, ref} from 'vue';
+
+import {colors} from '../../../utils.js';
 
 const props = defineProps({
   rows: {
@@ -25,14 +27,17 @@ const props = defineProps({
   },
 });
 
+const indigoShades = Object.values(colors.indigo);
+
+const pointColorMap = computed(() => {
+  const allPoints = [...new Set(
+    props.rows.flatMap((row) => row.pointDistribution.map((s) => s.points)),
+  )].sort((a, b) => a - b);
+  return new Map(allPoints.map((p, i) => [p, indigoShades[i % indigoShades.length]]));
+});
+
 function getPointColor(points) {
-  if (points <= 1) return '#bfdbfe';
-  if (points <= 2) return '#93c5fd';
-  if (points <= 3) return '#60a5fa';
-  if (points <= 5) return '#3b82f6';
-  if (points <= 8) return '#2563eb';
-  if (points <= 13) return '#1d4ed8';
-  return '#1e3a8a';
+  return pointColorMap.value.get(points);
 }
 
 function buildDistTooltip(dist) {
@@ -42,19 +47,25 @@ function buildDistTooltip(dist) {
   };
 }
 
+const ptev1Tooltip = {
+  value: 'PTEv1 — Pixel Tools Efficiency v1\n\nФормула:\n√(баллов/нед × фич/нед) × равномерность\n\nРавномерность — нормированная энтропия распределения задач по номиналам баллов. Снижается при концентрации на задачах одного размера.',
+  pt: {text: {style: {whiteSpace: 'pre-wrap', maxWidth: '260px'}}},
+};
+
 function buildRows() {
   const headers = [];
   if (props.multiUser) headers.push('Исполнитель');
-  headers.push('Баллов всего', 'Задач всего', 'Средний балл / задачу');
+  headers.push('Баллов всего', 'Задач всего', 'Корневые', 'Коэф. декомп.', 'Средний балл / задачу');
   headers.push(`Средний балл / ${props.useWeeks ? 'нед.' : 'мес.'}`);
   if (!props.useWeeks) headers.push('Средний балл / нед.');
-  headers.push('Распределение');
+  headers.push('PTEv1', 'Распределение');
 
   const dataRows = props.rows.map((row) => {
     const cells = [];
     if (props.multiUser) cells.push(row.userName);
-    cells.push(row.totalPoints, row.totalTasks, row.avgPointsPerTask, row.avgPoints);
+    cells.push(row.totalPoints, row.totalTasks, row.totalRoots, row.decompRatio, row.avgPointsPerTask, row.avgPoints);
     if (!props.useWeeks) cells.push(row.avgPointsPerWeek);
+    cells.push(row.ptev1);
     cells.push(row.pointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', '));
     return cells;
   });
@@ -148,6 +159,36 @@ function exportCsv() {
       </template>
     </Column>
     <Column
+      field="totalRoots"
+      header="Корневые"
+      :sortable="rows.length > 1"
+    >
+      <template #body="{ data }">
+        {{ data.totalRoots }}
+        <span
+          v-if="data.deltaTotalRoots !== null"
+          class="text-sm"
+          :class="{'text-green-400': data.deltaTotalRoots > 0, 'text-red-400': data.deltaTotalRoots < 0, 'text-surface-400': data.deltaTotalRoots === 0}"
+        ><template v-if="data.deltaTotalRoots > 0">+</template>{{ data.deltaTotalRoots }}</span>
+      </template>
+    </Column>
+    <Column
+      field="decompRatio"
+      :sortable="rows.length > 1"
+    >
+      <template #header>
+        <b v-tooltip.top="'Отношение декомпозированных задач к корневым.\nПоказывает, сколько в среднем задач приходится на одну корневую.'">Коэф. декомп.</b>
+      </template>
+      <template #body="{ data }">
+        {{ data.decompRatio }}
+        <span
+          v-if="data.deltaDecompRatio !== null"
+          class="text-sm"
+          :class="{'text-green-400': data.deltaDecompRatio > 0, 'text-red-400': data.deltaDecompRatio < 0, 'text-surface-400': data.deltaDecompRatio === 0}"
+        ><template v-if="data.deltaDecompRatio > 0">+</template>{{ data.deltaDecompRatio }}</span>
+      </template>
+    </Column>
+    <Column
       field="avgPointsPerTask"
       header="Средний балл / задачу"
       :sortable="rows.length > 1"
@@ -190,21 +231,47 @@ function exportCsv() {
         ><template v-if="data.deltaAvgPointsPerWeek > 0">+</template>{{ data.deltaAvgPointsPerWeek }}</span>
       </template>
     </Column>
-    <Column header="Распределение">
+    <Column
+      field="ptev1"
+      :sortable="rows.length > 1"
+    >
+      <template #header>
+        <b v-tooltip.top="ptev1Tooltip">PTEv1</b>
+      </template>
       <template #body="{ data }">
-        <div
-          v-tooltip="buildDistTooltip(data.pointDistribution)"
-          style="display: flex; height: 16px; border-radius: 3px; overflow: hidden; min-width: 100px; gap: 1px;"
-        >
+        {{ data.ptev1 }}
+        <span
+          v-if="data.deltaPtev1 !== null"
+          class="text-sm"
+          :class="{'text-green-400': data.deltaPtev1 > 0, 'text-red-400': data.deltaPtev1 < 0, 'text-surface-400': data.deltaPtev1 === 0}"
+        ><template v-if="data.deltaPtev1 > 0">+</template>{{ data.deltaPtev1 }}</span>
+      </template>
+    </Column>
+    <Column
+      field="uniformity"
+      header="Распределение"
+      :sortable="rows.length > 1"
+    >
+      <template #body="{ data }">
+        <div class="flex items-center gap-2">
           <div
-            v-for="seg in data.pointDistribution"
-            :key="seg.points"
-            :style="{
-              width: seg.pct + '%',
-              minWidth: '3px',
-              backgroundColor: getPointColor(seg.points),
-            }"
-          />
+            v-tooltip="buildDistTooltip(data.pointDistribution)"
+            class="flex h-4 rounded overflow-hidden min-w-25 gap-px"
+          >
+            <div
+              v-for="(seg, i) in data.pointDistribution"
+              :key="seg.points"
+              :style="{
+                width: seg.pct + '%',
+                minWidth: '3px',
+                backgroundColor: getPointColor(seg.points),
+              }"
+            />
+          </div>
+          <span
+            v-tooltip.top="'Равномерность — нормированная энтропия.\n0 = все задачи одного номинала, 1 = идеально равномерно.'"
+            class="text-sm text-surface-400 tabular-nums cursor-default"
+          >{{ data.uniformity }}</span>
         </div>
       </template>
     </Column>

@@ -244,6 +244,90 @@ export default [
     ],
   },
   {
+    key: 'notificationDetails',
+    name: 'Детали задачи в уведомлениях',
+    tip: 'Подгружает и показывает группу, стадию, исполнителя и постановщика прямо в каждом уведомлении о задаче',
+    new: true,
+    action: async ({sessionId, options}) => {
+      const {notificationDetails} = await import('/src/js/actions/notification-details');
+      notificationDetails(sessionId, options);
+    },
+    options: [
+      {
+        key: 'notificationDetailsHighlight',
+        name: 'Подсвечивай, если исполнитель',
+        tip: 'Выделяет уведомления, в которых вы являетесь исполнителем. Необходимо указать ID пользователя.',
+        disabled: (options) => !options.userId,
+        options: [
+          {
+            key: 'notificationDetailsHighlightBorder',
+            name: 'Цвет рамки',
+            default: getColors('violet', '400'),
+            presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '400'),
+            demo: true,
+            type: optionTypes.COLOR,
+          },
+          {
+            key: 'notificationDetailsHighlightBackground',
+            name: 'Цвет фона',
+            default: getColors('violet', '50'),
+            presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
+            demo: true,
+            type: optionTypes.COLOR,
+          },
+        ],
+      },
+      {
+        key: 'notificationDetailsHighlightCreator',
+        name: 'Подсвечивай, если постановщик',
+        tip: 'Выделяет уведомления, в которых вы являетесь постановщиком. Необходимо указать ID пользователя.',
+        disabled: (options) => !options.userId,
+        options: [
+          {
+            key: 'notificationDetailsHighlightCreatorBorder',
+            name: 'Цвет рамки',
+            default: getColors('amber', '400'),
+            presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '400'),
+            demo: true,
+            type: optionTypes.COLOR,
+          },
+          {
+            key: 'notificationDetailsHighlightCreatorBackground',
+            name: 'Цвет фона',
+            default: getColors('amber', '50'),
+            presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
+            demo: true,
+            type: optionTypes.COLOR,
+          },
+        ],
+      },
+      {
+        key: 'notificationDetailsHighlightMention',
+        name: 'Подсвечивай, если упомянут',
+        tip: 'Выделяет уведомления, в тексте которых есть ваше имя или TAGALL. Необходимо указать имя и фамилию.',
+        disabled: (options) => !options.userFirstName || !options.userLastName,
+        options: [
+          {
+            key: 'notificationDetailsHighlightMentionBorder',
+            name: 'Цвет рамки',
+            default: getColors('teal', '400'),
+            presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '400'),
+            demo: true,
+            type: optionTypes.COLOR,
+          },
+          {
+            key: 'notificationDetailsHighlightMentionBackground',
+            name: 'Цвет фона',
+            default: getColors('teal', '50'),
+            presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
+            demo: true,
+            type: optionTypes.COLOR,
+          },
+        ],
+      },
+    ],
+  },
+  {
     key: 'removeNotifications',
     name: 'Кнопка «Удалить уведомления»',
     tip: 'Добавляет кнопку для удаления всех уведомлений задачи',

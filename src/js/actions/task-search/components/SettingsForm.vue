@@ -5,6 +5,15 @@ import { reactive, ref, toRaw } from 'vue';
 
 import FormField from '../../../ui/FormField.vue';
 
+const props = defineProps({
+  initial: {
+    type: Object,
+    default: () => ({}),
+  },
+});
+
+const emit = defineEmits(['success']);
+
 const STATUS_OPTIONS = [
   { label: 'Все', value: null },
   { label: 'Не завершённые', value: 'active' },
@@ -17,14 +26,13 @@ const PARENT_TYPE_OPTIONS = [
   { label: 'Подзадачи', value: 'subtask' },
 ];
 
-const props = defineProps({
-  initial: {
-    type: Object,
-    default: () => ({}),
-  },
-});
-
-const emit = defineEmits(['success']);
+const RESULT_LIMIT_OPTIONS = [
+  { label: '50', value: 50 },
+  { label: '100', value: 100 },
+  { label: '200', value: 200 },
+  { label: '500', value: 500 },
+  { label: 'Без ограничения', value: null },
+];
 
 const toast = useToast();
 const isLoading = ref(false);
@@ -34,11 +42,14 @@ const form = reactive({
   defaultParentType: props.initial.defaultParentType ?? 'all',
   defaultUseGroupFilter: props.initial.defaultUseGroupFilter !== false,
   defaultSmartSearch: props.initial.defaultSmartSearch !== false,
+  defaultExtendedSearch: props.initial.defaultExtendedSearch ?? false,
+  resultLimit: props.initial.resultLimit !== undefined ? props.initial.resultLimit : 100,
   hideExcludeTitle: props.initial.hideExcludeTitle ?? false,
   hideStatus: props.initial.hideStatus ?? false,
   hideParentType: props.initial.hideParentType ?? false,
   hideCreatedDate: props.initial.hideCreatedDate ?? false,
   hideChangedDate: props.initial.hideChangedDate ?? false,
+  hideExtendedSearch: props.initial.hideExtendedSearch ?? false,
 });
 
 async function saveSettings() {
@@ -57,14 +68,10 @@ async function saveSettings() {
 
 <template>
   <form
-    class="flex flex-col gap-4"
-    style="width: 480px;"
+    class="flex flex-col gap-4 w-[480px]"
     @submit.prevent="saveSettings"
   >
     <div>
-      <p class="text-sm font-semibold mb-2">
-        Значения по умолчанию
-      </p>
       <div class="grid grid-cols-2 gap-x-3 gap-y-3">
         <FormField label="Статус">
           <Select
@@ -94,8 +101,7 @@ async function saveSettings() {
           />
           <label
             for="settings-use-group-filter"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Только текущая группа</label>
         </div>
         <div class="flex gap-2 items-center">
@@ -106,10 +112,33 @@ async function saveSettings() {
           />
           <label
             for="settings-smart-search"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Искать по каждому слову</label>
         </div>
+        <div class="flex gap-2 items-center">
+          <ToggleSwitch
+            v-model="form.defaultExtendedSearch"
+            input-id="settings-extended-search"
+            size="small"
+          />
+          <label
+            for="settings-extended-search"
+            class="text-sm cursor-pointer"
+          >Расширенный поиск</label>
+        </div>
+        <FormField
+          label="Максимум задач"
+          tip="Ограничивает количество задач в результатах поиска. Меньшее значение — быстрее загрузка."
+        >
+          <Select
+            v-model="form.resultLimit"
+            :options="RESULT_LIMIT_OPTIONS"
+            option-label="label"
+            option-value="value"
+            size="small"
+            class="w-full"
+          />
+        </FormField>
       </div>
     </div>
 
@@ -126,8 +155,7 @@ async function saveSettings() {
           />
           <label
             for="settings-hide-exclude-title"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Исключить из названия</label>
         </div>
         <div class="flex gap-2 items-center">
@@ -138,8 +166,7 @@ async function saveSettings() {
           />
           <label
             for="settings-hide-status"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Статус</label>
         </div>
         <div class="flex gap-2 items-center">
@@ -150,8 +177,7 @@ async function saveSettings() {
           />
           <label
             for="settings-hide-parent-type"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Тип задачи</label>
         </div>
         <div class="flex gap-2 items-center">
@@ -162,8 +188,7 @@ async function saveSettings() {
           />
           <label
             for="settings-hide-created-date"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Дата создания</label>
         </div>
         <div class="flex gap-2 items-center">
@@ -174,9 +199,19 @@ async function saveSettings() {
           />
           <label
             for="settings-hide-changed-date"
-            class="text-sm"
-            style="cursor: pointer;"
+            class="text-sm cursor-pointer"
           >Дата изменения</label>
+        </div>
+        <div class="flex gap-2 items-center">
+          <Checkbox
+            v-model="form.hideExtendedSearch"
+            binary
+            input-id="settings-hide-extended-search"
+          />
+          <label
+            for="settings-hide-extended-search"
+            class="text-sm cursor-pointer"
+          >Расширенный поиск</label>
         </div>
       </div>
     </div>

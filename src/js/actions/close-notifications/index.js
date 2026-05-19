@@ -1,4 +1,4 @@
-import {rehydrateOnChanges} from '../../utils.js';
+import {isUserMentioned, rehydrateOnChanges} from '../../utils.js';
 
 export function closeNotifications(firstName, lastName) {
   if (!firstName || !lastName) return;
@@ -12,11 +12,7 @@ export function closeNotifications(firstName, lastName) {
       if (!notificationTextElement) return;
 
       const notificationText = notificationTextElement.textContent.trim();
-      if (notificationText.includes('TAGALL')) return;
-
-      if (notificationText.includes(`${firstName} ${lastName}`)) return;
-
-      if (notificationText.includes(`${lastName} ${firstName}`)) return;
+      if (isUserMentioned(notificationText, firstName, lastName)) return;
 
       if (!notificationText.includes('комментарий к задаче [#')) return;
 

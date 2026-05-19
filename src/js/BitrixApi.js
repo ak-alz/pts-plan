@@ -91,15 +91,15 @@ export default class BitrixApi {
     return axios.postForm('/rest/sonet_group.user.get.json', {
       sessid: this.sessionId,
       ID: groupId,
-    }).then(({ data }) => {
+    }).then(({data}) => {
       const memberIds = (data?.result ?? []).map((m) => m.USER_ID);
       if (!memberIds.length) return [];
 
-      const params = new URLSearchParams({ sessid: this.sessionId });
+      const params = new URLSearchParams({sessid: this.sessionId});
       memberIds.forEach((id) => params.append('filter[ID][]', id));
 
       return axios.post('/rest/user.get.json', params)
-        .then(({ data: usersData }) => usersData?.result ?? []);
+        .then(({data: usersData}) => usersData?.result ?? []);
     });
   }
 
@@ -120,7 +120,7 @@ export default class BitrixApi {
 
     return Promise.all(chunks.map((chunk) => {
       const cmd = {};
-      chunk.forEach(({ key, stageId, start }) => {
+      chunk.forEach(({key, stageId, start}) => {
         const params = new URLSearchParams({
           'filter[GROUP_ID]': groupId,
           'filter[STAGE_ID]': stageId,
@@ -171,7 +171,7 @@ export default class BitrixApi {
   }
 
   getTask(taskId, select = []) {
-    const params = new URLSearchParams({ sessid: this.sessionId, taskId });
+    const params = new URLSearchParams({sessid: this.sessionId, taskId});
     select.forEach((field) => params.append('select[]', field));
     return axios.post('/rest/tasks.task.get.json', params);
   }
@@ -229,21 +229,42 @@ export default class BitrixApi {
    * @param {string|null} params.createdDateTo - дата создания до
    * @param {string|null} params.changedDateFrom - дата изменения от
    * @param {string|null} params.changedDateTo - дата изменения до
+   * @param {string|null} params.closedDateFrom - дата закрытия от ('YYYY-MM-DD HH:mm:ss')
+   * @param {string|null} params.closedDateTo - дата закрытия до
    * @return {Promise<any[]>}
    */
-  async searchTasks({ ids, favorite, title, smartTitleSearch, excludeTitle, status, parentType, groupId, createdBy, responsibleId, stageIds, createdDateFrom, createdDateTo, changedDateFrom, changedDateTo }) {
+  async searchTasks({
+                      ids,
+                      favorite,
+                      title,
+                      smartTitleSearch,
+                      excludeTitle,
+                      status,
+                      parentType,
+                      groupId,
+                      createdBy,
+                      responsibleId,
+                      stageIds,
+                      createdDateFrom,
+                      createdDateTo,
+                      changedDateFrom,
+                      changedDateTo,
+                      closedDateFrom,
+                      closedDateTo,
+                      limit = null,
+                    }) {
     const PAGE_SIZE = 50;
     const BATCH_SIZE = 50;
 
     const filter = {};
     if (ids?.length) filter['ID'] = ids;
-    if (favorite) filter['::SUBFILTER-PARAMS'] = { FAVORITE: 'Y' };
+    if (favorite) filter['::SUBFILTER-PARAMS'] = {FAVORITE: 'Y'};
     if (title) {
       const words = smartTitleSearch ? title.trim().split(/\s+/).filter(Boolean) : [];
       if (words.length > 1) {
         filter['::LOGIC'] = 'AND';
         words.forEach((word, i) => {
-          filter[`::SUBFILTER-w${i}`] = { '%TITLE': word };
+          filter[`::SUBFILTER-w${i}`] = {'%TITLE': word};
         });
       } else {
         filter['%TITLE'] = title;
@@ -254,11 +275,11 @@ export default class BitrixApi {
     if (excludeWords.length) {
       if (!filter['::LOGIC']) filter['::LOGIC'] = 'AND';
       if (filter['%TITLE']) {
-        filter['::SUBFILTER-title'] = { '%TITLE': filter['%TITLE'] };
+        filter['::SUBFILTER-title'] = {'%TITLE': filter['%TITLE']};
         delete filter['%TITLE'];
       }
       excludeWords.forEach((word, i) => {
-        filter[`::SUBFILTER-ex${i}`] = { '!%TITLE': word };
+        filter[`::SUBFILTER-ex${i}`] = {'!%TITLE': word};
       });
     }
     if (status === 'active') filter['!STATUS'] = 5;
@@ -273,6 +294,8 @@ export default class BitrixApi {
     if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
     if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
     if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
+    if (closedDateFrom) filter['>=CLOSED_DATE'] = closedDateFrom;
+    if (closedDateTo) filter['<=CLOSED_DATE'] = closedDateTo;
 
     const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID'];
 
@@ -287,7 +310,7 @@ export default class BitrixApi {
     };
 
     const buildParams = (start) => {
-      const params = new URLSearchParams({ start });
+      const params = new URLSearchParams({start});
       Object.entries(filter).forEach(([key, value]) => {
         appendFilter(params, `filter[${key}]`, value);
       });
@@ -297,13 +320,14 @@ export default class BitrixApi {
 
     const firstParams = buildParams(0);
     firstParams.set('sessid', this.sessionId);
-    const { data: firstData } = await axios.post('/rest/tasks.task.list.json', firstParams);
+    const {data: firstData} = await axios.post('/rest/tasks.task.list.json', firstParams);
     const tasks = firstData?.result?.tasks ?? [];
     const total = firstData?.total ?? 0;
+    const effectiveTotal = limit ? Math.min(total, limit) : total;
 
-    if (total > PAGE_SIZE) {
+    if (effectiveTotal > PAGE_SIZE) {
       const remainingStarts = [];
-      for (let start = PAGE_SIZE; start < total; start += PAGE_SIZE) {
+      for (let start = PAGE_SIZE; start < effectiveTotal; start += PAGE_SIZE) {
         remainingStarts.push(start);
       }
 
@@ -331,72 +355,119 @@ export default class BitrixApi {
       });
     }
 
-    return tasks;
+    return limit ? tasks.slice(0, limit) : tasks;
+  }
+
+  searchTasksByFulltext(query) {
+    return axios.postForm(
+      '/bitrix/services/main/ajax.php?action=tasks.task.search',
+      {searchQuery: query},
+      {
+        headers: {
+          'x-bitrix-csrf-token': this.sessionId,
+        },
+      },
+    );
   }
 
   /**
-   * Возвращает все завершённые задачи группы за указанный диапазон дат (по CLOSED_DATE).
-   * Первый запрос получает total, остальные страницы загружаются batch-ем.
-   * @param {string} groupId
-   * @param {string} dateFrom — формат 'YYYY-MM-DD HH:mm:ss'
-   * @param {string} dateTo — формат 'YYYY-MM-DD HH:mm:ss'
-   * @return {Promise<any[]>}
+   * Batch-запрос tasks.task.get для нескольких задач (до 50 за раз).
+   * Поля ответа в camelCase: id, responsibleId, createdBy, groupId, stageId.
+   * @param {string[]} taskIds
+   * @return {Promise<Record<string, object>>} Карта taskId → task
    */
-  async getClosedTasks(groupId, dateFrom, dateTo) {
-    const PAGE_SIZE = 50;
-    const BATCH_SIZE = 50;
-
-    function buildParams(start) {
-      const params = new URLSearchParams({
-        'filter[GROUP_ID]': groupId,
-        'filter[STATUS]': 5,
-        'filter[>=CLOSED_DATE]': dateFrom,
-        'filter[<=CLOSED_DATE]': dateTo,
-        start,
-      });
-      ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CLOSED_DATE'].forEach((f) => params.append('select[]', f));
-      return params;
-    }
-
-    // Первая страница — получаем задачи и total
-    const firstParams = buildParams(0);
-    firstParams.set('sessid', this.sessionId);
-    const { data: firstData } = await axios.post('/rest/tasks.task.list.json', firstParams);
-    const firstTasks = firstData?.result?.tasks ?? [];
-    const total = firstData?.total ?? 0;
-
-    if (total <= PAGE_SIZE) return firstTasks;
-
-    // Оставшиеся страницы batch-ем
-    const remainingStarts = [];
-    for (let start = PAGE_SIZE; start < total; start += PAGE_SIZE) {
-      remainingStarts.push(start);
-    }
-
+  getTasksByIdsBatch(taskIds) {
+    if (!taskIds.length) return Promise.resolve({});
+    const CHUNK_SIZE = 50;
     const chunks = [];
-    for (let i = 0; i < remainingStarts.length; i += BATCH_SIZE) {
-      chunks.push(remainingStarts.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
     }
-
-    const batchResponses = await Promise.all(chunks.map((chunk) => {
+    return Promise.all(chunks.map((chunk, ci) => {
       const cmd = {};
-      chunk.forEach((start) => {
-        cmd[`p${start}`] = `tasks.task.list?${buildParams(start).toString()}`;
+      chunk.forEach((id, i) => {
+        const params = new URLSearchParams({taskId: id});
+        ['ID', 'RESPONSIBLE_ID', 'CREATED_BY', 'GROUP_ID', 'STAGE_ID'].forEach((f) => params.append('select[]', f));
+        cmd[`t${ci * CHUNK_SIZE + i}`] = `tasks.task.get?${params.toString()}`;
       });
-      return axios.postForm('/rest/batch.json', {
-        sessid: this.sessionId,
-        halt: false,
-        cmd,
+      return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd});
+    })).then((responses) => {
+      const result = {};
+      responses.forEach((response) => {
+        Object.values(response.data?.result?.result ?? {}).forEach((val) => {
+          const task = val?.task;
+          if (task?.id) result[task.id] = task;
+        });
       });
-    }));
-
-    const allTasks = [...firstTasks];
-    batchResponses.forEach((response) => {
-      Object.values(response.data.result.result).forEach((pageResult) => {
-        allTasks.push(...(pageResult.tasks ?? []));
-      });
+      return result;
     });
+  }
 
-    return allTasks;
+  /**
+   * Batch-запрос task.stages.get для нескольких групп.
+   * @param {string[]} groupIds
+   * @return {Promise<Record<string, object>>} Карта stageId → stage (UPPER_CASE поля)
+   */
+  getStagesBatch(groupIds) {
+    if (!groupIds.length) return Promise.resolve({});
+    const cmd = {};
+    groupIds.forEach((id) => {
+      cmd[`s${id}`] = `task.stages.get?entityId=${id}`;
+    });
+    return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
+      .then(({data}) => {
+        const stages = {};
+        Object.values(data?.result?.result ?? {}).forEach((val) => {
+          Object.values(val ?? {}).forEach((stage) => {
+            if (stage?.ID) stages[stage.ID] = stage;
+          });
+        });
+        return stages;
+      });
+  }
+
+  /**
+   * Batch-запрос sonet_group.get для нескольких групп.
+   * @param {string[]} groupIds
+   * @return {Promise<Record<string, object>>} Карта groupId → group (UPPER_CASE поля: ID, NAME)
+   */
+  getGroupsByIdsBatch(groupIds) {
+    if (!groupIds.length) return Promise.resolve({});
+    const cmd = {};
+    groupIds.forEach((id) => {
+      cmd[`g${id}`] = `sonet_group.get?FILTER[ID]=${id}&select[]=ID&select[]=NAME`;
+    });
+    return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
+      .then(({data}) => {
+        const groups = {};
+        Object.entries(data?.result?.result ?? {}).forEach(([key, val]) => {
+          const id = key.slice(1);
+          const group = Array.isArray(val) ? val[0] : val;
+          if (group?.ID) groups[id] = group;
+        });
+        return groups;
+      });
+  }
+
+  /**
+   * Batch-запрос im.user.get для нескольких пользователей.
+   * Возвращает camelCase поля: id, name, first_name, last_name, avatar.
+   * @param {string[]} userIds
+   * @return {Promise<Record<string, object>>} Карта userId → user
+   */
+  getImUsersBatch(userIds) {
+    if (!userIds.length) return Promise.resolve({});
+    const cmd = {};
+    userIds.forEach((id) => {
+      cmd[`u${id}`] = `im.user.get?ID=${id}`;
+    });
+    return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
+      .then(({data}) => {
+        const users = {};
+        Object.values(data?.result?.result ?? {}).forEach((val) => {
+          if (val?.id) users[String(val.id)] = val;
+        });
+        return users;
+      });
   }
 }

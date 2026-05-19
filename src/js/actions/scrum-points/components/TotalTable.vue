@@ -92,7 +92,7 @@ const userTasks = computed(() => {
         <Column
           colspan="2"
           footer="Итого:"
-          footer-style="text-align: right;"
+          footer-class="text-right"
         />
         <Column :footer="user.visibleTotalPoints" />
       </Row>

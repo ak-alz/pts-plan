@@ -74,8 +74,7 @@ async function saveSettings() {
 
 <template>
   <form
-    class="flex flex-col gap-3"
-    style="width: 400px;"
+    class="flex flex-col gap-3 w-[400px]"
     @submit.prevent="saveSettings"
   >
     <FormField
