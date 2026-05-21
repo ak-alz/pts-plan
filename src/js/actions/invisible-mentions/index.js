@@ -4,8 +4,16 @@ import {getTaskIdFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '../../util
   const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
-  const auditorIds = [...document.querySelectorAll('.task-detail-sidebar-info-user-wrap[data-item-value]:not([data-item-value=""])')]
-    .map((el) => el.getAttribute('data-item-value'));
+  const commentsBlock = document.querySelector('.feed-comments-block');
+  const sidebar = document.querySelector('.task-detail-sidebar');
+  if (!commentsBlock || !sidebar) return;
+
+  function getAuditorIds() {
+    return [...document.querySelectorAll('.task-detail-sidebar-info-user-wrap[data-item-value]:not([data-item-value=""])')]
+      .map((el) => el.getAttribute('data-item-value'));
+  }
+
+  let auditorIds = getAuditorIds();
 
   const maxCheckedSymbols = 100;
 
@@ -51,9 +59,17 @@ import {getTaskIdFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '../../util
 
   rehydrateOnChanges(
     highlightMentions,
-    document.querySelector('.feed-comments-block'),
+    commentsBlock,
     {
       filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
+    },
+  );
+
+  rehydrateOnChanges(
+    () => { auditorIds = getAuditorIds(); },
+    sidebar,
+    {
+      attributes: ['data-item-value'],
     },
   );
 })();

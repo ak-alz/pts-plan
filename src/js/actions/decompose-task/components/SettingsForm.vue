@@ -24,7 +24,7 @@ const props = defineProps({
   },
 });
 
-const emits = defineEmits(['success']);
+const emit = defineEmits(['success']);
 
 const toast = useToast();
 const isLoading = ref(false);
@@ -38,6 +38,7 @@ const form = reactive({
   showCreatedTasks: props.initial.showCreatedTasks ?? false,
   showCommitCheckbox: props.initial.showCommitCheckbox ?? false,
   copyCommitDefault: props.initial.copyCommitDefault ?? false,
+  copyPreviousRow: props.initial.copyPreviousRow ?? false,
 });
 
 async function saveSettings() {
@@ -55,7 +56,7 @@ async function saveSettings() {
       life: 5000,
     });
 
-    emits('success');
+    emit('success');
   } catch (e) {
     console.warn(e);
   } finally {
@@ -88,7 +89,7 @@ const auditorOptions = [
 
 <template>
   <form
-    class="flex flex-col gap-3 w-[320px]"
+    class="grid grid-cols-3 gap-x-4 gap-3 w-[800px]"
     @submit.prevent="saveSettings"
   >
     <FormField
@@ -145,64 +146,97 @@ const auditorOptions = [
       />
     </FormField>
 
-    <div class="flex gap-1 items-center">
+    <div class="flex gap-1 items-start">
       <Checkbox
         v-model="form.description"
         binary
         input-id="dt_all_description_default"
+        class="mt-0.5 shrink-0"
       />
-      <label for="dt_all_description_default">Выводить поле «Описание»</label>
+      <label
+        for="dt_all_description_default"
+        class="text-sm cursor-pointer select-none"
+      >Выводить поле «Описание»</label>
     </div>
 
-    <div class="flex gap-1 items-center">
+    <div class="flex gap-1 items-start">
       <Checkbox
         v-model="form.copyContentDefault"
         binary
         input-id="dt_copy_content_default"
+        class="mt-0.5 shrink-0"
       />
-      <label for="dt_copy_content_default">Скопировать описание по умолчанию</label>
+      <label
+        for="dt_copy_content_default"
+        class="text-sm cursor-pointer select-none"
+      >Скопировать описание по умолчанию</label>
       <i
         v-tooltip.top="'Файловые вложения не копируются'"
-        class="pi pi-question-circle"
+        class="pi pi-question-circle mt-0.5 shrink-0"
       />
     </div>
 
-    <div class="flex gap-1 items-center">
+    <div class="flex gap-1 items-start">
       <Checkbox
         v-model="form.showCreatedTasks"
         binary
         input-id="dt_show_created_tasks"
+        class="mt-0.5 shrink-0"
       />
-      <label for="dt_show_created_tasks">Показывать список созданных задач</label>
+      <label
+        for="dt_show_created_tasks"
+        class="text-sm cursor-pointer select-none"
+      >Показывать список созданных задач</label>
     </div>
 
-    <div class="flex gap-1 items-center">
+    <div class="flex gap-1 items-start">
       <Checkbox
         v-model="form.showCommitCheckbox"
         binary
         input-id="dt_show_commit_checkbox"
+        class="mt-0.5 shrink-0"
       />
-      <label for="dt_show_commit_checkbox">Показывать «Копировать текст коммита»</label>
+      <label
+        for="dt_show_commit_checkbox"
+        class="text-sm cursor-pointer select-none"
+      >Показывать «Копировать текст коммита»</label>
       <i
         v-tooltip.top="'Можно отметить только одну задачу — после создания текст коммита для неё попадёт в буфер обмена'"
-        class="pi pi-question-circle"
+        class="pi pi-question-circle mt-0.5 shrink-0"
       />
     </div>
 
-    <div class="flex gap-1 items-center">
+    <div class="flex gap-1 items-start">
       <Checkbox
         v-model="form.copyCommitDefault"
         binary
         input-id="dt_copy_commit_default"
+        class="mt-0.5 shrink-0"
       />
-      <label for="dt_copy_commit_default">«Копировать текст коммита» по умолчанию для первой задачи</label>
+      <label
+        for="dt_copy_commit_default"
+        class="text-sm cursor-pointer select-none"
+      >«Копировать текст коммита» по умолчанию для первой задачи</label>
+    </div>
+
+    <div class="flex gap-1 items-start">
+      <Checkbox
+        v-model="form.copyPreviousRow"
+        binary
+        input-id="dt_copy_previous_row"
+        class="mt-0.5 shrink-0"
+      />
+      <label
+        for="dt_copy_previous_row"
+        class="text-sm cursor-pointer select-none"
+      >При добавлении копировать предыдущую строку</label>
     </div>
 
     <Button
       size="small"
       type="submit"
       label="Сохранить"
-      class="self-start"
+      class="col-span-3 justify-self-start"
       :loading="isLoading"
     />
   </form>

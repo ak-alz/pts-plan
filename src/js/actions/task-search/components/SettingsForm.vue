@@ -124,7 +124,7 @@ async function saveSettings() {
           <label
             for="settings-extended-search"
             class="text-sm cursor-pointer"
-          >Расширенный поиск</label>
+          >Искать в описании и комментариях</label>
         </div>
         <FormField
           label="Максимум задач"
@@ -211,7 +211,7 @@ async function saveSettings() {
           <label
             for="settings-hide-extended-search"
             class="text-sm cursor-pointer"
-          >Расширенный поиск</label>
+          >Искать в описании и комментариях</label>
         </div>
       </div>
     </div>

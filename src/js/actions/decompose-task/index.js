@@ -8,9 +8,7 @@ import primeVueOptions from '../../primeVueOptions.js';
 import { getTaskIdFromUrl } from '../../utils.js';
 import DecomposeTaskApp from './DecomposeTaskApp.vue';
 
-export async function decomposeTask(sessionId, userId) {
-  if (!userId) return;
-
+export async function decomposeTask(sessionId) {
   const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
@@ -37,7 +35,6 @@ export async function decomposeTask(sessionId, userId) {
 
   const app = createApp(DecomposeTaskApp, {
     sessionId,
-    userId,
     responsiveId,
     taskTitle,
     taskId: ids.taskId,

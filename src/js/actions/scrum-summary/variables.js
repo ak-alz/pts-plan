@@ -1,4 +1,4 @@
-export const defaultMaxSprints = 24;
+export const defaultMonths = 6;
 export const defaultIgnorePoints = 10;
 
 export function computeTrendLine(data) {

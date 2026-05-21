@@ -19,38 +19,19 @@ const chartData = computed(() => {
   });
   const labels = [...allPointValues].sort((a, b) => a - b);
 
-  if (props.allUserTasksPerUser.length === 1) {
-    const {userId, tasks} = props.allUserTasksPerUser[0];
-    const name = props.users.find((u) => u.id === userId)?.name ?? userId;
-    const counts = Object.fromEntries(labels.map((l) => [l, 0]));
-    tasks.forEach((task) => {
-      const pts = getTaskPointsFromName(task.title);
-      if (pts in counts) counts[pts]++;
-    });
-    return {
-      labels,
-      datasets: [{
-        label: 'Задач',
-        data: labels.map((l) => counts[l]),
-        backgroundColor: stringToPastelColor(name) + 'bb',
-        borderRadius: 4,
-        minBarLength: 4,
-      }],
-    };
-  }
+  const multiUser = props.allUserTasksPerUser.length > 1;
 
   return {
     labels,
     datasets: props.allUserTasksPerUser.map(({userId, tasks}) => {
-      const user = props.users.find((u) => u.id === userId);
-      const name = user?.name ?? userId;
+      const name = props.users.find((u) => u.id === userId)?.name ?? userId;
       const counts = Object.fromEntries(labels.map((l) => [l, 0]));
       tasks.forEach((task) => {
         const pts = getTaskPointsFromName(task.title);
         if (pts in counts) counts[pts]++;
       });
       return {
-        label: name,
+        label: multiUser ? name : 'Задач',
         data: labels.map((l) => counts[l]),
         backgroundColor: stringToPastelColor(name) + 'bb',
         borderRadius: 4,

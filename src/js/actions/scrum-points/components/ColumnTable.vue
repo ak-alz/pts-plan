@@ -64,6 +64,3 @@ const totalPoints = computed(() => {
   </DataTable>
 </template>
 
-<style scoped>
-
-</style>

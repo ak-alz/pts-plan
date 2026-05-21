@@ -40,6 +40,9 @@ const totalPoints = computed(() => props.tasks.reduce((sum, t) => sum + t.points
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    :paginator="tasks.length > 25"
+    :rows="25"
+    :rows-per-page-options="[10, 25, 50, 100]"
   >
     <Column
       field="responsible.name"

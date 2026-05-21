@@ -1,6 +1,6 @@
-import { definePreset } from '@primeuix/themes';
+import {definePreset} from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
-import { ru } from 'primelocale/ru.json';
+import {ru} from 'primelocale/ru.json';
 
 export default {
   theme: {
@@ -38,7 +38,10 @@ export default {
   locale: ru,
   pt: {
     avatar: {
-      image: { class: 'object-cover' },
+      image: {class: 'object-cover'},
+    },
+    select: {
+      label: {style: 'font-size: 14px;'},
     },
   },
 };

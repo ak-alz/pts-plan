@@ -349,13 +349,31 @@ export default class BitrixApi {
       }));
 
       batchResponses.forEach((response) => {
-        Object.values(response.data.result.result).forEach((pageResult) => {
+        Object.values(response.data?.result?.result ?? {}).forEach((pageResult) => {
           tasks.push(...(pageResult.tasks ?? []));
         });
       });
     }
 
     return limit ? tasks.slice(0, limit) : tasks;
+  }
+
+  addTask(fields) {
+    const params = new URLSearchParams({sessid: this.sessionId});
+    Object.entries(fields).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach((v) => params.append(`fields[${key}][]`, v));
+      } else if (value != null) {
+        params.set(`fields[${key}]`, value);
+      }
+    });
+    return axios.post('/rest/tasks.task.add.json', params);
+  }
+
+  getCurrentUser() {
+    return axios.postForm('https://plan.pixelplus.ru/rest/user.current.json', {
+      sessid: this.sessionId,
+    }).then(({data}) => data?.result ?? null);
   }
 
   searchTasksByFulltext(query) {

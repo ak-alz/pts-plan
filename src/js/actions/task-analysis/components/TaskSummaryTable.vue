@@ -47,25 +47,19 @@ function buildDistTooltip(dist) {
   };
 }
 
-const ptev1Tooltip = {
-  value: 'PTEv1 — Pixel Tools Efficiency v1\n\nФормула:\n√(баллов/нед × фич/нед) × равномерность\n\nРавномерность — нормированная энтропия распределения задач по номиналам баллов. Снижается при концентрации на задачах одного размера.',
-  pt: {text: {style: {whiteSpace: 'pre-wrap', maxWidth: '260px'}}},
-};
-
 function buildRows() {
   const headers = [];
   if (props.multiUser) headers.push('Исполнитель');
   headers.push('Баллов всего', 'Задач всего', 'Корневые', 'Коэф. декомп.', 'Средний балл / задачу');
   headers.push(`Средний балл / ${props.useWeeks ? 'нед.' : 'мес.'}`);
   if (!props.useWeeks) headers.push('Средний балл / нед.');
-  headers.push('PTEv1', 'Распределение');
+  headers.push('Распределение');
 
   const dataRows = props.rows.map((row) => {
     const cells = [];
     if (props.multiUser) cells.push(row.userName);
     cells.push(row.totalPoints, row.totalTasks, row.totalRoots, row.decompRatio, row.avgPointsPerTask, row.avgPoints);
     if (!props.useWeeks) cells.push(row.avgPointsPerWeek);
-    cells.push(row.ptev1);
     cells.push(row.pointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', '));
     return cells;
   });
@@ -119,6 +113,7 @@ function exportCsv() {
   </div>
   <DataTable
     :value="rows"
+    data-key="userId"
     sort-field="totalPoints"
     :sort-order="-1"
     :default-sort-order="-1"
@@ -232,46 +227,23 @@ function exportCsv() {
       </template>
     </Column>
     <Column
-      field="ptev1"
-      :sortable="rows.length > 1"
-    >
-      <template #header>
-        <b v-tooltip.top="ptev1Tooltip">PTEv1</b>
-      </template>
-      <template #body="{ data }">
-        {{ data.ptev1 }}
-        <span
-          v-if="data.deltaPtev1 !== null"
-          class="text-sm"
-          :class="{'text-green-400': data.deltaPtev1 > 0, 'text-red-400': data.deltaPtev1 < 0, 'text-surface-400': data.deltaPtev1 === 0}"
-        ><template v-if="data.deltaPtev1 > 0">+</template>{{ data.deltaPtev1 }}</span>
-      </template>
-    </Column>
-    <Column
-      field="uniformity"
+      field="pointDistribution"
       header="Распределение"
-      :sortable="rows.length > 1"
     >
       <template #body="{ data }">
-        <div class="flex items-center gap-2">
+        <div
+          v-tooltip="buildDistTooltip(data.pointDistribution)"
+          class="flex h-4 rounded overflow-hidden min-w-25 gap-px"
+        >
           <div
-            v-tooltip="buildDistTooltip(data.pointDistribution)"
-            class="flex h-4 rounded overflow-hidden min-w-25 gap-px"
-          >
-            <div
-              v-for="(seg, i) in data.pointDistribution"
-              :key="seg.points"
-              :style="{
-                width: seg.pct + '%',
-                minWidth: '3px',
-                backgroundColor: getPointColor(seg.points),
-              }"
-            />
-          </div>
-          <span
-            v-tooltip.top="'Равномерность — нормированная энтропия.\n0 = все задачи одного номинала, 1 = идеально равномерно.'"
-            class="text-sm text-surface-400 tabular-nums cursor-default"
-          >{{ data.uniformity }}</span>
+            v-for="seg in data.pointDistribution"
+            :key="seg.points"
+            :style="{
+              width: seg.pct + '%',
+              minWidth: '3px',
+              backgroundColor: getPointColor(seg.points),
+            }"
+          />
         </div>
       </template>
     </Column>

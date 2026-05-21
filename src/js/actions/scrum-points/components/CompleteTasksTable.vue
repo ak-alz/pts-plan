@@ -16,7 +16,7 @@ const props = defineProps({
   },
 });
 
-const emits = defineEmits(['success']);
+const emit = defineEmits(['success']);
 
 const toast = useToast();
 const bitrixApi = inject('bitrixApi');
@@ -59,7 +59,7 @@ async function completeSelectedTasks() {
       life: 5000,
     });
 
-    emits('success');
+    emit('success');
   } catch (e) {
     console.warn(e);
     toast.add({
@@ -134,6 +134,3 @@ async function completeSelectedTasks() {
   </DataTable>
 </template>
 
-<style scoped>
-
-</style>

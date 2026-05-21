@@ -1,7 +1,7 @@
 <script setup>
 import {Button} from 'primevue';
 import Chart from 'primevue/chart';
-import {ref, watch} from 'vue';
+import {nextTick, ref, watch} from 'vue';
 
 const props = defineProps({
   chartData: {
@@ -43,6 +43,7 @@ function toggleTasks() {
 watch(() => props.chartData, () => {
   showPoints.value = true;
   showTasks.value = true;
+  nextTick(() => applyVisibility());
 });
 
 const chartOptions = {
@@ -67,6 +68,13 @@ const chartOptions = {
     },
   },
   scales: {
+    x: {
+      type: 'category',
+      ticks: {
+        autoSkip: true,
+        maxRotation: 45,
+      },
+    },
     y: {
       position: 'left',
       title: {display: true, text: 'Баллы', align: 'end'},
@@ -106,7 +114,7 @@ const chartOptions = {
   </div>
   <Chart
     ref="chartRef"
-    type="line"
+    type="scatter"
     :data="chartData"
     :options="chartOptions"
   />

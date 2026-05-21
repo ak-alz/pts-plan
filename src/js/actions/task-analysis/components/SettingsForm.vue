@@ -20,7 +20,7 @@ const props = defineProps({
   },
 });
 
-const emits = defineEmits(['success']);
+const emit = defineEmits(['success']);
 const toast = useToast();
 const isLoading = ref(false);
 
@@ -32,11 +32,6 @@ const monthOptions = [
   { label: '12 месяцев', value: 12 },
 ];
 
-const statusOptions = [
-  { label: 'Все', value: 'all' },
-  { label: 'Открытые', value: 'active' },
-  { label: 'Закрытые', value: 'closed' },
-];
 
 const separatorOptions = [
   { label: 'Tab', value: '\t' },
@@ -56,7 +51,6 @@ const form = reactive({
   defaultUserIds: props.initial.defaultUserIds
     ? toRaw(props.initial.defaultUserIds)
     : (props.initial.defaultUserId ? [props.initial.defaultUserId] : []),
-  defaultStatus: props.initial.defaultStatus ?? 'closed',
   visibleUserIds: props.initial.visibleUserIds ? toRaw(props.initial.visibleUserIds) : [],
   copySeparator: props.initial.copySeparator ?? '\t',
   csvSeparator: props.initial.csvSeparator ?? ',',
@@ -77,7 +71,7 @@ async function saveSettings() {
       detail: 'Настройки успешно сохранены.',
       life: 5000,
     });
-    emits('success', toRaw(form));
+    emit('success', toRaw(form));
   } catch (e) {
     console.warn(e);
   } finally {
@@ -96,17 +90,6 @@ async function saveSettings() {
         <Select
           v-model="form.defaultMonths"
           :options="monthOptions"
-          option-label="label"
-          option-value="value"
-          fluid
-          size="small"
-        />
-      </FormField>
-
-      <FormField label="Статус задач">
-        <Select
-          v-model="form.defaultStatus"
-          :options="statusOptions"
           option-label="label"
           option-value="value"
           fluid

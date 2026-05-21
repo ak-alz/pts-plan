@@ -3,11 +3,12 @@ import dayjs from 'dayjs';
 import { forEachRight, orderBy, sum } from 'lodash-es';
 import { Button, Dialog, Skeleton, ToggleButton } from 'primevue';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import {stringToPastelColor} from '../../../utils.js';
-import { computeTrendLine, defaultIgnorePoints, defaultMaxSprints } from '../variables.js';
+import { computeTrendLine, defaultIgnorePoints, defaultMonths } from '../variables.js';
 import SettingsForm from './SettingsForm.vue';
 import SummaryChart from './SummaryChart.vue';
 import SummaryTable from './SummaryTable.vue';
@@ -30,19 +31,48 @@ const bitrixApi = new BitrixApi(props.sessionId);
 const settings = ref({});
 const settingsStorageKey = computed(() => `scrum-summary-settings-${props.groupId}`);
 const isLoading = ref(false);
-const sprints = ref([]);
+const sprintDates = ref([]);
+const minSprintDate = computed(() => sprintDates.value.length ? new Date(Math.min(...sprintDates.value.map((d) => d.getTime()))) : undefined);
+const maxSprintDate = computed(() => sprintDates.value.length ? new Date(Math.max(...sprintDates.value.map((d) => d.getTime()))) : undefined);
 const users = ref([]);
+
+function getDefaults() {
+  const months = settings.value.defaultMonths ?? defaultMonths;
+  return {
+    dateRange: [dayjs().subtract(months, 'month').toDate(), dayjs().toDate()],
+  };
+}
+
+const form = reactive({ ...getDefaults() });
+
 const computedUsers = computed(() => {
   const ignorePoints = typeof settings.value.ignorePoints === 'number' ? settings.value.ignorePoints : defaultIgnorePoints;
-  const maxSprintsCount = settings.value.maxSprintsCount || defaultMaxSprints;
+  const rangeStart = form.dateRange?.[0] ? dayjs(form.dateRange[0]).startOf('day') : null;
+  const rangeEnd = form.dateRange?.[1] ? dayjs(form.dateRange[1]).endOf('day') : null;
+
+  const prevRangeEnd = rangeStart ? rangeStart.subtract(1, 'day').endOf('day') : null;
+  const prevRangeStart = (rangeStart && rangeEnd)
+    ? rangeStart.subtract(rangeEnd.diff(rangeStart, 'day') + 1, 'day').startOf('day')
+    : null;
 
   return users.value
     .filter(({ id }) => settings.value.users?.length && settings.value.users?.includes(id))
     .map((user) => {
-      const filteredSprints = user.sprints
-        .filter(({y}) => y >= ignorePoints);
-      const currentPeriod = filteredSprints.slice(0, maxSprintsCount);
-      const prevPeriod = filteredSprints.slice(maxSprintsCount, 2 * maxSprintsCount);
+      const allFiltered = user.sprints.filter(({y}) => y >= ignorePoints);
+
+      const currentPeriod = allFiltered.filter(({x}) => {
+        if (!rangeStart && !rangeEnd) return true;
+        const d = dayjs(x);
+        if (rangeStart && d.isBefore(rangeStart)) return false;
+        if (rangeEnd && d.isAfter(rangeEnd)) return false;
+        return true;
+      });
+
+      const prevPeriod = allFiltered.filter(({x}) => {
+        if (!prevRangeStart || !prevRangeEnd) return false;
+        const d = dayjs(x);
+        return !d.isBefore(prevRangeStart) && !d.isAfter(prevRangeEnd);
+      });
 
       const points = currentPeriod.map(({ y }) => y).sort((a, b) => a - b);
       const avg = points.length ? Math.round(sum(points) / points.length) : 0;
@@ -58,17 +88,17 @@ const computedUsers = computed(() => {
       const trendDelta = trendStart !== null && trendEnd !== null ? trendEnd - trendStart : null;
       const trendPct = trendDelta !== null && trendStart !== 0
         ? Math.round((trendDelta / trendStart) * 100)
-        : trendDelta !== null ? 100 : null;
+        : null;
 
       return {
         ...user,
         visibleSprints: currentPeriod,
-        filteredSprintsLength: filteredSprints.length,
+        filteredSprintsLength: currentPeriod.length,
         avg,
         median,
 
-        deltaAvg: currentPeriod.length === prevPeriod.length ? avg - prevAvg : 0,
-        deltaMedian: currentPeriod.length === prevPeriod.length ? median - prevMedian : 0,
+        deltaAvg: prevPoints.length ? avg - prevAvg : 0,
+        deltaMedian: prevPoints.length ? median - prevMedian : 0,
 
         trendLine,
         trendStart,
@@ -119,7 +149,6 @@ async function fetchData() {
     // Старый формат: [USER=ID]Имя[/USER] — N балл
     const bbUserPattern = /\[USER=(\d+)]([^[]+)\[\/USER]\D*(\d+)\s+балл/g;
 
-    const sprintsAcc = [];
     const usersMap = {};
 
     forEachRight(comments, (comment) => {
@@ -135,8 +164,6 @@ async function fetchData() {
       bbUserPattern.lastIndex = 0;
       const hasUsers = urlUserPattern.test(comment.POST_MESSAGE) || bbUserPattern.test(comment.POST_MESSAGE);
       if (!hasUsers) return;
-
-      sprintsAcc.push(sprintNumber);
 
       const addUser = (id, name, url, points) => {
         if (!usersMap[id]) {
@@ -159,7 +186,14 @@ async function fetchData() {
       }
     });
 
-    sprints.value = sprintsAcc;
+    const dateSet = new Set();
+    Object.values(usersMap).forEach((user) => {
+      user.sprints.forEach((sprint) => {
+        dateSet.add(dayjs(sprint.x).startOf('day').valueOf());
+      });
+    });
+    sprintDates.value = Array.from(dateSet).map((ts) => new Date(ts));
+
     users.value = orderBy(Object.values(usersMap), [(user) => user.sprints.length], 'desc');
 
     dateUpdated.value = `Последнее обновление: ${dayjs().format('HH:mm:ss')}`;
@@ -186,6 +220,8 @@ async function onSaveSettings() {
 
   await loadSettings();
 
+  Object.assign(form, getDefaults());
+
   if (settings.value.taskId !== oldTaskId) {
     fetchData();
   }
@@ -193,14 +229,14 @@ async function onSaveSettings() {
 
 onMounted(async () => {
   await loadSettings();
-
+  Object.assign(form, getDefaults());
   fetchData();
 });
 </script>
 
 <template>
   <div v-if="settings.taskId">
-    <div class="flex gap-2 mb-3">
+    <div class="flex gap-2 mb-3 items-center flex-wrap">
       <Button
         label="Настройки"
         :loading="isLoading"
@@ -229,6 +265,17 @@ onMounted(async () => {
         off-icon="pi pi-chart-line"
         size="small"
       />
+      <div
+        v-if="!isLoading"
+        class="w-52"
+      >
+        <DateRangePicker
+          v-model="form.dateRange"
+          :min-date="minSprintDate"
+          :max-date="maxSprintDate"
+          :event-dates="sprintDates"
+        />
+      </div>
     </div>
 
     <Skeleton
@@ -259,7 +306,7 @@ onMounted(async () => {
   <SettingsForm
     v-else
     :users
-    :sprints
+
     :initial="settings"
     :settings-storage-key
     simple
@@ -274,14 +321,10 @@ onMounted(async () => {
   >
     <SettingsForm
       :users
-      :sprints
+
       :initial="settings"
       :settings-storage-key
       @success="onSaveSettings"
     />
   </Dialog>
 </template>
-
-<style scoped>
-
-</style>

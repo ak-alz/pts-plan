@@ -1,5 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
-import {insertCSS, isUserMentioned, rehydrateOnChanges, stringToPastelColor} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, isUserMentioned, rehydrateOnChanges, stringToPastelColor} from '../../utils.js';
 
 export function notificationDetails(sessionId, options = {}) {
   const bitrixApi = new BitrixApi(sessionId);
@@ -7,6 +7,7 @@ export function notificationDetails(sessionId, options = {}) {
   const shouldHighlight = !!(options.notificationDetailsHighlight && options.userId);
   const shouldHighlightCreator = !!(options.notificationDetailsHighlightCreator && options.userId);
   const shouldHighlightMention = !!(options.notificationDetailsHighlightMention && options.userFirstName && options.userLastName);
+  const shouldHighlightTagall = !!options.notificationDetailsHighlightTagall;
   const shouldCompact = !!options.notificationDetailsCompact;
 
   // In-memory кэш на время сессии страницы
@@ -130,6 +131,15 @@ export function notificationDetails(sessionId, options = {}) {
     `);
   }
 
+  if (shouldHighlightTagall) {
+    insertCSS(`
+      .pts-nd-tagall {
+        border-color: ${options.notificationDetailsHighlightTagallBorder} !important;
+        background-color: ${options.notificationDetailsHighlightTagallBackground} !important;
+      }
+    `);
+  }
+
   async function init() {
     const container = document.querySelector('.bx-im-content-notification__elements');
     if (!container) return;
@@ -140,18 +150,22 @@ export function notificationDetails(sessionId, options = {}) {
 
     if (!newItems.length) return;
 
-    const items = newItems.map((el) => {
-      el.setAttribute('data-pts-details', 'loading');
+    const items = [];
+    newItems.forEach((el) => {
+      const href = el.querySelector('a[href*="/tasks/task/view/"]').getAttribute('href');
+      const taskId = getTaskIdFromUrl(href)?.taskId ?? null;
 
+      if (!taskId) {
+        el.setAttribute('data-pts-details', 'done');
+        return;
+      }
+
+      el.setAttribute('data-pts-details', 'loading');
       const skeleton = document.createElement('div');
       skeleton.className = 'pts-nd-skeleton';
       el.querySelector('.bx-im-content-notification-item-header__title-container')?.appendChild(skeleton);
-
-      const href = el.querySelector('a[href*="/tasks/task/view/"]').getAttribute('href');
-      const taskId = href.match(/\/tasks\/task\/view\/(\d+)\//)?.[1] ?? null;
-
-      return {el, skeleton, taskId};
-    }).filter((d) => d.taskId);
+      items.push({el, skeleton, taskId});
+    });
 
     if (!items.length) return;
 
@@ -212,9 +226,16 @@ export function notificationDetails(sessionId, options = {}) {
         if (shouldHighlightCreator && task.createdBy === String(options.userId)) {
           el.classList.add('pts-nd-my-creator-task');
         }
-        if (shouldHighlightMention) {
-          const text = el.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent ?? '';
-          if (isUserMentioned(text, options.userFirstName, options.userLastName)) {
+        const notifText = el.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent ?? '';
+
+        if (shouldHighlightTagall && notifText.includes('и другие участники задачи')) {
+          el.classList.add('pts-nd-tagall');
+        }
+
+        if (shouldHighlightMention && !el.classList.contains('pts-nd-tagall')) {
+          const isNewTask = /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notifText);
+          const isNotResponsible = !options.userId || task.responsibleId !== String(options.userId);
+          if (isUserMentioned(notifText, options.userFirstName, options.userLastName) && !(isNewTask && isNotResponsible)) {
             el.classList.add('pts-nd-my-mention');
           }
         }
@@ -235,9 +256,7 @@ export function notificationDetails(sessionId, options = {}) {
         if (responsible) chips.push(createUserChip(responsible, 'Исполнитель'));
 
         const creator = cache.users.get(task.createdBy);
-        if (creator && task.createdBy !== task.responsibleId) {
-          chips.push(createUserChip(creator, 'Постановщик'));
-        }
+        if (creator) chips.push(createUserChip(creator, 'Постановщик'));
 
         if (!chips.length) return;
 

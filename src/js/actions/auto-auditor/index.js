@@ -10,7 +10,13 @@
       return;
     }
 
-    addBtn?.click();
+    if (addBtn) {
+      const preventNav = (e) => e.preventDefault();
+      addBtn.addEventListener('click', preventNav, true);
+      addBtn.click();
+      addBtn.removeEventListener('click', preventNav, true);
+    }
+
     targetBtn?.click();
   }
 

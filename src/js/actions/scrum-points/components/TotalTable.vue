@@ -104,6 +104,3 @@ const userTasks = computed(() => {
   </DataTable>
 </template>
 
-<style scoped>
-
-</style>

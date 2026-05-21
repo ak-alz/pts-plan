@@ -1,19 +1,13 @@
 <script setup>
-import { Button, InputNumber, MultiSelect } from 'primevue';
+import { Button, InputNumber, MultiSelect, Select } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
 import FormField from '../../../ui/FormField.vue';
-import { defaultIgnorePoints, defaultMaxSprints } from '../variables.js';
+import { defaultIgnorePoints } from '../variables.js';
 
 const props = defineProps({
   users: {
-    type: Array,
-    default() {
-      return [];
-    },
-  },
-  sprints: {
     type: Array,
     default() {
       return [];
@@ -35,7 +29,15 @@ const props = defineProps({
   },
 });
 
-const emits = defineEmits(['success']);
+const emit = defineEmits(['success']);
+
+const monthOptions = [
+  { label: '1 месяц', value: 1 },
+  { label: '2 месяца', value: 2 },
+  { label: '3 месяца', value: 3 },
+  { label: '6 месяцев', value: 6 },
+  { label: '12 месяцев', value: 12 },
+];
 
 const toast = useToast();
 
@@ -44,8 +46,8 @@ const isLoading = ref(false);
 const form = reactive({
   users: props.initial.users ? toRaw(props.initial.users) : [],
   taskId: props.initial.taskId ? toRaw(props.initial.taskId) : null,
-  maxSprintsCount: props.initial.maxSprintsCount ? toRaw(props.initial.maxSprintsCount) : defaultMaxSprints,
-  ignorePoints: props.initial.ignorePoints ? toRaw(props.initial.ignorePoints) : defaultIgnorePoints,
+  defaultMonths: props.initial.defaultMonths ?? 6,
+  ignorePoints: props.initial.ignorePoints != null ? toRaw(props.initial.ignorePoints) : defaultIgnorePoints,
 });
 
 async function saveSettings() {
@@ -63,7 +65,7 @@ async function saveSettings() {
       life: 5000,
     });
 
-    emits('success');
+    emit('success');
   } catch (e) {
     console.warn(e);
   } finally {
@@ -111,18 +113,18 @@ async function saveSettings() {
       </FormField>
 
       <FormField
-        id="settings_max_sprints_count"
-        label="Количество выводимых спринтов"
-        tip="Количество спринтов с конца, на основе которых рассчитываются показатели"
+        id="settings_default_months"
+        label="Период по умолчанию"
+        tip="Начальный диапазон дат при открытии виджета"
       >
-        <InputNumber
-          v-model="form.maxSprintsCount"
-          :max-fraction-digits="0"
-          :use-grouping="false"
+        <Select
+          v-model="form.defaultMonths"
+          :options="monthOptions"
+          option-label="label"
+          option-value="value"
           fluid
-          :min="0"
-          :max="Math.max(sprints.length, defaultMaxSprints)"
-          input-id="settings_max_sprints_count"
+          size="small"
+          input-id="settings_default_months"
         />
       </FormField>
 
@@ -152,6 +154,3 @@ async function saveSettings() {
   </form>
 </template>
 
-<style scoped>
-
-</style>

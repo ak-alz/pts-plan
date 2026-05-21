@@ -12,10 +12,6 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  userId: {
-    type: Number,
-    required: true,
-  },
   responsiveId: {
     type: Number,
     required: true,
@@ -30,7 +26,7 @@ const props = defineProps({
   },
 });
 
-const emits = defineEmits(['success']);
+const emit = defineEmits(['success']);
 
 async function resolveGroupId(url, sessionId, taskId) {
   if (!url.includes('/company/personal/user/')) {
@@ -47,6 +43,7 @@ const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const groupId = ref('');
+const userId = ref(0);
 
 const users = ref([]);
 const stages = ref([]);
@@ -79,20 +76,29 @@ function createRow() {
     description: '',
     copyContent: settings.value.copyContentDefault ?? false,
     copyCommit: rows.value.length === 0 && (settings.value.copyCommitDefault ?? false),
-    responsibleId: !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit' ? props.responsiveId : props.userId,
+    responsibleId: !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit' ? props.responsiveId : userId.value,
     stageId: settings.value.defaultStageId ?? null,
     auditorIds: defaultAuditors.value === 'all'
       ? users.value.map((u) => u.id)
       : defaultAuditors.value === 'inherit'
         ? [...parentAuditorIds.value]
-        : [props.userId],
+        : [userId.value],
   };
 }
 
 const rows = ref([]);
 
 function addRow() {
-  rows.value.push(createRow());
+  if (settings.value.copyPreviousRow && rows.value.length > 0) {
+    const prev = rows.value[rows.value.length - 1];
+    rows.value.push({
+      ...prev,
+      _id: rowIdCounter++,
+      copyCommit: false,
+    });
+  } else {
+    rows.value.push(createRow());
+  }
 }
 
 function removeRow(index) {
@@ -128,7 +134,7 @@ async function submit() {
     const responses = await bitrixApi.addTasksBatch(rows.value.map((row) => ({
       TITLE: row.title,
       DESCRIPTION: row.copyContent ? parentDescription : row.description,
-      CREATED_BY: props.userId,
+      CREATED_BY: userId.value,
       RESPONSIBLE_ID: row.responsibleId,
       AUDITORS: row.auditorIds,
       GROUP_ID: groupId.value,
@@ -171,16 +177,19 @@ async function submit() {
       }
     }
 
+    const failedCount = total - createdTasks.length;
     const showTasks = settings.value.showCreatedTasks && createdTasks.length > 0;
     toast.add({
-      severity: 'success',
-      summary: 'Готово',
-      detail: `[pts-plan]: Создано подзадач: ${total}`,
+      severity: failedCount > 0 ? 'warn' : 'success',
+      summary: failedCount > 0 ? 'Частично' : 'Готово',
+      detail: failedCount > 0
+        ? `[pts-plan]: Создано ${createdTasks.length} из ${total} подзадач (${failedCount} не удалось)`
+        : `[pts-plan]: Создано подзадач: ${total}`,
       tasks: showTasks ? createdTasks : undefined,
       life: showTasks ? 15000 : 5000,
     });
 
-    emits('success');
+    emit('success');
   } catch (e) {
     console.warn(e);
     toast.add({
@@ -203,10 +212,13 @@ async function fetchData() {
     groupId.value = resolved;
 
     await loadSettings();
-    const [groupUsers, stagesResponse] = await Promise.all([
+    const [groupUsers, stagesResponse, currentUser] = await Promise.all([
       bitrixApi.getGroupUsers(groupId.value),
       bitrixApi.getStages(groupId.value),
+      bitrixApi.getCurrentUser(),
     ]);
+    if (!currentUser) throw new Error('Не удалось получить данные текущего пользователя');
+    userId.value = Number(currentUser.ID);
 
     if (defaultAuditors.value === 'inherit') {
       const { data } = await bitrixApi.getTask(props.taskId, ['AUDITORS']);

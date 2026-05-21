@@ -23,6 +23,12 @@ const props = defineProps({
       return [];
     },
   },
+  groupUsers: {
+    type: Array,
+    default() {
+      return [];
+    },
+  },
   columns: {
     type: Array,
     default() {
@@ -41,7 +47,7 @@ const props = defineProps({
   },
 });
 
-const emits = defineEmits(['success']);
+const emit = defineEmits(['success']);
 
 const toast = useToast();
 
@@ -71,7 +77,7 @@ async function saveSettings() {
       life: 5000,
     });
 
-    emits('success');
+    emit('success');
   } catch (e) {
     console.warn(e);
   } finally {
@@ -103,13 +109,12 @@ const sortableColumns = computed(() => {
       <FormField
         id="settings_users"
         label="Исполнители"
-        tip="Если вы не нашли нужного исполнителя, значит его нет в первых 20 задач каждой колонки"
       >
         <MultiSelect
           v-model="form.users"
           option-value="id"
           option-label="name"
-          :options="users"
+          :options="groupUsers.length ? groupUsers : users"
           filter
           filter-placeholder="Поиск"
           fluid
@@ -203,9 +208,6 @@ const sortableColumns = computed(() => {
                 fluid
                 input-id="settings_sort_column"
                 placeholder="Выбрать"
-                :pt="{
-                  label: {style: 'font-size: 14px;'}
-                }"
               >
                 <template #option="{option}">
                   <Badge
@@ -280,6 +282,3 @@ const sortableColumns = computed(() => {
   </form>
 </template>
 
-<style scoped>
-
-</style>

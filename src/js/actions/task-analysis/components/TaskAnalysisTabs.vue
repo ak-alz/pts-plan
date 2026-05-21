@@ -65,7 +65,6 @@ defineProps({
         <TaskTopList
           v-if="topTasksData"
           :rows="topTasksData.rows"
-          :use-weeks="topTasksData.useWeeks"
         />
       </TabPanel>
       <TabPanel value="tasks">

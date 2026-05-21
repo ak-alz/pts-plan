@@ -27,7 +27,7 @@ defineProps({
       <i
         v-if="tip"
         v-tooltip="tip"
-        class="pi pi-question-circle"
+        class="pi pi-question-circle text-surface-500"
       />
     </component>
     <div>
@@ -36,6 +36,3 @@ defineProps({
   </div>
 </template>
 
-<style scoped>
-
-</style>

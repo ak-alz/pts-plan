@@ -1,20 +1,48 @@
 <script setup>
-import { Button, Dialog, IconField, InputIcon, InputText, Toast } from 'primevue';
-import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, reactive, ref, toRaw } from 'vue';
+import { debounce } from 'lodash-es';
+import { Button, Dialog, IconField, InputIcon, InputText, SelectButton } from 'primevue';
+import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue';
 
-import options, { optionTypes } from '../js/options.js';
+import options, { groups, optionTypes } from '../js/options.js';
 import OptionsTree from './components/OptionsTree.vue';
-
-const toast = useToast();
+import ProfileSettings from './components/ProfileSettings.vue';
 
 const search = ref('');
+const selectedGroup = ref('all');
+
+watch(search, (val) => {
+  if (val) selectedGroup.value = 'all';
+});
+
+const profileKeys = new Set(['userFirstName', 'userLastName', 'userId']);
+
+const groupOptions = [
+  { label: 'Все', value: 'all' },
+  { label: 'Новые', value: 'new' },
+  { label: 'Рекомендую', value: 'popular', tooltip: 'Подойдет для большинства пользователей.' },
+  ...groups.filter((g) => g.key !== 'profile').map((g) => ({ label: g.label, value: g.key })),
+];
+
+const groupOrder = Object.fromEntries(groups.map((g, i) => [g.key, i]));
 
 const filteredOptions = computed(() => {
   return options
     .filter((option) => {
-      return option.name.toLowerCase().includes(search.value.toLowerCase())
+      if (profileKeys.has(option.key)) return false;
+      const matchesSearch = option.name.toLowerCase().includes(search.value.toLowerCase())
         || option.tip?.toLowerCase()?.includes(search.value.toLowerCase());
+      const matchesGroup = selectedGroup.value === 'all'
+        || (selectedGroup.value === 'new' && option.new)
+        || (selectedGroup.value === 'popular' && (option.popularity ?? 0) >= 80)
+        || option.groups?.includes(selectedGroup.value);
+      return matchesSearch && matchesGroup;
+    })
+    .sort((a, b) => {
+      const popDiff = (b.popularity ?? 0) - (a.popularity ?? 0);
+      if (popDiff !== 0) return popDiff;
+      const aIdx = Math.min(...(a.groups?.map((g) => groupOrder[g] ?? Infinity) ?? [Infinity]));
+      const bIdx = Math.min(...(b.groups?.map((g) => groupOrder[g] ?? Infinity) ?? [Infinity]));
+      return aIdx - bIdx;
     });
 });
 
@@ -50,24 +78,25 @@ function getOptionsMap() {
 }
 
 let form = reactive(getOptionsMap());
+const loaded = ref(false);
 
 async function loadSettings() {
   const { options } = await chrome.storage.local.get(['options']);
   Object.assign(form, options);
+  loaded.value = true;
 }
 
-async function saveSettings() {
+const saveSettings = debounce(async () => {
   await chrome.storage.local.set({
     options: toRaw(form),
   });
+}, 500);
 
-  toast.add({
-    severity: 'success',
-    summary: 'Сохранено',
-    detail: 'Перезагрузите страницу, чтобы применить настройки.',
-    life: 10000,
-  });
-}
+watch(form, () => {
+  if (loaded.value) {
+    saveSettings();
+  }
+}, { deep: true });
 
 const infoModalOpened = ref(false);
 
@@ -81,37 +110,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="w-[350px] h-[400px] p-3 flex flex-col gap-3">
-    <form
-      class="grow flex gap-3 flex-col"
-      @submit.prevent="saveSettings"
-    >
-      <IconField>
-        <InputIcon class="pi pi-search" />
-        <InputText
-          v-model="search"
-          placeholder="Поиск"
-          fluid
-          size="small"
-        />
-      </IconField>
-
-      <div class="grow flex flex-col gap-2 max-h-[282px] overflow-auto">
-        <OptionsTree
-          v-model="form"
-          :options="filteredOptions"
-        />
-      </div>
-
-      <div class="flex gap-1">
+  <main class="w-[600px] h-[500px] p-3 flex flex-col gap-3">
+    <div class="grow min-h-0 flex gap-3 flex-col">
+      <div class="flex gap-1 items-center">
+        <IconField class="grow">
+          <InputIcon class="pi pi-search" />
+          <InputText
+            v-model="search"
+            placeholder="Поиск"
+            fluid
+            size="small"
+          />
+        </IconField>
+        <ProfileSettings v-model="form" />
         <Button
-          label="Сохранить"
-          fluid
-          size="small"
-          type="submit"
-        />
-        <Button
-          v-tooltip="'Что нового'"
+          v-tooltip.left="'Что нового'"
           size="small"
           severity="secondary"
           link
@@ -119,8 +132,7 @@ onMounted(() => {
           @click="openWhatsNew"
         />
         <Button
-          v-tooltip="'О расширении'"
-          class="mx-auto"
+          v-tooltip.left="'О расширении'"
           size="small"
           severity="secondary"
           link
@@ -128,7 +140,40 @@ onMounted(() => {
           @click="infoModalOpened = true"
         />
       </div>
-    </form>
+
+      <div class="grow min-h-0 flex gap-3">
+        <div class="bg-surface-100">
+          <SelectButton
+            v-model="selectedGroup"
+            :options="groupOptions"
+            option-label="label"
+            option-value="value"
+            size="small"
+            :allow-empty="false"
+            :pt="{ root: { class: 'flex-col' } }"
+            :dt="{ borderRadius: 0 }"
+          >
+            <template #option="{ option }">
+              <span v-tooltip.right="option.tooltip">{{ option.label }}</span>
+            </template>
+          </SelectButton>
+        </div>
+
+        <div class="grow flex flex-col gap-2 min-h-0 overflow-auto">
+          <OptionsTree
+            v-if="loaded && filteredOptions.length"
+            v-model="form"
+            :options="filteredOptions"
+          />
+          <div
+            v-else
+            class="grow flex items-center justify-center text-sm text-surface-400"
+          >
+            Ничего не найдено
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <Dialog
@@ -185,15 +230,6 @@ onMounted(() => {
       </a>
     </div>
   </Dialog>
-
-  <Toast
-    :dt="{
-      summaryFontSize: '14px',
-      detailFontSize: '14px',
-      contentPadding: '10px',
-      width: 'calc(100% - 40px)'
-    }"
-  />
 </template>
 
 <style scoped>

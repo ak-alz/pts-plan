@@ -1,7 +1,18 @@
 import BitrixApi from '../../BitrixApi.js';
 import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
-export function removeSystemNotifications(sessionId, {dedupe = false, removeSystem = false, removeChanges = false, removeClosed = false, removeNew = false, removeReactions = false} = {}) {
+export function removeSystemNotifications(sessionId, options = {}) {
+  const {
+    removeSystemNotificationsDedupe: dedupe = false,
+    removeSystemNotificationsSystem: removeSystem = false,
+    removeSystemNotificationsChanges: removeChanges = false,
+    removeSystemNotificationsClosed: removeClosed = false,
+    removeSystemNotificationsNew: removeNew = false,
+    removeSystemNotificationsReactions: removeReactions = false,
+  } = options;
+
+  if (!dedupe && !removeSystem && !removeChanges && !removeClosed && !removeNew && !removeReactions) return;
+
   const bitrixApi = new BitrixApi(sessionId);
 
   function init() {
@@ -31,8 +42,8 @@ export function removeSystemNotifications(sessionId, {dedupe = false, removeSyst
 
             const notificationText = notification.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent?.trim();
             if (removeChanges && /^(Изменила? задачу|Изменена задача) \[#/.test(notificationText)) return true;
-            if (removeClosed && /^Закрыла? задачу \[#/.test(notificationText)) return true;
-            if (removeNew && /^Добавила? новую задачу \[#/.test(notificationText)) return true;
+            if (removeClosed && /^(Закрыла? задачу|Закрыта задача) \[#/.test(notificationText)) return true;
+            if (removeNew && /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notificationText)) return true;
             if (removeReactions && /^Отреагировала? на ваш комментарий/.test(notificationText)) return true;
 
             return false;
@@ -63,16 +74,24 @@ export function removeSystemNotifications(sessionId, {dedupe = false, removeSyst
         if (!toDelete.length) return;
 
         this.setAttribute('disabled', '');
-        await bitrixApi.removeNotifications(toDelete);
+        try {
+          await bitrixApi.removeNotifications(toDelete);
 
-        this.textContent = 'Уведомления успешно удалены';
-        this.classList.add('remove-notifications--success');
+          this.textContent = 'Уведомления успешно удалены';
+          this.classList.add('remove-notifications--success');
 
-        setTimeout(() => {
-          this.removeAttribute('disabled');
-          this.textContent = 'Удалить системные уведомления';
-          this.classList.remove('remove-notifications--success');
-        }, 1000);
+          setTimeout(() => {
+            this.removeAttribute('disabled');
+            this.textContent = 'Удалить системные уведомления';
+            this.classList.remove('remove-notifications--success');
+          }, 1000);
+        } catch {
+          this.textContent = 'Ошибка при удалении';
+          setTimeout(() => {
+            this.removeAttribute('disabled');
+            this.textContent = 'Удалить системные уведомления';
+          }, 2000);
+        }
       },
     });
 

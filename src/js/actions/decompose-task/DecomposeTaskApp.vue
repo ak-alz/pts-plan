@@ -9,10 +9,6 @@ defineProps({
     type: String,
     required: true,
   },
-  userId: {
-    type: Number,
-    required: true,
-  },
   responsiveId: {
     type: Number,
     required: true,
@@ -47,7 +43,6 @@ const modalOpened = ref(false);
   >
     <DecomposeTask
       :session-id
-      :user-id
       :responsive-id
       :task-title
       :task-id

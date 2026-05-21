@@ -81,6 +81,3 @@ const isInfoModalOpened = ref(false);
   <Toast position="bottom-right" />
 </template>
 
-<style scoped>
-
-</style>

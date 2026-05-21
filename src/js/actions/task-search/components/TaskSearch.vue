@@ -7,7 +7,6 @@ import {
   Button,
   Column,
   DataTable,
-  DatePicker,
   Dialog,
   InputText,
   MultiSelect,
@@ -19,6 +18,7 @@ import {useToast} from 'primevue/usetoast';
 import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getTaskUrl, pluralize} from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
@@ -151,8 +151,6 @@ async function toggleFavorite(task) {
 }
 
 watch(filterFavorites, () => search());
-watch(() => form.extendedSearch, (val) => { if (val) form.smartTitleSearch = false; });
-watch(() => form.smartTitleSearch, (val) => { if (val) form.extendedSearch = false; });
 
 async function search() {
   if (!filterFavorites.value && isEqual(form, getDefaults())) {
@@ -161,27 +159,17 @@ async function search() {
     return;
   }
 
+  if (isLoading.value) return;
+
   isLoading.value = true;
   hasSearched.value = true;
 
   try {
     const limit = settings.value.resultLimit !== undefined ? settings.value.resultLimit : 100;
 
-    let fulltextIds = null;
-    if (form.extendedSearch && form.title.trim()) {
-      const { data } = await bitrixApi.searchTasksByFulltext(form.title.trim());
-      const items = (data?.data?.items ?? []).filter((item) => item.type === 'TASK');
-      if (!items.length) {
-        tasks.value = [];
-        return;
-      }
-      fulltextIds = limit ? items.slice(0, limit).map((item) => item.id) : items.map((item) => item.id);
-    }
-
-    tasks.value = await bitrixApi.searchTasks({
-      ids: fulltextIds,
+    const baseParams = {
       favorite: filterFavorites.value,
-      title: form.extendedSearch ? null : (form.title.trim() || null),
+      title: form.title.trim() || null,
       excludeTitle: form.excludeTitle.trim() || null,
       smartTitleSearch: form.smartTitleSearch,
       status: form.status,
@@ -203,7 +191,29 @@ async function search() {
         ? dayjs(form.changedDateRange[1]).format('YYYY-MM-DD 23:59:59')
         : null,
       limit,
-    });
+    };
+
+    const requests = [bitrixApi.searchTasks(baseParams)];
+
+    if (form.extendedSearch && form.title.trim()) {
+      requests.push(
+        bitrixApi.searchTasksByFulltext(form.title.trim()).then(({data}) => {
+          const items = (data?.data?.items ?? []).filter((item) => item.type === 'TASK');
+          if (!items.length) return [];
+          const ids = limit ? items.slice(0, limit).map((item) => item.id) : items.map((item) => item.id);
+          return bitrixApi.searchTasks({...baseParams, ids, title: null});
+        }),
+      );
+    }
+
+    const [standardResults, fulltextResults] = await Promise.all(requests);
+
+    if (fulltextResults?.length) {
+      const existingIds = new Set(standardResults.map((t) => t.id));
+      tasks.value = [...standardResults, ...fulltextResults.filter((t) => !existingIds.has(t.id))];
+    } else {
+      tasks.value = standardResults;
+    }
   } catch (e) {
     console.warn('[task-search]', e);
     toast.add({
@@ -374,28 +384,18 @@ function formatDate(dateStr) {
           v-if="!settings.hideCreatedDate"
           label="Дата создания"
         >
-          <DatePicker
+          <DateRangePicker
             v-model="form.createdDateRange"
-            :number-of-months="2"
-            selection-mode="range"
-            date-format="dd.mm.yy"
-            show-button-bar
-            size="small"
-            class="w-full"
+            presets="current"
           />
         </FormField>
         <FormField
           v-if="!settings.hideChangedDate"
           label="Дата изменения"
         >
-          <DatePicker
+          <DateRangePicker
             v-model="form.changedDateRange"
-            :number-of-months="2"
-            selection-mode="range"
-            date-format="dd.mm.yy"
-            show-button-bar
-            size="small"
-            class="w-full"
+            presets="current"
           />
         </FormField>
       </div>
@@ -421,7 +421,7 @@ function formatDate(dateStr) {
             size="small"
           />
           <label
-            v-tooltip.top="'Разбивает запрос на слова и ищет каждое отдельно — порядок не важен. Работает только в обычном режиме (по названию); в расширенном поиске не применяется'"
+            v-tooltip.top="'Разбивает запрос на слова и ищет каждое отдельно — порядок не важен'"
             for="smart-title-toggle"
             class="text-sm cursor-pointer"
           >
@@ -438,11 +438,11 @@ function formatDate(dateStr) {
             size="small"
           />
           <label
-            v-tooltip.top="'Ищет по названию, описанию и комментариям задачи. Поиск по точной фразе — разбивка на слова не поддерживается'"
+            v-tooltip.top="'Дополнительно ищет по описанию и комментариям задачи. Поиск только по точной фразе — разбивка на слова не применяется'"
             for="extended-search-toggle"
             class="text-sm cursor-pointer"
           >
-            Расширенный поиск
+            Искать в описании и комментариях
           </label>
         </div>
         <div class="flex gap-2 items-center">

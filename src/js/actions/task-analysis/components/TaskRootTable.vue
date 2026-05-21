@@ -51,12 +51,12 @@ function openTaskList(row) {
     </Column>
     <Column
       field="createdDate"
-      header="Дата создания"
+      header="Период"
       sortable
     >
       <template #body="{ data }">
-        {{ data.createdDate ? dayjs(data.createdDate).format('DD.MM.YYYY') : '—' }}<template v-if="data.maxDate && dayjs(data.maxDate).format('DD.MM.YYYY') !== dayjs(data.createdDate).format('DD.MM.YYYY')">
-          — {{ dayjs(data.maxDate).format('DD.MM.YYYY') }}
+        {{ data.createdDate ? dayjs(data.createdDate).format('DD.MM.YYYY') : '—' }}<template v-if="data.closedDate">
+          — {{ dayjs(data.closedDate).format('DD.MM.YYYY') }}
         </template>
       </template>
     </Column>

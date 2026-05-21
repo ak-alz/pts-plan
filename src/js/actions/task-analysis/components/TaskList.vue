@@ -33,12 +33,12 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
       </template>
     </Column>
     <Column
-      field="createdDate"
-      header="Дата создания"
+      field="closedDate"
+      header="Дата закрытия"
       sortable
     >
       <template #body="{ data }">
-        {{ data.createdDate ? dayjs(data.createdDate).format('DD.MM.YYYY') : '—' }}
+        {{ data.closedDate ? dayjs(data.closedDate).format('DD.MM.YYYY') : '—' }}
       </template>
     </Column>
     <Column

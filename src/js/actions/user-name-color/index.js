@@ -1,6 +1,6 @@
 import { insertCSS, validateHexColor } from '../../utils.js';
 
-export function userNameColor(userId, color, borderColor, backgroundColor) {
+export function userNameColor({userId, userNameColorColor: color, userNameColorBorder: borderColor, userNameColorBackground: backgroundColor} = {}) {
   if (!userId) return;
   if (!validateHexColor(color) && !validateHexColor(borderColor) && !validateHexColor(backgroundColor)) return;
 

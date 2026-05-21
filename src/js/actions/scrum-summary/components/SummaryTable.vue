@@ -124,6 +124,3 @@ defineProps({
   </DataTable>
 </template>
 
-<style scoped>
-
-</style>

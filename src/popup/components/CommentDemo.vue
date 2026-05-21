@@ -21,97 +21,64 @@ const props = defineProps({
   },
 });
 
-const tagAllColor = computed(() => {
-  if (props.options.tagAllColor && validateHexColor(props.options.tagAllColorColor)) {
-    return props.options.tagAllColorColor;
-  }
+const keyMap = {
+  tagAllColor: { enabled: 'tagAllColor', value: 'tagAllColorColor' },
+  userNameColor: { enabled: 'userNameColor', value: 'userNameColorColor' },
+  userNameBackground: { enabled: 'userNameColor', value: 'userNameColorBackground' },
+  userNameBorder: { enabled: 'userNameColor', value: 'userNameColorBorder' },
+  newCommentBackground: { enabled: 'newCommentColor', value: 'newCommentColorBackground' },
+  quoteBackground: { enabled: 'quoteColor', value: 'quoteColorBackground' },
+  quoteBorder: { enabled: 'quoteColor', value: 'quoteColorBorder' },
+};
 
-  return 'inherit';
-});
+function getColor(slot) {
+  const { enabled, value } = keyMap[slot];
+  const val = props.options[value];
+  return props.options[enabled] && validateHexColor(val) ? val : null;
+}
 
-const tagAllFontWeight = computed(() => {
-  if (props.options.tagAllColor && validateHexColor(props.options.tagAllColorColor)) {
-    return '700';
-  }
+const tagAllColor = computed(() => getColor('tagAllColor') ?? 'inherit');
+const tagAllFontWeight = computed(() => getColor('tagAllColor') ? '700' : '400');
 
-  return '400';
-});
-
-const userNameColor = computed(() => {
-  if (props.options.userNameColor && validateHexColor(props.options.userNameColorColor)) {
-    return props.options.userNameColorColor;
-  }
-
-  return '#2066b0';
-});
-
-const userNameFontWeight = computed(() => {
-  if (props.options.userNameColor && validateHexColor(props.options.userNameColorColor)) {
-    return '700';
-  }
-
-  return '400';
-});
+const userNameColor = computed(() => getColor('userNameColor') ?? '#2066b0');
+const userNameFontWeight = computed(() => getColor('userNameColor') ? '700' : '400');
 
 const commentBackground = computed(() => {
-  if (props.options.newCommentColor && props.new && validateHexColor(props.options.newCommentColorBackground)) {
-    return props.options.newCommentColorBackground;
+  if (props.new) {
+    const bg = getColor('newCommentBackground');
+    if (bg) return bg;
   }
-
-  if (props.options.userNameColor && validateHexColor(props.options.userNameColorBackground)) {
-    return props.options.userNameColorBackground;
-  }
-
-  return '#edf1f3';
+  return getColor('userNameBackground') ?? '#edf1f3';
 });
 
-const commentBorder = computed(() => {
-  if (props.options.userNameColor && validateHexColor(props.options.userNameColorBorder)) {
-    return props.options.userNameColorBorder;
-  }
+const commentBorder = computed(() => getColor('userNameBorder') ?? commentBackground.value);
 
-  return commentBackground.value;
-});
-
-const quoteBackground = computed(() => {
-  if (props.options.quoteColor && validateHexColor(props.options.quoteColorBackground)) {
-    return props.options.quoteColorBackground;
-  }
-
-  return '#f3f6f7';
-});
-
-const quoteBorder = computed(() => {
-  if (props.options.quoteColor && validateHexColor(props.options.quoteColorBorder)) {
-    return props.options.quoteColorBorder;
-  }
-
-  return '#e0e2e3';
-});
+const quoteBackground = computed(() => getColor('quoteBackground') ?? '#f3f6f7');
+const quoteBorder = computed(() => getColor('quoteBorder') ?? '#e0e2e3');
 
 const userName = computed(() => {
   if (props.options.userFirstName && props.options.userLastName) {
     return `${props.options.userFirstName} ${props.options.userLastName}`;
   }
 
-  return 'Имя Фамилия'
+  return 'Имя Фамилия';
 });
 </script>
 
 <template>
-  <div class="crm-comment">
-    <div class="crm-comment__head">
-      <div class="crm-comment__name">
+  <div class="comment-demo">
+    <div class="comment-demo__head">
+      <div class="comment-demo__name">
         Иван Иванов
       </div>
-      <div class="crm-comment__time">
+      <div class="comment-demo__time">
         {{ dayjs().format('D MMMM HH:mm') }}
       </div>
     </div>
-    <div class="crm-comment__body">
+    <div class="comment-demo__body">
       <div
         v-if="quote"
-        class="crm-comment__quote"
+        class="comment-demo__quote"
       >
         <span class="tag-all-highlight">TAGALL</span>, <span class="user-name-highlight">{{ userName }}</span>
         Коллеги, задача готова к проверке. Жду обратной связи!
@@ -125,7 +92,7 @@ const userName = computed(() => {
 </template>
 
 <style scoped>
-.crm-comment {
+.comment-demo {
   max-width: 210px;
   padding: 6px 10px;
   border-radius: 10px;
@@ -136,23 +103,23 @@ const userName = computed(() => {
   border-color: v-bind(commentBorder);
 }
 
-.crm-comment__head {
+.comment-demo__head {
   margin-bottom: 6px;
 }
 
-.crm-comment__name {
+.comment-demo__name {
   display: inline;
   color: #2066b0;
   font-weight: 600;
 }
 
-.crm-comment__time {
+.comment-demo__time {
   display: inline;
   color: #bcc2c7;
   font-size: 0.8em;
 }
 
-.crm-comment__quote {
+.comment-demo__quote {
   border-radius: 10px;
   padding: 5px 5px 5px 18px;
   background-color: v-bind(quoteBackground);

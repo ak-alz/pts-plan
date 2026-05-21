@@ -3,7 +3,6 @@ import {Column, DataTable} from 'primevue';
 
 defineProps({
   rows: {type: Array, required: true},
-  useWeeks: {type: Boolean, default: false},
 });
 </script>
 
@@ -29,17 +28,6 @@ defineProps({
     <Column
       field="totalPoints"
       header="Баллов всего"
-      sortable
-    />
-    <Column
-      :field="useWeeks ? 'avgPerWeek' : 'avgPerMonth'"
-      :header="`Балл / ${useWeeks ? 'нед.' : 'мес.'}`"
-      sortable
-    />
-    <Column
-      v-if="!useWeeks"
-      field="avgPerWeek"
-      header="Балл / нед."
       sortable
     />
   </DataTable>

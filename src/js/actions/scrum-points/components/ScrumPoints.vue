@@ -37,6 +37,7 @@ const columns = ref([]);
 const columnsMap = computed(() => new Map(columns.value.map((column) => [column.id, column])));
 const visibleColumns = computed(() => columns.value.filter(({ id }) => settings.value.columns?.length && settings.value.columns?.includes(id)));
 const users = ref([]);
+const groupUsers = ref([]);
 const visibleUsers = computed(() => users.value.filter(({ id }) => settings.value.users?.length && settings.value.users?.includes(id)));
 const progress = ref(null);
 const isLoading = ref(false);
@@ -59,10 +60,18 @@ async function fetchData() {
     const firstPageRequests = savedColumnIds.map((id) => ({ key: `col_${id}`, stageId: id, start: 0 }));
 
     progress.value = 0;
-    const [stagesResponse, firstRoundResponses] = await Promise.all([
+    const [stagesResponse, firstRoundResponses, rawGroupUsers] = await Promise.all([
       bitrixApi.getStages(props.groupId),
       bitrixApi.getTasksBatch(firstPageRequests, props.groupId),
+      bitrixApi.getGroupUsers(props.groupId),
     ]);
+
+    groupUsers.value = rawGroupUsers.map((u) => ({
+      id: u.ID,
+      name: [u.NAME, u.LAST_NAME].filter(Boolean).join(' '),
+      photo: u.PERSONAL_PHOTO || false,
+      url: u.DETAIL_URL || '',
+    }));
 
     let tasks;
 
@@ -454,6 +463,7 @@ onMounted(() => {
   >
     <SettingsForm
       :users
+      :group-users="groupUsers"
       :columns
       :initial="settings"
       :settings-storage-key
@@ -501,6 +511,3 @@ onMounted(() => {
   </Dialog>
 </template>
 
-<style scoped>
-
-</style>

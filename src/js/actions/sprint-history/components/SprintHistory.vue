@@ -1,10 +1,11 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Avatar, Button, Checkbox, DatePicker, Select, ToggleSwitch } from 'primevue';
+import { Avatar, Button, Checkbox, Select, ToggleSwitch } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import { getTaskPointsFromName, isHotfixTask } from '../../../utils.js';
 import GroupedTasksTable from './GroupedTasksTable.vue';
@@ -144,7 +145,7 @@ async function fetchGroupedData() {
 
   const [stagesResult, parentTasksList] = await Promise.all([
     stages.value.length ? Promise.resolve(null) : bitrixApi.getStages(props.groupId),
-    bitrixApi.searchTasks({ ids: parentIds }),
+    parentIds.length ? bitrixApi.searchTasks({ ids: parentIds }) : Promise.resolve([]),
   ]);
   const fetchedParents = Object.fromEntries(parentTasksList.map((t) => [String(t.id), t]));
 
@@ -162,7 +163,6 @@ async function fetchData() {
   if (!dateRange.value?.[0]) return;
 
   isLoading.value = true;
-  selectedUserId.value = null;
   parentTasksMap.value = {};
   groupedDataLoaded.value = false;
 
@@ -223,43 +223,13 @@ onMounted(() => {
 
 <template>
   <div class="min-w-[640px]">
-    <div class="flex flex-col items-start mb-4">
-      <div class="grid grid-cols-3 items-end gap-3">
+    <div class="flex flex-col items-start gap-3 mb-4">
+      <div class="flex items-end gap-3">
         <FormField label="Период">
-          <DatePicker
+          <DateRangePicker
             v-model="dateRange"
-            :number-of-months="2"
-            selection-mode="range"
-            date-format="dd.mm.yy"
-            show-button-bar
-            size="small"
-            fluid
+            presets="current"
           />
-        </FormField>
-        <FormField label="Исполнитель">
-          <Select
-            v-model="selectedUserId"
-            :options="users"
-            option-label="name"
-            option-value="id"
-            placeholder="Все"
-            show-clear
-            :disabled="!allTasks.length"
-            size="small"
-            fluid
-          >
-            <template #option="{ option }">
-              <div class="flex gap-2 items-center">
-                <Avatar
-                  v-if="option.photo"
-                  :image="option.photo"
-                  shape="circle"
-                  size="small"
-                />
-                {{ option.name }}
-              </div>
-            </template>
-          </Select>
         </FormField>
         <Button
           label="Загрузить"
@@ -268,7 +238,33 @@ onMounted(() => {
           size="small"
           @click="fetchData"
         />
-        <div class="flex gap-2 items-center">
+      </div>
+      <div class="flex items-center gap-4 border-t border-surface-200 pt-3">
+        <Select
+          v-model="selectedUserId"
+          :options="users"
+          option-label="name"
+          option-value="id"
+          placeholder="Все"
+          show-clear
+          :disabled="!allTasks.length"
+          size="small"
+          fluid
+          input-class="min-w-[200px]"
+        >
+          <template #option="{ option }">
+            <div class="flex gap-2 items-center">
+              <Avatar
+                v-if="option.photo"
+                :image="option.photo"
+                shape="circle"
+                size="small"
+              />
+              {{ option.name }}
+            </div>
+          </template>
+        </Select>
+        <div class="flex gap-2 items-center shrink-0">
           <Checkbox
             v-model="excludeHotfixes"
             binary
@@ -285,21 +281,20 @@ onMounted(() => {
             />
           </label>
         </div>
+        <div class="flex gap-2 items-center shrink-0">
+          <ToggleSwitch
+            v-model="groupByParent"
+            input-id="group-by-parent-toggle"
+            size="small"
+          />
+          <label
+            for="group-by-parent-toggle"
+            class="text-sm cursor-pointer"
+          >
+            Группировать по задаче
+          </label>
+        </div>
       </div>
-    </div>
-
-    <div class="flex gap-2 items-center mb-3">
-      <ToggleSwitch
-        v-model="groupByParent"
-        input-id="group-by-parent-toggle"
-        size="small"
-      />
-      <label
-        for="group-by-parent-toggle"
-        class="text-sm cursor-pointer"
-      >
-        Группировать по задаче
-      </label>
     </div>
 
     <GroupedTasksTable

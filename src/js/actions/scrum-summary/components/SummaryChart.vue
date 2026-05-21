@@ -116,6 +116,3 @@ const chartOptions = computed(() => {
   />
 </template>
 
-<style scoped>
-
-</style>

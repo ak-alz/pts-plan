@@ -8,34 +8,47 @@ export const optionTypes = {
   RADIO: 'radio',
 };
 
+export const groups = [
+  { key: 'profile', label: 'Профиль' },
+  { key: 'kanban', label: 'Канбан' },
+  { key: 'tasks', label: 'Задачи' },
+  { key: 'notifications', label: 'Уведомления' },
+  { key: 'appearance', label: 'Оформление' },
+  { key: 'other', label: 'Прочее' },
+];
+
 export default [
   {
     key: 'userFirstName',
     name: 'Имя',
     tip: 'Ваше имя в Bitrix24 (нужно для некоторых фич)',
+    groups: ['profile'],
     type: optionTypes.TEXT,
   },
   {
     key: 'userLastName',
     name: 'Фамилия',
     tip: 'Ваша фамилия в Bitrix24 (нужно для некоторых фич)',
+    groups: ['profile'],
     type: optionTypes.TEXT,
   },
   {
     key: 'userId',
     name: 'ID пользователя',
     tip: 'Ваш ID в Bitrix24 (нужно для некоторых фич)',
+    groups: ['profile'],
     type: optionTypes.NUMBER,
   },
   {
     key: 'userNameColor',
-    name: 'Заметные упоминания',
+    name: 'Подсветка своих упоминаний в комментариях',
     tip: 'Делает упоминания с вами заметными. Необходимо указать ID пользователя',
-    new: true,
-    disabled: (options) => !options.userId,
+    groups: ['appearance'],
+    popularity: 95,
+    needs: ['userId'],
     action: async ({options}) => {
       const {userNameColor} = await import('/src/js/actions/user-name-color');
-      userNameColor(options.userId, options.userNameColorColor, options.userNameColorBorder, options.userNameColorBackground);
+      userNameColor(options);
     },
     options: [
       {
@@ -43,7 +56,7 @@ export default [
         name: 'Цвет текста',
         default: getColors('violet', '500'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '500'),
-        demo: true,
+        demo: 'comment',
         type: optionTypes.COLOR,
       },
       {
@@ -51,7 +64,7 @@ export default [
         name: 'Цвет рамки',
         default: getColors('violet', '500'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '500'),
-        demo: true,
+        demo: 'comment',
         type: optionTypes.COLOR,
       },
       {
@@ -59,15 +72,17 @@ export default [
         name: 'Цвет фона',
         default: getColors('violet', '50'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
-        demo: true,
+        demo: 'comment',
         type: optionTypes.COLOR,
       },
     ],
   },
   {
     key: 'newCommentColor',
-    name: 'Фон новых комментариев',
+    name: 'Подсветка новых комментариев',
     tip: 'Меняет заливку непрочитанных комментариев в задачах',
+    groups: ['appearance'],
+    popularity: 50,
     action: async ({options}) => {
       const {newCommentColor} = await import('/src/js/actions/new-comment-color');
       newCommentColor(options.newCommentColorBackground);
@@ -78,15 +93,17 @@ export default [
         name: 'Цвет фона',
         default: getColors('lime', '50'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
-        demo: true,
+        demo: 'comment-new',
         type: optionTypes.COLOR,
       },
     ],
   },
   {
     key: 'tagAllColor',
-    name: 'Цвет TAGALL',
+    name: 'Подсветка TAGALL в комментариях',
     tip: 'Делает метку TAGALL в комментариях более заметной',
+    groups: ['appearance'],
+    popularity: 95,
     action: async ({options}) => {
       const {tagAllColor} = await import('/src/js/actions/tag-all-color');
       tagAllColor(options.tagAllColorColor);
@@ -97,15 +114,17 @@ export default [
         name: 'Цвет текста',
         default: getColors('red', '500'),
         presets: getColors(['red', 'orange', 'amber', 'violet', 'fuchsia', 'pink', 'rose'], '500'),
-        demo: true,
+        demo: 'comment',
         type: optionTypes.COLOR,
       },
     ],
   },
   {
     key: 'quoteColor',
-    name: 'Оформление цитат',
+    name: 'Стиль цитат в комментариях и задачах',
     tip: 'Меняет фон и рамку у цитат в комментариях и задачах',
+    groups: ['appearance'],
+    popularity: 40,
     action: async ({options}) => {
       const {quoteColor} = await import('/src/js/actions/quote-color');
       quoteColor(options.quoteColorBackground, options.quoteColorBorder);
@@ -116,7 +135,7 @@ export default [
         name: 'Цвет фона',
         default: getColors('teal', '50'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
-        demo: true,
+        demo: 'comment-quote',
         type: optionTypes.COLOR,
       },
       {
@@ -124,26 +143,41 @@ export default [
         name: 'Цвет рамки',
         default: getColors('teal', '200'),
         presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '200'),
-        demo: true,
+        demo: 'comment-quote',
         type: optionTypes.COLOR,
       },
     ],
   },
   {
     key: 'taskSearch',
-    name: 'Поиск по задачам',
+    name: 'Поиск задач в канбане (виджет)',
     tip: 'Добавляет кнопку «Поиск» в канбане для поиска задач по названию, постановщику, исполнителю и датам',
     new: true,
+    groups: ['kanban', 'tasks'],
+    popularity: 90,
     action: async ({sessionId}) => {
       const {taskSearch} = await import('/src/js/actions/task-search');
       taskSearch(sessionId);
     },
   },
   {
-    key: 'scrumPoints',
-    name: 'Таблица баллов спринта',
-    tip: 'Добавляет счётчик story points в канбан-доске.',
+    key: 'quickTask',
+    name: 'Быстрое создание задачи (виджет)',
+    tip: 'Заменяет стандартную форму «Быстрая задача» в колонках канбана на собственное окно с выбором исполнителя',
     new: true,
+    groups: ['kanban', 'tasks'],
+    popularity: 90,
+    action: async ({sessionId}) => {
+      const {quickTask} = await import('/src/js/actions/quick-task');
+      quickTask(sessionId);
+    },
+  },
+  {
+    key: 'scrumPoints',
+    name: 'Таблица баллов за текущий спринт (виджет)',
+    tip: 'Добавляет счётчик story points в канбан-доске.',
+    groups: ['kanban'],
+    popularity: 75,
     action: async ({sessionId}) => {
       const {scrumPoints} = await import('/src/js/actions/scrum-points');
       scrumPoints(sessionId);
@@ -151,9 +185,10 @@ export default [
   },
   {
     key: 'sprintHistory',
-    name: 'История спринта',
+    name: 'История завершенных задач (виджет)',
     tip: 'Добавляет кнопку для просмотра завершённых задач за произвольный период с фильтром по исполнителю и сортировкой по баллам',
-    new: true,
+    groups: ['kanban'],
+    popularity: 60,
     action: async ({sessionId}) => {
       const {sprintHistory} = await import('/src/js/actions/sprint-history');
       sprintHistory(sessionId);
@@ -161,9 +196,10 @@ export default [
   },
   {
     key: 'scrumSummary',
-    name: 'Сводка спринтов',
+    name: 'Сводка по итогам спринтов (виджет)',
     tip: 'Показывает итоги по завершённым спринтам в канбане',
-    new: true,
+    groups: ['kanban'],
+    popularity: 55,
     action: async ({sessionId}) => {
       const {scrumSummary} = await import('/src/js/actions/scrum-summary');
       scrumSummary(sessionId);
@@ -171,9 +207,11 @@ export default [
   },
   {
     key: 'taskAnalysis',
-    name: 'Анализ задач',
+    name: 'Анализ баллов задач (виджет)',
     tip: 'Показывает суммарные баллы по деревьям задач: находит все подзадачи любой вложенности, суммирует баллы и выводит таблицу по корневым задачам',
     new: true,
+    groups: ['kanban', 'tasks'],
+    popularity: 55,
     action: async ({sessionId, options}) => {
       const {taskAnalysis} = await import('/src/js/actions/task-analysis');
       taskAnalysis(sessionId, options);
@@ -181,20 +219,21 @@ export default [
   },
   {
     key: 'decomposeTask',
-    name: 'Декомпозиция задачи',
-    tip: 'Добавляет кнопку для быстрого создания подзадач с исполнителями и стадиями. Необходимо указать ID пользователя',
-    new: true,
-    disabled: (options) => !options.userId,
-    action: async ({sessionId, options}) => {
+    name: 'Быстрое создание подзадач (виджет)',
+    tip: 'Добавляет кнопку для быстрого создания подзадач с исполнителями и стадиями',
+    groups: ['kanban', 'tasks'],
+    popularity: 85,
+    action: async ({sessionId}) => {
       const {decomposeTask} = await import('/src/js/actions/decompose-task');
-      decomposeTask(sessionId, options.userId);
+      decomposeTask(sessionId);
     },
   },
   {
     key: 'editTaskTitle',
-    name: 'Редактирование заголовка задачи',
+    name: 'Быстрое переименование задачи кликом',
     tip: 'Позволяет кликнуть на заголовок задачи и сразу переименовать её, без перехода в режим редактирования',
-    new: true,
+    groups: ['tasks'],
+    popularity: 85,
     action: async ({sessionId, options}) => {
       const {editTaskTitle} = await import('/src/js/actions/edit-task-title');
       editTaskTitle(sessionId, options);
@@ -209,9 +248,10 @@ export default [
   },
   {
     key: 'commitButton',
-    name: 'Кнопка названия коммита',
+    name: 'Кнопка копирования названия коммита',
     tip: 'Добавляет кнопку, которая генерирует готовое название коммита из заголовка задачи',
-    new: true,
+    groups: ['tasks'],
+    popularity: 70,
     action: () => {
       import('/src/js/actions/commit-button');
     },
@@ -220,14 +260,18 @@ export default [
     key: 'fixLinks',
     name: 'Не обрезать длинные ссылки',
     tip: 'Автоматически возвращает длинные ссылки в описание и комментарии',
+    groups: ['tasks'],
+    popularity: 70,
     action: () => {
       import('/src/js/actions/fix-links');
     },
   },
   {
     key: 'showComments',
-    name: 'Кнопка «Загрузить комментарии»',
+    name: 'Кнопка загрузки комментариев задачи',
     tip: 'Добавляет кнопку для пакетной загрузки комментариев в задаче без перезагрузки страницы',
+    groups: ['tasks'],
+    popularity: 75,
     action: async ({ options }) => {
       const { showComments } = await import('/src/js/actions/show-comments');
       showComments(options.showCommentsCount);
@@ -237,17 +281,27 @@ export default [
         key: 'showCommentsCount',
         name: 'Количество комментариев',
         tip: 'Сколько комментариев загружать за один раз. Округляется до кратного 10, так как Bitrix загружает по 10 штук за запрос.',
-        type: optionTypes.NUMBER,
+        type: optionTypes.SELECT,
+        choices: [
+          {label: '20', value: 20},
+          {label: '30', value: 30},
+          {label: '50', value: 50},
+          {label: '100', value: 100},
+          {label: '200', value: 200},
+          {label: '500', value: 500},
+        ],
         default: 50,
-        width: '80px',
+        width: '90px',
       },
     ],
   },
   {
     key: 'notificationDetails',
-    name: 'Детали задачи в уведомлениях',
+    name: 'Детали и подсветка уведомлений',
     tip: 'Подгружает и показывает группу, стадию, исполнителя и постановщика прямо в каждом уведомлении о задаче',
     new: true,
+    groups: ['notifications'],
+    popularity: 85,
     action: async ({sessionId, options}) => {
       const {notificationDetails} = await import('/src/js/actions/notification-details');
       notificationDetails(sessionId, options);
@@ -260,16 +314,16 @@ export default [
       },
       {
         key: 'notificationDetailsHighlight',
-        name: 'Подсвечивай, если исполнитель',
+        name: 'Подсвечивать, если исполнитель',
         tip: 'Выделяет уведомления, в которых вы являетесь исполнителем. Необходимо указать ID пользователя.',
-        disabled: (options) => !options.userId,
+        needs: ['userId'],
         options: [
           {
             key: 'notificationDetailsHighlightBorder',
             name: 'Цвет рамки',
             default: getColors('violet', '400'),
             presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '400'),
-            demo: true,
+            demo: 'notification-assignee',
             type: optionTypes.COLOR,
           },
           {
@@ -277,23 +331,23 @@ export default [
             name: 'Цвет фона',
             default: getColors('violet', '50'),
             presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
-            demo: true,
+            demo: 'notification-assignee',
             type: optionTypes.COLOR,
           },
         ],
       },
       {
         key: 'notificationDetailsHighlightCreator',
-        name: 'Подсвечивай, если постановщик',
+        name: 'Подсвечивать, если постановщик',
         tip: 'Выделяет уведомления, в которых вы являетесь постановщиком. Необходимо указать ID пользователя.',
-        disabled: (options) => !options.userId,
+        needs: ['userId'],
         options: [
           {
             key: 'notificationDetailsHighlightCreatorBorder',
             name: 'Цвет рамки',
             default: getColors('amber', '400'),
             presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '400'),
-            demo: true,
+            demo: 'notification-creator',
             type: optionTypes.COLOR,
           },
           {
@@ -301,23 +355,23 @@ export default [
             name: 'Цвет фона',
             default: getColors('amber', '50'),
             presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
-            demo: true,
+            demo: 'notification-creator',
             type: optionTypes.COLOR,
           },
         ],
       },
       {
         key: 'notificationDetailsHighlightMention',
-        name: 'Подсвечивай, если упомянут',
+        name: 'Подсвечивать, если упомянут',
         tip: 'Выделяет уведомления, в тексте которых есть ваше имя или TAGALL. Необходимо указать имя и фамилию.',
-        disabled: (options) => !options.userFirstName || !options.userLastName,
+        needs: ['userFirstName', 'userLastName'],
         options: [
           {
             key: 'notificationDetailsHighlightMentionBorder',
             name: 'Цвет рамки',
             default: getColors('teal', '400'),
             presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '400'),
-            demo: true,
+            demo: 'notification-mention',
             type: optionTypes.COLOR,
           },
           {
@@ -325,7 +379,30 @@ export default [
             name: 'Цвет фона',
             default: getColors('teal', '50'),
             presets: getColors(['green', 'lime', 'red', 'amber', 'teal', 'blue', 'violet', 'fuchsia'], '50'),
-            demo: true,
+            demo: 'notification-mention',
+            type: optionTypes.COLOR,
+          },
+        ],
+      },
+      {
+        key: 'notificationDetailsHighlightTagall',
+        name: 'Подсвечивать, если tagall',
+        tip: 'Выделяет уведомления, в тексте которых упомянуты «все участники задачи» (tagall)',
+        options: [
+          {
+            key: 'notificationDetailsHighlightTagallBorder',
+            name: 'Цвет рамки',
+            default: getColors('red', '500'),
+            presets: getColors(['red', 'orange', 'amber', 'violet', 'fuchsia', 'pink', 'rose'], '500'),
+            demo: 'notification-tagall',
+            type: optionTypes.COLOR,
+          },
+          {
+            key: 'notificationDetailsHighlightTagallBackground',
+            name: 'Цвет фона',
+            default: getColors('red', '50'),
+            presets: getColors(['red', 'orange', 'amber', 'violet', 'fuchsia', 'pink', 'rose'], '50'),
+            demo: 'notification-tagall',
             type: optionTypes.COLOR,
           },
         ],
@@ -334,8 +411,10 @@ export default [
   },
   {
     key: 'removeNotifications',
-    name: 'Кнопка «Удалить уведомления»',
+    name: 'Кнопка удаления уведомлений задачи',
     tip: 'Добавляет кнопку для удаления всех уведомлений задачи',
+    groups: ['notifications'],
+    popularity: 30,
     action: async ({sessionId}) => {
       const {removeNotifications} = await import('/src/js/actions/remove-notifications');
       removeNotifications(sessionId);
@@ -343,19 +422,13 @@ export default [
   },
   {
     key: 'removeSystemNotifications',
-    name: 'Кнопка «Удалить системные уведомления»',
+    name: 'Кнопка очистки уведомлений',
     tip: 'Добавляет кнопку для удаления системных уведомлений. Виды удаляемых уведомлений настраиваются галочками ниже.',
-    new: true,
+    groups: ['notifications'],
+    popularity: 75,
     action: async ({sessionId, options}) => {
       const {removeSystemNotifications} = await import('/src/js/actions/remove-system-notifications');
-      removeSystemNotifications(sessionId, {
-        removeSystem: options.removeSystemNotificationsSystem,
-        removeChanges: options.removeSystemNotificationsChanges,
-        removeClosed: options.removeSystemNotificationsClosed,
-        dedupe: options.removeSystemNotificationsDedupe,
-        removeNew: options.removeSystemNotificationsNew,
-        removeReactions: options.removeSystemNotificationsReactions,
-      });
+      removeSystemNotifications(sessionId, options);
     },
     options: [
       {
@@ -392,16 +465,20 @@ export default [
   },
   {
     key: 'autoChoiceUser',
-    name: 'Автовыбор единственного пользователя',
+    name: 'Автовыбор при упоминании через «+»',
     tip: 'При добавлении упоминания через «+» автоматически выбирает пользователя, если поиск выдал только один результат.',
+    groups: ['tasks'],
+    popularity: 10,
     action: () => {
       import('/src/js/actions/auto-choice-user');
     },
   },
   {
     key: 'invisibleMentions',
-    name: 'Неработающие упоминания',
+    name: 'Подсветка неработающих упоминаний',
     tip: 'Подсвечивает пользователей, не добавленных в задачу. Подсвечивает комментарии без упоминаний в первых 100 символах.',
+    groups: ['tasks'],
+    popularity: 80,
     action: () => {
       import('/src/js/actions/invisible-mentions');
     },
@@ -410,6 +487,8 @@ export default [
     key: 'groupTitle',
     name: 'Название проекта в <title>',
     tip: 'Добавляет название текущего проекта/группы в <title> браузерной вкладки для быстрого поиска среди открытых вкладок.',
+    groups: ['other'],
+    popularity: 10,
     action: () => {
       import('/src/js/actions/group-title');
     },
@@ -418,7 +497,9 @@ export default [
     key: 'closeNotifications',
     name: 'Автозакрытие чужих уведомлений',
     tip: 'Автоматически закрывает уведомления, в которых вас не упомянули. Необходимо указать имя и фамилию пользователя.',
-    disabled: (options) => !options.userFirstName || !options.userLastName,
+    groups: ['notifications'],
+    popularity: 80,
+    needs: ['userFirstName', 'userLastName'],
     action: async ({options}) => {
       const {closeNotifications} = await import('/src/js/actions/close-notifications');
       closeNotifications(options.userFirstName, options.userLastName);
@@ -426,10 +507,11 @@ export default [
   },
   {
     key: 'kanbanUserCards',
-    name: 'Фон карточек исполнителя',
+    name: 'Подсветка своих задач в канбане',
     tip: 'Меняет фон карточек в канбане. Необходимо указать имя и фамилию пользователя.',
-    new: true,
-    disabled: (options) => !options.userFirstName || !options.userLastName,
+    groups: ['kanban', 'appearance'],
+    popularity: 50,
+    needs: ['userFirstName', 'userLastName'],
     action: async ({options}) => {
       const {kanbanUserCards} = await import('/src/js/actions/kanban-user-cards');
       kanbanUserCards(options.kanbanUserCardBackground, options.userFirstName, options.userLastName);
@@ -446,9 +528,10 @@ export default [
   },
   {
     key: 'statusMarkers',
-    name: 'Маркеры стадий',
+    name: 'Маркеры стадий в задаче',
     tip: 'Добавляет сокращённые буквы в ячейки стадий внутри задачи для быстрой навигации без наведения курсора.',
-    new: true,
+    groups: ['kanban'],
+    popularity: 80,
     action: () => {
       import('/src/js/actions/status-markers');
     },
@@ -457,6 +540,8 @@ export default [
     key: 'openInNewTab',
     name: 'Действия в новой вкладке',
     tip: 'Открывает выбранные действия с задачами в новой вкладке.',
+    groups: ['kanban', 'tasks'],
+    popularity: 10,
     action: async ({options}) => {
       const {openInNewTab} = await import('/src/js/actions/open-in-new-tab');
       openInNewTab(options);
@@ -488,9 +573,10 @@ export default [
   },
   {
     key: 'autoAuditor',
-    name: 'Все наблюдатели при создании',
+    name: 'Все наблюдатели при создании задач',
     tip: 'При открытии формы создания новой задачи или подзадачи автоматически нажимает кнопку добавления наблюдателя',
-    new: true,
+    groups: ['kanban', 'tasks'],
+    popularity: 50,
     action: () => {
       import('/src/js/actions/auto-auditor');
     },
@@ -499,6 +585,8 @@ export default [
     key: 'showCats',
     name: 'Баннер с котами',
     tip: 'Добавляет баннер с котами в боковое меню (10 случайных фото меняются каждые 6 минут)',
+    groups: ['other'],
+    popularity: 10,
     action: async ({options}) => {
       const {showCats} = await import('/src/js/actions/show-cats');
       showCats(options);
