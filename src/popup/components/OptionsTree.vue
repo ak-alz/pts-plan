@@ -1,5 +1,5 @@
 <script setup>
-import {Button, Checkbox, InputGroup, InputNumber, InputText, RadioButton, Select} from 'primevue';
+import {Button, Checkbox, InputGroup, InputNumber, InputText, MultiSelect, RadioButton, Select} from 'primevue';
 import {computed, ref, watch} from 'vue';
 
 import allOptions, {optionTypes} from '../../js/options.js';
@@ -179,6 +179,18 @@ watch(
         size="small"
         fluid
         :style="{ width: option.width ?? '180px' }"
+      />
+      <MultiSelect
+        v-else-if="option.type === optionTypes.MULTISELECT"
+        v-model="model[option.key]"
+        :options="option.choices"
+        option-label="label"
+        option-value="value"
+        size="small"
+        :show-toggle-all="false"
+        placeholder="Не выбрано"
+        :max-selected-labels="1"
+        :style="{ width: option.width ?? '200px' }"
       />
       <Checkbox
         v-else

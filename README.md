@@ -51,5 +51,5 @@ npm run build
 * Stylelint
 
 ```bash
-npx eslint src/**/*.{js,vue} --fix
+npx eslint --fix
 ```

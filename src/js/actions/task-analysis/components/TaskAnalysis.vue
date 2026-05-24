@@ -90,6 +90,17 @@ const displayRows = computed(() => {
     .filter((row) => row.totalPoints >= MIN_POINTS);
 });
 
+const displayPrevRows = computed(() => {
+  if (!form.excludeHotfixes) return prevRows.value.filter((r) => r.totalPoints >= MIN_POINTS);
+  return prevRows.value
+    .map((row) => {
+      const tasks = row.tasks.filter((t) => !isHotfixTask(t.title));
+      const totalPoints = tasks.reduce((sum, t) => sum + t.points, 0);
+      return {...row, tasks, totalPoints};
+    })
+    .filter((row) => row.totalPoints >= MIN_POINTS);
+});
+
 const displayUserTasksPerUser = computed(() => {
   if (!form.excludeHotfixes) return allUserTasksPerUser.value;
   return allUserTasksPerUser.value.map(({userId, tasks}) => ({
@@ -98,54 +109,51 @@ const displayUserTasksPerUser = computed(() => {
   }));
 });
 
-const useWeeks = computed(() => {
-  if (!fetchedDateRange.value?.[0]) return false;
-  const start = dayjs(fetchedDateRange.value[0]);
-  const end = dayjs(fetchedDateRange.value[1] ?? fetchedDateRange.value[0]);
-  return end.diff(start, 'day') <= 60;
-});
-
 const summaryTableData = computed(() => {
   if (!displayRows.value.length || !fetchedDateRange.value?.[0]) return null;
 
   const start = dayjs(fetchedDateRange.value[0]);
   const end = dayjs(fetchedDateRange.value[1] ?? fetchedDateRange.value[0]);
-  const periodLength = useWeeks.value
-    ? Math.max(1, end.diff(start, 'week', true))
-    : Math.max(1, end.diff(start, 'month', true));
-  const weeksLength = Math.max(1, end.diff(start, 'week', true));
+  const periodLength = Math.max(1, end.diff(start, 'month', true));
 
   const byUser = {};
   displayRows.value.forEach((row) => {
     if (!byUser[row.userId]) {
-      byUser[row.userId] = {userId: row.userId, userName: row.userName, totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}};
+      byUser[row.userId] = {userId: row.userId, userName: row.userName, totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}, rootTasks: []};
     }
     const u = byUser[row.userId];
     u.totalPoints += row.totalPoints;
     u.totalTasks += row.tasks.length;
     u.totalRoots += 1;
+    u.rootTasks.push({title: row.title, points: row.totalPoints});
     row.tasks.forEach((task) => {
       if (task.points > 0) u.pointCounts[task.points] = (u.pointCounts[task.points] || 0) + 1;
     });
   });
 
   const prevByUser = {};
-  prevRows.value.filter((r) => r.totalPoints >= MIN_POINTS).forEach((row) => {
-    if (!prevByUser[row.userId]) prevByUser[row.userId] = {totalPoints: 0, totalTasks: 0, totalRoots: 0};
+  displayPrevRows.value.forEach((row) => {
+    if (!prevByUser[row.userId]) prevByUser[row.userId] = {totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}};
     prevByUser[row.userId].totalPoints += row.totalPoints;
     prevByUser[row.userId].totalTasks += row.tasks.length;
     prevByUser[row.userId].totalRoots += 1;
+    row.tasks.forEach((task) => {
+      if (task.points > 0) prevByUser[row.userId].pointCounts[task.points] = (prevByUser[row.userId].pointCounts[task.points] || 0) + 1;
+    });
   });
 
   return {
     rows: Object.values(byUser).map((u) => {
       const avgPoints = Math.round((u.totalPoints / periodLength) * 10) / 10;
-      const avgPointsPerWeek = Math.round((u.totalPoints / weeksLength) * 10) / 10;
       const prev = prevByUser[u.userId];
       const totalWithPoints = Object.values(u.pointCounts).reduce((a, b) => a + b, 0);
       const pointDistribution = Object.entries(u.pointCounts)
         .map(([pts, count]) => ({points: Number(pts), count, pct: totalWithPoints ? Math.round((count / totalWithPoints) * 100) : 0}))
         .sort((a, b) => a.points - b.points);
+      const prevTotalWithPoints = prev ? Object.values(prev.pointCounts).reduce((a, b) => a + b, 0) : 0;
+      const prevPointDistribution = prev ? Object.entries(prev.pointCounts)
+        .map(([pts, count]) => ({points: Number(pts), count, pct: prevTotalWithPoints ? Math.round((count / prevTotalWithPoints) * 100) : 0}))
+        .sort((a, b) => a.points - b.points) : null;
       const decompRatio = u.totalRoots ? Math.round((u.totalTasks / u.totalRoots) * 10) / 10 : 0;
       const prevDecompRatio = prev?.totalRoots ? prev.totalTasks / prev.totalRoots : 0;
       return {
@@ -157,18 +165,17 @@ const summaryTableData = computed(() => {
         decompRatio,
         avgPoints,
         avgPointsPerTask: u.totalTasks ? Math.round((u.totalPoints / u.totalTasks) * 10) / 10 : 0,
-        avgPointsPerWeek,
         pointDistribution,
+        prevPointDistribution,
         deltaTotal: prev != null ? u.totalPoints - prev.totalPoints : null,
         deltaTotalTasks: prev != null ? u.totalTasks - prev.totalTasks : null,
         deltaTotalRoots: prev != null ? u.totalRoots - prev.totalRoots : null,
         deltaDecompRatio: prev != null ? Math.round((decompRatio - prevDecompRatio) * 10) / 10 : null,
         deltaAvgPointsPerTask: prev != null ? Math.round(((u.totalTasks ? u.totalPoints / u.totalTasks : 0) - (prev.totalTasks ? prev.totalPoints / prev.totalTasks : 0)) * 10) / 10 : null,
         deltaAvgPoints: prev != null ? Math.round((avgPoints - Math.round((prev.totalPoints / periodLength) * 10) / 10) * 10) / 10 : null,
-        deltaAvgPointsPerWeek: prev != null ? Math.round((avgPointsPerWeek - Math.round((prev.totalPoints / weeksLength) * 10) / 10) * 10) / 10 : null,
+        topTasks: [...u.rootTasks].sort((a, b) => b.points - a.points).slice(0, 5),
       };
     }),
-    useWeeks: useWeeks.value,
   };
 });
 
@@ -178,9 +185,10 @@ const topTasksData = computed(() => {
   const byTask = {};
   displayRows.value.forEach((row) => {
     if (!byTask[row.id]) {
-      byTask[row.id] = {key: row.id, title: row.title, url: row.url, totalPoints: 0};
+      byTask[row.id] = {key: row.id, title: row.title, url: row.url, totalPoints: 0, userNames: new Set()};
     }
     byTask[row.id].totalPoints += row.totalPoints;
+    byTask[row.id].userNames.add(row.userName);
   });
 
   const top = Object.values(byTask).sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 10);
@@ -191,6 +199,7 @@ const topTasksData = computed(() => {
       title: row.title,
       url: row.url,
       totalPoints: row.totalPoints,
+      userNames: [...row.userNames],
     })),
   };
 });
@@ -549,6 +558,8 @@ onMounted(async () => {
         :copy-separator="settings.copySeparator ?? '\t'"
         :csv-separator="settings.csvSeparator ?? ','"
         :default-tab="settings.defaultTab ?? 'summary'"
+        :group-id="groupId"
+        :date-range="fetchedDateRange"
         class="mb-4"
       />
     </template>

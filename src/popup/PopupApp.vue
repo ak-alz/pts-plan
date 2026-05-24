@@ -4,6 +4,7 @@ import { Button, Dialog, IconField, InputIcon, InputText, SelectButton } from 'p
 import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue';
 
 import options, { groups, optionTypes } from '../js/options.js';
+import ImportExportContent from './components/ImportExportContent.vue';
 import OptionsTree from './components/OptionsTree.vue';
 import ProfileSettings from './components/ProfileSettings.vue';
 
@@ -14,13 +15,14 @@ watch(search, (val) => {
   if (val) selectedGroup.value = 'all';
 });
 
-const profileKeys = new Set(['userFirstName', 'userLastName', 'userId']);
+const profileKeys = new Set(['userFirstName', 'userLastName', 'userId', 'pixelToolsApiKey']);
 
 const groupOptions = [
   { label: 'Все', value: 'all' },
   { label: 'Новые', value: 'new' },
   { label: 'Рекомендую', value: 'popular', tooltip: 'Подойдет для большинства пользователей.' },
   ...groups.filter((g) => g.key !== 'profile').map((g) => ({ label: g.label, value: g.key })),
+  { label: 'Прочее', value: 'other' },
 ];
 
 const groupOrder = Object.fromEntries(groups.map((g, i) => [g.key, i]));
@@ -34,7 +36,7 @@ const filteredOptions = computed(() => {
       const matchesGroup = selectedGroup.value === 'all'
         || (selectedGroup.value === 'new' && option.new)
         || (selectedGroup.value === 'popular' && (option.popularity ?? 0) >= 80)
-        || option.groups?.includes(selectedGroup.value);
+        || (selectedGroup.value === 'other' ? !option.groups?.length : option.groups?.includes(selectedGroup.value));
       return matchesSearch && matchesGroup;
     })
     .sort((a, b) => {
@@ -59,6 +61,10 @@ function getOptionsMap() {
         }
         case optionTypes.NUMBER: {
           result[option.key] = option.default || null;
+          break;
+        }
+        case optionTypes.MULTISELECT: {
+          result[option.key] = option.default ?? [];
           break;
         }
         default: {
@@ -99,6 +105,13 @@ watch(form, () => {
 }, { deep: true });
 
 const infoModalOpened = ref(false);
+const profileModalOpened = ref(false);
+const importExportModalOpened = ref(false);
+
+function onImportApply(importedOptions) {
+  if (importedOptions) Object.assign(form, importedOptions);
+  importExportModalOpened.value = false;
+}
 
 function openWhatsNew() {
   chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
@@ -122,12 +135,26 @@ onMounted(() => {
             size="small"
           />
         </IconField>
-        <ProfileSettings v-model="form" />
+        <Button
+          v-tooltip.left="'Настройки профиля'"
+          size="small"
+          severity="secondary"
+          icon="pi pi-user"
+          @click="profileModalOpened = true"
+        />
+        <Button
+          v-tooltip.left="'Импорт / экспорт настроек'"
+          size="small"
+          severity="secondary"
+          text
+          icon="pi pi-file-export"
+          @click="importExportModalOpened = true"
+        />
         <Button
           v-tooltip.left="'Что нового'"
           size="small"
           severity="secondary"
-          link
+          text
           icon="pi pi-sparkles"
           @click="openWhatsNew"
         />
@@ -135,7 +162,7 @@ onMounted(() => {
           v-tooltip.left="'О расширении'"
           size="small"
           severity="secondary"
-          link
+          text
           icon="pi pi-info-circle"
           @click="infoModalOpened = true"
         />
@@ -175,6 +202,33 @@ onMounted(() => {
       </div>
     </div>
   </main>
+
+  <Dialog
+    v-model:visible="profileModalOpened"
+    header="Профиль"
+    :draggable="false"
+    dismissable-mask
+    modal
+    :style="{ width: '100%' }"
+    class="m-3"
+  >
+    <ProfileSettings v-model="form" />
+  </Dialog>
+
+  <Dialog
+    v-model:visible="importExportModalOpened"
+    header="Импорт / экспорт настроек"
+    :draggable="false"
+    dismissable-mask
+    modal
+    :style="{ width: '100%' }"
+    class="m-3"
+  >
+    <ImportExportContent
+      :visible="importExportModalOpened"
+      @apply="onImportApply"
+    />
+  </Dialog>
 
   <Dialog
     v-model:visible="infoModalOpened"

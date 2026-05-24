@@ -1,10 +1,13 @@
 <script setup>
-import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, MultiSelect, Select, Textarea } from 'primevue';
+import { jsonrepair } from 'jsonrepair';
+import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, InputGroup, MultiSelect, Password, Select, Textarea } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import { getCommitMessage, getTaskUrl } from '../../../utils.js';
+import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
@@ -54,6 +57,34 @@ const settings = ref({});
 const settingsStorageKey = computed(() => `decompose-task-settings-${groupId.value}`);
 const isSettingsModalOpened = ref(false);
 const parentAuditorIds = ref([]);
+
+const AI_CONTEXT_MAX_LENGTH = 1000;
+const aiContextStorageKey = computed(() => `decompose-task-ai-context-${groupId.value}`);
+const aiContext = ref('');
+const isAiContextModalOpened = ref(false);
+const isPromptPreviewModalOpened = ref(false);
+const promptPreview = computed(() => buildPromptPreview(props.taskTitle, aiContext.value.trim() || null));
+
+async function onAiContextInput(e) {
+  aiContext.value = e.target.value.slice(0, AI_CONTEXT_MAX_LENGTH);
+  await chrome.storage.local.set({[aiContextStorageKey.value]: aiContext.value});
+}
+
+const aiLoading = ref(false);
+const aiProgress = ref(null);
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI декомпозиция (${aiProgress.value}%)` : 'AI декомпозиция');
+
+const isApiKeyModalOpened = ref(false);
+const apiKeyInputValue = ref('');
+
+async function saveApiKey() {
+  const key = apiKeyInputValue.value.trim();
+  if (!key) return;
+  const {options} = await chrome.storage.local.get(['options']);
+  await chrome.storage.local.set({options: {...(options ?? {}), pixelToolsApiKey: key}});
+  isApiKeyModalOpened.value = false;
+  await aiDecompose();
+}
 const defaultAuditors = computed(() => settings.value.defaultAuditors ?? 'inherit');
 
 let rowIdCounter = 0;
@@ -212,6 +243,8 @@ async function fetchData() {
     groupId.value = resolved;
 
     await loadSettings();
+    const storedContext = await chrome.storage.local.get([aiContextStorageKey.value]);
+    if (storedContext[aiContextStorageKey.value]) aiContext.value = storedContext[aiContextStorageKey.value];
     const [groupUsers, stagesResponse, currentUser] = await Promise.all([
       bitrixApi.getGroupUsers(groupId.value),
       bitrixApi.getStages(groupId.value),
@@ -247,6 +280,64 @@ async function fetchData() {
   }
 }
 
+async function aiDecompose() {
+  const { options: storedOptions } = await chrome.storage.local.get(['options']);
+  const apiKey = storedOptions?.pixelToolsApiKey;
+  if (!apiKey) {
+    isApiKeyModalOpened.value = true;
+    return;
+  }
+
+  aiLoading.value = true;
+  aiProgress.value = null;
+  try {
+    const fields = settings.value.description ? ['TITLE', 'DESCRIPTION'] : ['TITLE'];
+    const { data } = await bitrixApi.getTask(props.taskId, fields);
+    const title = data?.result?.task?.title ?? props.taskTitle;
+    const description = settings.value.description ? (data?.result?.task?.description ?? '') : '';
+
+    const MAX_PROMPT_LENGTH = 20000;
+    let prompt = buildSystemPrompt(title, description, aiContext.value);
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
+      toast.add({ severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+    }
+
+    const rawResult = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
+      aiProgress.value = p;
+    });
+
+    const parsed = JSON.parse(jsonrepair(rawResult));
+    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('AI вернул пустой список подзадач');
+
+    const auditorIds = defaultAuditors.value === 'all'
+      ? users.value.map((u) => u.id)
+      : defaultAuditors.value === 'inherit'
+        ? [...parentAuditorIds.value]
+        : [userId.value];
+    const responsibleId = !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit'
+      ? props.responsiveId
+      : userId.value;
+
+    rows.value = parsed.map((item) => ({
+      _id: rowIdCounter++,
+      title: item.title ?? '',
+      description: settings.value.description ? (item.description ?? '') : '',
+      copyContent: false,
+      copyCommit: false,
+      responsibleId,
+      stageId: settings.value.defaultStageId ?? null,
+      auditorIds: [...auditorIds],
+    }));
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'AI', detail: `[pts-plan]: ${e.message}`, life: 5000 });
+    isApiKeyModalOpened.value = true;
+  } finally {
+    aiLoading.value = false;
+    aiProgress.value = null;
+  }
+}
+
 onMounted(() => {
   fetchData();
 });
@@ -256,7 +347,7 @@ onMounted(() => {
   <form @submit.prevent="submit">
     <DataTable
       :value="rows"
-      :loading="isLoading"
+      :loading="isLoading || aiLoading"
       data-key="_id"
       size="small"
       striped-rows
@@ -271,15 +362,48 @@ onMounted(() => {
       </template>
 
       <template #header>
-        <Button
-          icon="pi pi-cog"
-          label="Настройки"
-          size="small"
-          severity="secondary"
-          variant="text"
-          :disabled="isLoading"
-          @click="isSettingsModalOpened = true"
-        />
+        <div class="flex gap-1 items-center">
+          <Button
+            icon="pi pi-cog"
+            label="Настройки"
+            size="small"
+            severity="secondary"
+            variant="text"
+            :disabled="isLoading || aiLoading"
+            @click="isSettingsModalOpened = true"
+          />
+          <InputGroup
+            v-if="!isLoading"
+            :pt="{root: {style: {width: 'auto'}}}"
+          >
+            <Button
+              icon="pi pi-sparkles"
+              :label="aiButtonLabel"
+              size="small"
+              outlined
+              severity="secondary"
+              :loading="aiLoading"
+              :disabled="isLoading"
+              @click="aiDecompose"
+            />
+            <Button
+              v-tooltip="'Доп. контекст для AI'"
+              size="small"
+              severity="secondary"
+              :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
+              :disabled="isLoading"
+              @click="isAiContextModalOpened = true"
+            />
+            <Button
+              v-tooltip="'Просмотр системного промпта'"
+              size="small"
+              severity="secondary"
+              icon="pi pi-eye"
+              :disabled="isLoading"
+              @click="isPromptPreviewModalOpened = true"
+            />
+          </InputGroup>
+        </div>
       </template>
 
       <Column header="Название">
@@ -290,15 +414,6 @@ onMounted(() => {
               fluid
               rows="2"
               cols="40"
-              :pt="{
-                root: {
-                  style: {
-                    minHeight: '35px',
-                    resize: 'vertical',
-                    display: 'block',
-                  }
-                }
-              }"
             />
             <div
               v-if="settings.showCommitCheckbox"
@@ -335,15 +450,6 @@ onMounted(() => {
               fluid
               rows="2"
               cols="20"
-              :pt="{
-                root: {
-                  style: {
-                    minHeight: '35px',
-                    resize: 'vertical',
-                    display: 'block',
-                  }
-                }
-              }"
             />
             <div class="flex gap-1 items-center">
               <Checkbox
@@ -444,7 +550,7 @@ onMounted(() => {
             icon="pi pi-times"
             text
             severity="secondary"
-            :disabled="rows.length === 1"
+            :disabled="rows.length === 1 || aiLoading"
             @click="removeRow(index)"
           />
         </template>
@@ -458,6 +564,7 @@ onMounted(() => {
             text
             severity="secondary"
             size="small"
+            :disabled="aiLoading"
             @click="addRow"
           />
           <Button
@@ -466,6 +573,7 @@ onMounted(() => {
             icon="pi pi-check"
             size="small"
             :loading="isLoading"
+            :disabled="aiLoading"
           />
         </div>
       </template>
@@ -484,5 +592,80 @@ onMounted(() => {
       :settings-storage-key
       @success="onSaveSettings"
     />
+  </Dialog>
+
+  <Dialog
+    v-model:visible="isApiKeyModalOpened"
+    header="API ключ Пиксель Тулс"
+    dismissable-mask
+    modal
+    :style="{width: '400px'}"
+  >
+    <form @submit.prevent="saveApiKey">
+      <Password
+        v-model="apiKeyInputValue"
+        size="small"
+        :feedback="false"
+        toggle-mask
+        fluid
+        placeholder="Введите API ключ"
+        :input-props="{autocomplete: 'new-password'}"
+      />
+      <p class="text-xs text-surface-400 mt-1 mb-3">
+        <a
+          href="https://tools.pixelplus.ru/"
+          target="_blank"
+          class="underline"
+        >tools.pixelplus.ru</a>
+        → Меню → Настройки аккаунта → Ключ для доступа по API
+      </p>
+      <Button
+        type="submit"
+        label="Сохранить"
+        size="small"
+        :disabled="!apiKeyInputValue.trim()"
+      />
+    </form>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="isAiContextModalOpened"
+    header="Доп. контекст для AI"
+    dismissable-mask
+    modal
+    :style="{width: '480px'}"
+  >
+    <p class="text-sm text-surface-500 mb-3">
+      Дополнительная информация для AI: стек, ограничения, пожелания по декомпозиции.
+    </p>
+    <div class="relative">
+      <Textarea
+        :value="aiContext"
+        :maxlength="AI_CONTEXT_MAX_LENGTH"
+        rows="6"
+        fluid
+        placeholder="Например: бэкенд на Laravel, фронт на Vue 3, разбить максимум на 3 подзадачи..."
+        @input="onAiContextInput"
+      />
+      <span class="absolute bottom-2 right-2 text-xs text-surface-400 pointer-events-none">
+        {{ aiContext.length }} / {{ AI_CONTEXT_MAX_LENGTH }}
+      </span>
+    </div>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="isPromptPreviewModalOpened"
+    header="Системный промпт"
+    dismissable-mask
+    modal
+    :style="{width: '760px'}"
+  >
+    <pre
+      class="text-xs font-mono whitespace-pre-wrap break-words max-h-[60vh] overflow-y-auto overflow-x-hidden"
+      v-html="promptPreview"
+    />
+    <div class="text-right text-xs text-surface-400 mt-2">
+      {{ promptPreview.length }} символов
+    </div>
   </Dialog>
 </template>

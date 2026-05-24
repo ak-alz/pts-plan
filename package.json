@@ -1,7 +1,7 @@
 {
   "name": "pts-plan",
   "displayName": "Pixel Plan Injection",
-  "version": "2.9.0",
+  "version": "2.9.1",
   "description": "Бесплатное расширение, которое превращает стандартный Bitrix24 в удобный рабочий инструмент.",
   "keywords": [
     "chrome-extension",
@@ -13,9 +13,9 @@
   "author": "MelentQ",
   "type": "module",
   "scripts": {
-    "copy-assets": "cp -r node_modules/primeicons/fonts/ public/assets/",
-    "build-css": "npx @tailwindcss/cli -i src/css/content-styles.css -o public/assets/content-styles.css --minify && npm run copy-assets",
     "build": "npm run build-css && vite build",
+    "build-css": "npx @tailwindcss/cli -i src/css/content-styles.css -o public/assets/content-styles.css --minify && npm run copy-assets",
+    "copy-assets": "cp -r node_modules/primeicons/fonts/ public/assets/",
     "dev": "npm run build-css && vite",
     "preview": "npm run build-css && vite preview"
   },
@@ -24,7 +24,9 @@
     "axios": "^1.16.1",
     "chart.js": "^4.5.1",
     "dayjs": "^1.11.20",
+    "jsonrepair": "^3.14.0",
     "lodash-es": "^4.18.1",
+    "marked": "^18.0.4",
     "primeicons": "^7.0.0",
     "primelocale": "^2.3.2",
     "primevue": "^4.5.5",
@@ -37,7 +39,7 @@
     "@tailwindcss/cli": "^4.3.0",
     "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-vue": "^6.0.7",
-    "chrome-types": "^0.1.428",
+    "chrome-types": "^0.1.429",
     "eslint": "^10.4.0",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "eslint-plugin-vue": "^10.9.1",

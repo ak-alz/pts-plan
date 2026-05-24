@@ -1,3 +1,4 @@
+import {NOTIF_TYPES} from './actions/notification-details/notifTypes.js';
 import {getColors} from './utils.js';
 
 export const optionTypes = {
@@ -6,15 +7,15 @@ export const optionTypes = {
   COLOR: 'color',
   SELECT: 'select',
   RADIO: 'radio',
+  MULTISELECT: 'multiselect',
 };
 
 export const groups = [
+  { key: 'appearance', label: 'Оформление' },
   { key: 'profile', label: 'Профиль' },
-  { key: 'kanban', label: 'Канбан' },
   { key: 'tasks', label: 'Задачи' },
   { key: 'notifications', label: 'Уведомления' },
-  { key: 'appearance', label: 'Оформление' },
-  { key: 'other', label: 'Прочее' },
+  { key: 'analytics', label: 'Аналитика' },
 ];
 
 export default [
@@ -38,6 +39,13 @@ export default [
     tip: 'Ваш ID в Bitrix24 (нужно для некоторых фич)',
     groups: ['profile'],
     type: optionTypes.NUMBER,
+  },
+  {
+    key: 'pixelToolsApiKey',
+    name: 'AI API ключ',
+    tip: 'API ключ для AI-функций (декомпозиция задач)',
+    groups: ['profile'],
+    type: optionTypes.TEXT,
   },
   {
     key: 'userNameColor',
@@ -153,7 +161,7 @@ export default [
     name: 'Поиск задач в канбане (виджет)',
     tip: 'Добавляет кнопку «Поиск» в канбане для поиска задач по названию, постановщику, исполнителю и датам',
     new: true,
-    groups: ['kanban', 'tasks'],
+    groups: ['tasks'],
     popularity: 90,
     action: async ({sessionId}) => {
       const {taskSearch} = await import('/src/js/actions/task-search');
@@ -165,7 +173,7 @@ export default [
     name: 'Быстрое создание задачи (виджет)',
     tip: 'Заменяет стандартную форму «Быстрая задача» в колонках канбана на собственное окно с выбором исполнителя',
     new: true,
-    groups: ['kanban', 'tasks'],
+    groups: ['tasks'],
     popularity: 90,
     action: async ({sessionId}) => {
       const {quickTask} = await import('/src/js/actions/quick-task');
@@ -176,7 +184,7 @@ export default [
     key: 'scrumPoints',
     name: 'Таблица баллов за текущий спринт (виджет)',
     tip: 'Добавляет счётчик story points в канбан-доске.',
-    groups: ['kanban'],
+    groups: ['analytics'],
     popularity: 75,
     action: async ({sessionId}) => {
       const {scrumPoints} = await import('/src/js/actions/scrum-points');
@@ -187,7 +195,7 @@ export default [
     key: 'sprintHistory',
     name: 'История завершенных задач (виджет)',
     tip: 'Добавляет кнопку для просмотра завершённых задач за произвольный период с фильтром по исполнителю и сортировкой по баллам',
-    groups: ['kanban'],
+    groups: ['tasks'],
     popularity: 60,
     action: async ({sessionId}) => {
       const {sprintHistory} = await import('/src/js/actions/sprint-history');
@@ -198,7 +206,7 @@ export default [
     key: 'scrumSummary',
     name: 'Сводка по итогам спринтов (виджет)',
     tip: 'Показывает итоги по завершённым спринтам в канбане',
-    groups: ['kanban'],
+    groups: ['analytics'],
     popularity: 55,
     action: async ({sessionId}) => {
       const {scrumSummary} = await import('/src/js/actions/scrum-summary');
@@ -210,7 +218,7 @@ export default [
     name: 'Анализ баллов задач (виджет)',
     tip: 'Показывает суммарные баллы по деревьям задач: находит все подзадачи любой вложенности, суммирует баллы и выводит таблицу по корневым задачам',
     new: true,
-    groups: ['kanban', 'tasks'],
+    groups: ['analytics'],
     popularity: 55,
     action: async ({sessionId, options}) => {
       const {taskAnalysis} = await import('/src/js/actions/task-analysis');
@@ -221,7 +229,7 @@ export default [
     key: 'decomposeTask',
     name: 'Быстрое создание подзадач (виджет)',
     tip: 'Добавляет кнопку для быстрого создания подзадач с исполнителями и стадиями',
-    groups: ['kanban', 'tasks'],
+    groups: ['tasks'],
     popularity: 85,
     action: async ({sessionId}) => {
       const {decomposeTask} = await import('/src/js/actions/decompose-task');
@@ -407,6 +415,37 @@ export default [
           },
         ],
       },
+      {
+        key: 'notificationDetailsHighlightTagallStatus',
+        name: 'Подсвечивать статусные tagall',
+        tip: 'Выделяет tagall-уведомления, сообщающие о готовности или деплое (готово, в проде, выкатил, задеплоил и т. п.). Перехватывает приоритет над обычным tagall.',
+        options: [
+          {
+            key: 'notificationDetailsHighlightTagallStatusBorder',
+            name: 'Цвет рамки',
+            default: getColors('green', '500'),
+            presets: getColors(['green', 'lime', 'teal', 'emerald', 'cyan', 'blue', 'violet', 'amber'], '500'),
+            demo: 'notification-tagall',
+            type: optionTypes.COLOR,
+          },
+          {
+            key: 'notificationDetailsHighlightTagallStatusBackground',
+            name: 'Цвет фона',
+            default: getColors('green', '50'),
+            presets: getColors(['green', 'lime', 'teal', 'emerald', 'cyan', 'blue', 'violet', 'amber'], '50'),
+            demo: 'notification-tagall',
+            type: optionTypes.COLOR,
+          },
+        ],
+      },
+      {
+        key: 'notificationDetailsDimTypes',
+        name: 'Приглушить типы',
+        tip: 'Уведомления выбранных типов будут отображаться с уменьшенной непрозрачностью',
+        type: optionTypes.MULTISELECT,
+        default: [],
+        choices: NOTIF_TYPES.filter(({dimmable}) => dimmable !== false).map(({label}) => ({label, value: label})),
+      },
     ],
   },
   {
@@ -459,7 +498,7 @@ export default [
       {
         key: 'removeSystemNotificationsReactions',
         name: 'Реакции',
-        tip: 'Удаляет уведомления вида «Отреагировал(а) на ваш комментарий».',
+        tip: 'Удаляет уведомления вида «Отреагировал(а) на ваш комментарий» и «Благодарит вас в сообщении».',
       },
     ],
   },
@@ -467,7 +506,6 @@ export default [
     key: 'autoChoiceUser',
     name: 'Автовыбор при упоминании через «+»',
     tip: 'При добавлении упоминания через «+» автоматически выбирает пользователя, если поиск выдал только один результат.',
-    groups: ['tasks'],
     popularity: 10,
     action: () => {
       import('/src/js/actions/auto-choice-user');
@@ -487,7 +525,6 @@ export default [
     key: 'groupTitle',
     name: 'Название проекта в <title>',
     tip: 'Добавляет название текущего проекта/группы в <title> браузерной вкладки для быстрого поиска среди открытых вкладок.',
-    groups: ['other'],
     popularity: 10,
     action: () => {
       import('/src/js/actions/group-title');
@@ -509,7 +546,7 @@ export default [
     key: 'kanbanUserCards',
     name: 'Подсветка своих задач в канбане',
     tip: 'Меняет фон карточек в канбане. Необходимо указать имя и фамилию пользователя.',
-    groups: ['kanban', 'appearance'],
+    groups: ['appearance'],
     popularity: 50,
     needs: ['userFirstName', 'userLastName'],
     action: async ({options}) => {
@@ -530,7 +567,7 @@ export default [
     key: 'statusMarkers',
     name: 'Маркеры стадий в задаче',
     tip: 'Добавляет сокращённые буквы в ячейки стадий внутри задачи для быстрой навигации без наведения курсора.',
-    groups: ['kanban'],
+    groups: ['tasks'],
     popularity: 80,
     action: () => {
       import('/src/js/actions/status-markers');
@@ -540,7 +577,6 @@ export default [
     key: 'openInNewTab',
     name: 'Действия в новой вкладке',
     tip: 'Открывает выбранные действия с задачами в новой вкладке.',
-    groups: ['kanban', 'tasks'],
     popularity: 10,
     action: async ({options}) => {
       const {openInNewTab} = await import('/src/js/actions/open-in-new-tab');
@@ -575,7 +611,6 @@ export default [
     key: 'autoAuditor',
     name: 'Все наблюдатели при создании задач',
     tip: 'При открытии формы создания новой задачи или подзадачи автоматически нажимает кнопку добавления наблюдателя',
-    groups: ['kanban', 'tasks'],
     popularity: 50,
     action: () => {
       import('/src/js/actions/auto-auditor');
@@ -585,7 +620,6 @@ export default [
     key: 'showCats',
     name: 'Баннер с котами',
     tip: 'Добавляет баннер с котами в боковое меню (10 случайных фото меняются каждые 6 минут)',
-    groups: ['other'],
     popularity: 10,
     action: async ({options}) => {
       const {showCats} = await import('/src/js/actions/show-cats');

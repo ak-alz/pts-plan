@@ -3,6 +3,7 @@ import {Column, DataTable} from 'primevue';
 
 defineProps({
   rows: {type: Array, required: true},
+  multiUser: {type: Boolean, default: false},
 });
 </script>
 
@@ -30,5 +31,13 @@ defineProps({
       header="Баллов всего"
       sortable
     />
+    <Column
+      v-if="multiUser"
+      header="Исполнители"
+    >
+      <template #body="{ data }">
+        {{ data.userNames.join(', ') }}
+      </template>
+    </Column>
   </DataTable>
 </template>

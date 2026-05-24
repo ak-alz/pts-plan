@@ -41,7 +41,28 @@ export default {
       image: {class: 'object-cover'},
     },
     select: {
-      label: {style: 'font-size: 14px;'},
+      label: {
+        style: {
+          fontSize: '14px',
+        },
+      },
+    },
+    inputtext: {
+      root: {
+        style: {
+          fontSize: '14px',
+        },
+      },
+    },
+    textarea: {
+      root: {
+        style: {
+          fontSize: '14px',
+          minHeight: '35px',
+          resize: 'vertical',
+          display: 'block',
+        },
+      },
     },
   },
 };

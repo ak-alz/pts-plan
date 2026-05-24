@@ -5,8 +5,14 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl } from '../../utils.js';
+import { getGroupIdFromUrl, insertCSS } from '../../utils.js';
 import ScrumSummaryApp from './ScrumSummaryApp.vue';
+
+insertCSS(`
+  .pts-ai-result * { font-size: 14px; }
+  .pts-ai-result > *:first-child { margin-top: 0; }
+  .pts-ai-result > *:last-child { margin-bottom: 0; }
+`, 'pts-ai-result');
 
 export function scrumSummary(sessionId) {
   const groupId = getGroupIdFromUrl(window.location.href);

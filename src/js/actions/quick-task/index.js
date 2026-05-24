@@ -31,16 +31,16 @@ export function quickTask(sessionId) {
   app.directive('ripple', Ripple);
   app.mount(appContainer);
 
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.main-kanban-column-add-item-button');
-    if (!btn) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const column = btn.closest('.main-kanban-column');
-    const stageId = column?.querySelector('.main-kanban-column-body')?.dataset?.id ?? null;
-    const columnName = column?.querySelector('.main-kanban-column-title-text-inner')?.textContent?.trim() ?? '';
-    document.dispatchEvent(new CustomEvent('pts:quick-task:open', {
-      detail: {stageId, columnName},
-    }));
-  }, true);
+  document.querySelectorAll('.main-kanban-column-add-item-button').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const column = btn.closest('.main-kanban-column');
+      const stageId = column?.querySelector('.main-kanban-column-body')?.dataset?.id ?? null;
+      const columnName = column?.querySelector('.main-kanban-column-title-text-inner')?.textContent?.trim() ?? '';
+      document.dispatchEvent(new CustomEvent('pts:quick-task:open', {
+        detail: {stageId, columnName},
+      }));
+    });
+  });
 }

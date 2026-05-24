@@ -1,13 +1,19 @@
 import BitrixApi from '../../BitrixApi.js';
 import {getTaskIdFromUrl, insertCSS, isUserMentioned, rehydrateOnChanges, stringToPastelColor} from '../../utils.js';
+import {NOTIF_TYPES} from './notifTypes.js';
+
+const TAGALL_STATUS_RE = /и другие участники задачи,?\s*(на прод[еу]?|в прод[еу]?|прод[еу]?\b|готов[оа]?|сделал[аи]?|сделано|выкатил[аи]?|задеплоил[аи]?|задеплоен[оа]?|задеплой|деплой|выпустил[аи]?|запустил[аи]?|опубликовал[аи]?|завершил[аи]?|завершен[оа]?|выполнил[аи]?|выполнен[оа]?|закончил[аи]?|закончен[оа]?|исправил[аи]?|исправлен[оа]?|пофиксил[аи]?|фикс\b|смержил[аи]?|смержен[оа]?|merged|протестировал[аи]?|протестирован[оа]?|оттестировал[аи]?|запушил[аи]?|зарелизил[аи]?|релиз|ок\b|ok\b|done|ready|fixed)/i;
 
 export function notificationDetails(sessionId, options = {}) {
   const bitrixApi = new BitrixApi(sessionId);
+
+  const dimTypes = new Set(options.notificationDetailsDimTypes ?? []);
 
   const shouldHighlight = !!(options.notificationDetailsHighlight && options.userId);
   const shouldHighlightCreator = !!(options.notificationDetailsHighlightCreator && options.userId);
   const shouldHighlightMention = !!(options.notificationDetailsHighlightMention && options.userFirstName && options.userLastName);
   const shouldHighlightTagall = !!options.notificationDetailsHighlightTagall;
+  const shouldHighlightTagallStatus = !!options.notificationDetailsHighlightTagallStatus;
   const shouldCompact = !!options.notificationDetailsCompact;
 
   // In-memory кэш на время сессии страницы
@@ -71,6 +77,9 @@ export function notificationDetails(sessionId, options = {}) {
       font-weight: 700;
       color: #fff;
       flex-shrink: 0;
+    }
+    .pts-nd-dimmed {
+      opacity: 0.5;
     }
     .pts-nd-skeleton {
       height: 16px;
@@ -136,6 +145,15 @@ export function notificationDetails(sessionId, options = {}) {
       .pts-nd-tagall {
         border-color: ${options.notificationDetailsHighlightTagallBorder} !important;
         background-color: ${options.notificationDetailsHighlightTagallBackground} !important;
+      }
+    `);
+  }
+
+  if (shouldHighlightTagallStatus) {
+    insertCSS(`
+      .pts-nd-tagall-status {
+        border-color: ${options.notificationDetailsHighlightTagallStatusBorder} !important;
+        background-color: ${options.notificationDetailsHighlightTagallStatusBackground} !important;
       }
     `);
   }
@@ -212,6 +230,10 @@ export function notificationDetails(sessionId, options = {}) {
           : null,
       ]);
 
+      // Ждём макротаск, чтобы Bitrix успел дорендерить текст уведомления
+      // (при горячем кэше Promise.all резолвится мгновенно, и notifText ещё пуст)
+      await new Promise((r) => setTimeout(r, 0));
+
       // --- Отрисовка из кэша ---
       items.forEach(({el, skeleton, taskId}) => {
         skeleton.remove();
@@ -228,19 +250,63 @@ export function notificationDetails(sessionId, options = {}) {
         }
         const notifText = el.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent ?? '';
 
-        if (shouldHighlightTagall && notifText.includes('и другие участники задачи')) {
-          el.classList.add('pts-nd-tagall');
+        const isTagall = notifText.includes('и другие участники задачи');
+        let isPersonalMentionInTagall = false;
+
+        if (isTagall && shouldHighlightMention) {
+          const fn = options.userFirstName;
+          const ln = options.userLastName;
+          const phrase = 'и другие участники задачи';
+          const phraseIdx = notifText.indexOf(phrase);
+          const before = notifText.slice(0, phraseIdx);
+          const after = notifText.slice(phraseIdx + phrase.length);
+          // tagall всегда содержит имя текущего юзера перед фразой — убираем одно вхождение
+          const nameInTagall = before.includes(`${ln} ${fn}`) ? `${ln} ${fn}`
+            : before.includes(`${fn} ${ln}`) ? `${fn} ${ln}`
+            : null;
+          const beforeWithoutTagallName = nameInTagall ? before.replace(nameInTagall, '') : '';
+          isPersonalMentionInTagall =
+            isUserMentioned(beforeWithoutTagallName, fn, ln) ||
+            isUserMentioned(after, fn, ln);
         }
 
-        if (shouldHighlightMention && !el.classList.contains('pts-nd-tagall')) {
-          const isNewTask = /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notifText);
-          const isNotResponsible = !options.userId || task.responsibleId !== String(options.userId);
-          if (isUserMentioned(notifText, options.userFirstName, options.userLastName) && !(isNewTask && isNotResponsible)) {
-            el.classList.add('pts-nd-my-mention');
+        if (!isPersonalMentionInTagall) {
+          if (shouldHighlightTagallStatus && isTagall && TAGALL_STATUS_RE.test(notifText)) {
+            el.classList.add('pts-nd-tagall-status');
+          } else if (shouldHighlightTagall && isTagall) {
+            el.classList.add('pts-nd-tagall');
+          }
+        }
+
+        if (shouldHighlightMention) {
+          const hasTagallClass = el.classList.contains('pts-nd-tagall') || el.classList.contains('pts-nd-tagall-status');
+          if (!hasTagallClass) {
+            const isNewTask = /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notifText);
+            const isNotResponsible = !options.userId || task.responsibleId !== String(options.userId);
+            const mentioned = isPersonalMentionInTagall || isUserMentioned(notifText, options.userFirstName, options.userLastName);
+            if (mentioned && !(isNewTask && isNotResponsible)) {
+              el.classList.add('pts-nd-my-mention');
+            }
+          }
+        }
+
+        const isHighlighted = el.classList.contains('pts-nd-my-task')
+          || el.classList.contains('pts-nd-my-creator-task')
+          || el.classList.contains('pts-nd-tagall')
+          || el.classList.contains('pts-nd-tagall-status')
+          || el.classList.contains('pts-nd-my-mention');
+
+        if (dimTypes.size && !isHighlighted) {
+          const notifType = getNotifType(notifText);
+          if (notifType && dimTypes.has(notifType.label)) {
+            el.classList.add('pts-nd-dimmed');
           }
         }
 
         const chips = [];
+
+        const typeChip = createNotifTypeChip(notifText);
+        if (typeChip) chips.push(typeChip);
 
         const group = cache.groups.get(task.groupId);
         if (group) {
@@ -271,6 +337,30 @@ export function notificationDetails(sessionId, options = {}) {
         el.setAttribute('data-pts-details', 'error');
       });
     }
+  }
+
+  function getNotifType(notifText) {
+    return NOTIF_TYPES.find(({re}) => re.test(notifText)) ?? null;
+  }
+
+  function createNotifTypeChip(notifText) {
+    const type = getNotifType(notifText);
+    if (!type) return null;
+
+    const chip = document.createElement('span');
+    chip.className = 'pts-nd-chip';
+    chip.title = `Тип: ${type.label}`;
+
+    const dot = document.createElement('span');
+    dot.className = 'pts-nd-stage-dot';
+    dot.style.background = type.color;
+
+    const label = document.createElement('span');
+    label.textContent = type.label;
+
+    chip.appendChild(dot);
+    chip.appendChild(label);
+    return chip;
   }
 
   function createTextChip(text, bg, color, title) {

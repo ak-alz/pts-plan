@@ -19,14 +19,13 @@ defineProps({
   copySeparator: {type: String, default: '\t'},
   csvSeparator: {type: String, default: ','},
   defaultTab: {type: String, default: 'summary'},
+  groupId: {type: String, required: true},
+  dateRange: {type: Array, default: null},
 });
 </script>
 
 <template>
-  <Tabs
-    :value="defaultTab"
-    lazy
-  >
+  <Tabs :value="defaultTab">
     <TabList>
       <Tab value="summary">
         Сводка
@@ -49,8 +48,9 @@ defineProps({
         <TaskSummaryTable
           v-if="summaryTableData"
           :rows="summaryTableData.rows"
+          :group-id="groupId"
+          :date-range="dateRange"
           :multi-user="multiUser"
-          :use-weeks="summaryTableData.useWeeks"
           :copy-separator="copySeparator"
           :csv-separator="csvSeparator"
         />
@@ -65,6 +65,7 @@ defineProps({
         <TaskTopList
           v-if="topTasksData"
           :rows="topTasksData.rows"
+          :multi-user="multiUser"
         />
       </TabPanel>
       <TabPanel value="tasks">

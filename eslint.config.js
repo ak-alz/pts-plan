@@ -4,6 +4,7 @@ import pluginVue from 'eslint-plugin-vue';
 import globals from 'globals';
 
 export default [
+  { ignores: ['node_modules/**', 'build/**'] },
   pluginJs.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
   {
@@ -22,6 +23,7 @@ export default [
       },
     },
     rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'semi': ['error', 'always'],
       'comma-dangle': ['error', 'always-multiline'],
       'quotes': ['error', 'single'],

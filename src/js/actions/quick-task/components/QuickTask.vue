@@ -77,7 +77,9 @@ onMounted(async () => {
       .map((s) => ({id: s.ID, title: s.TITLE, color: `#${s.COLOR}`}));
 
     applyDefaults();
-  } catch { /* ignore */ } finally {
+  } catch {
+    toast.add({severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
+  } finally {
     isLoadingData.value = false;
   }
 });
@@ -85,6 +87,10 @@ onMounted(async () => {
 async function submit() {
   const title = form.title.trim();
   if (!title) return;
+  if (!form.stageId) {
+    toast.add({severity: 'warn', summary: 'Выберите стадию', life: 3000});
+    return;
+  }
   isSubmitting.value = true;
   try {
     const fields = {TITLE: title, GROUP_ID: props.groupId};

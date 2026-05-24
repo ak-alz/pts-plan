@@ -1,19 +1,27 @@
 <script setup>
-import {Button, Column, DataTable} from 'primevue';
-import {computed, ref} from 'vue';
+import {marked} from 'marked';
+import {Button, Column, DataTable, Dialog, InputGroup, Password, Textarea} from 'primevue';
+import {useToast} from 'primevue/usetoast';
+import {computed, onMounted, ref} from 'vue';
 
+import {PixelToolsApi} from '../../../PixelToolsApi.js';
 import {colors} from '../../../utils.js';
+import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 
 const props = defineProps({
   rows: {
     type: Array,
     required: true,
   },
-  multiUser: {
-    type: Boolean,
-    default: false,
+  groupId: {
+    type: String,
+    required: true,
   },
-  useWeeks: {
+  dateRange: {
+    type: Array,
+    default: null,
+  },
+  multiUser: {
     type: Boolean,
     default: false,
   },
@@ -31,7 +39,10 @@ const indigoShades = Object.values(colors.indigo);
 
 const pointColorMap = computed(() => {
   const allPoints = [...new Set(
-    props.rows.flatMap((row) => row.pointDistribution.map((s) => s.points)),
+    props.rows.flatMap((row) => [
+      ...row.pointDistribution.map((s) => s.points),
+      ...(row.prevPointDistribution ?? []).map((s) => s.points),
+    ]),
   )].sort((a, b) => a - b);
   return new Map(allPoints.map((p, i) => [p, indigoShades[i % indigoShades.length]]));
 });
@@ -40,9 +51,26 @@ function getPointColor(points) {
   return pointColorMap.value.get(points);
 }
 
-function buildDistTooltip(dist) {
+function buildDistTooltip(dist, prevDist) {
+  if (!prevDist) {
+    return {
+      value: dist.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join('\n'),
+      pt: {text: {style: {whiteSpace: 'pre'}}},
+    };
+  }
+  const prevMap = new Map(prevDist.map((s) => [s.points, s]));
+  const allPoints = [...new Set([...dist.map((s) => s.points), ...prevDist.map((s) => s.points)])].sort((a, b) => a - b);
+  const lines = allPoints.map((pts) => {
+    const cur = dist.find((s) => s.points === pts);
+    const prev = prevMap.get(pts);
+    const curPct = cur?.pct ?? 0;
+    const prevPct = prev?.pct ?? 0;
+    const delta = curPct - prevPct;
+    const deltaStr = delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta}%)` : '';
+    return `${pts}б: ${curPct}%${deltaStr}`;
+  });
   return {
-    value: dist.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join('\n'),
+    value: lines.join('\n'),
     pt: {text: {style: {whiteSpace: 'pre'}}},
   };
 }
@@ -50,21 +78,118 @@ function buildDistTooltip(dist) {
 function buildRows() {
   const headers = [];
   if (props.multiUser) headers.push('Исполнитель');
-  headers.push('Баллов всего', 'Задач всего', 'Корневые', 'Коэф. декомп.', 'Средний балл / задачу');
-  headers.push(`Средний балл / ${props.useWeeks ? 'нед.' : 'мес.'}`);
-  if (!props.useWeeks) headers.push('Средний балл / нед.');
+  headers.push('Баллов всего', 'Задач всего', 'Корневые', 'Коэф. декомп.', 'Средний балл / задачу', 'Средний балл / мес.');
   headers.push('Распределение');
+  const hasPrevDist = props.rows.some((r) => r.prevPointDistribution != null);
+  if (hasPrevDist) headers.push('Распределение (пред.)');
 
   const dataRows = props.rows.map((row) => {
     const cells = [];
     if (props.multiUser) cells.push(row.userName);
     cells.push(row.totalPoints, row.totalTasks, row.totalRoots, row.decompRatio, row.avgPointsPerTask, row.avgPoints);
-    if (!props.useWeeks) cells.push(row.avgPointsPerWeek);
     cells.push(row.pointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', '));
+    if (hasPrevDist) cells.push(row.prevPointDistribution ? row.prevPointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', ') : '');
     return cells;
   });
 
   return {headers, dataRows};
+}
+
+const toast = useToast();
+
+const AI_CONTEXT_MAX_LENGTH = 1000;
+const aiContextStorageKey = computed(() => `task-analysis-ai-context-${props.groupId}`);
+const aiContext = ref('');
+const isAiContextModalOpened = ref(false);
+const isPromptPreviewModalOpened = ref(false);
+
+function buildAiData() {
+  const periodLabel = 'мес.';
+  return props.rows.map((row) => {
+    const entry = {
+      ...(props.multiUser ? {исполнитель: row.userName} : {}),
+      баллов_всего: row.totalPoints,
+      задач_всего: row.totalTasks,
+      корневые_задачи: row.totalRoots,
+      коэф_декомпозиции: row.decompRatio,
+      средний_балл_за_задачу: row.avgPointsPerTask,
+      [`средний_балл_за_${periodLabel}`]: row.avgPoints,
+      распределение: row.pointDistribution.map((s) => `${s.points}б: ${s.count} (${s.pct}%)`).join(', '),
+      ...(row.prevPointDistribution ? {распределение_пред_период: row.prevPointDistribution.map((s) => `${s.points}б: ${s.count} (${s.pct}%)`).join(', ')} : {}),
+      топ_задач: row.topTasks?.map((t) => `${t.title} (${t.points}б)`),
+    };
+    if (row.deltaTotal !== null) {
+      entry.дельта_баллов = row.deltaTotal;
+      entry.дельта_задач = row.deltaTotalTasks;
+      entry.дельта_корневых = row.deltaTotalRoots;
+      entry.дельта_коэф_декомп = row.deltaDecompRatio;
+      entry.дельта_балл_за_задачу = row.deltaAvgPointsPerTask;
+      entry[`дельта_балл_за_${periodLabel}`] = row.deltaAvgPoints;
+    }
+    return entry;
+  });
+}
+
+const promptPreview = computed(() => buildPromptPreview(props.dateRange, aiContext.value.trim() || null));
+
+async function onAiContextInput(e) {
+  aiContext.value = e.target.value.slice(0, AI_CONTEXT_MAX_LENGTH);
+  await chrome.storage.local.set({[aiContextStorageKey.value]: aiContext.value});
+}
+
+onMounted(async () => {
+  const stored = await chrome.storage.local.get([aiContextStorageKey.value]);
+  if (stored[aiContextStorageKey.value]) aiContext.value = stored[aiContextStorageKey.value];
+});
+
+const aiLoading = ref(false);
+const aiProgress = ref(null);
+const aiResult = ref('');
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI анализ (${aiProgress.value}%)` : 'AI анализ');
+const aiResultHtml = computed(() => aiResult.value ? marked(aiResult.value) : '');
+
+const isApiKeyModalOpened = ref(false);
+const apiKeyInputValue = ref('');
+
+async function saveApiKey() {
+  const key = apiKeyInputValue.value.trim();
+  if (!key) return;
+  const {options} = await chrome.storage.local.get(['options']);
+  await chrome.storage.local.set({options: {...(options ?? {}), pixelToolsApiKey: key}});
+  isApiKeyModalOpened.value = false;
+  await aiAnalyze();
+}
+
+async function aiAnalyze() {
+  const {options} = await chrome.storage.local.get(['options']);
+  const apiKey = options?.pixelToolsApiKey;
+  if (!apiKey) {
+    isApiKeyModalOpened.value = true;
+    return;
+  }
+
+  aiLoading.value = true;
+  aiProgress.value = null;
+  aiResult.value = '';
+
+  try {
+    const MAX_PROMPT_LENGTH = 20000;
+    let prompt = buildSystemPrompt(buildAiData(), props.dateRange, aiContext.value);
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
+      toast.add({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+    }
+
+    aiResult.value = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
+      aiProgress.value = p;
+    });
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+    isApiKeyModalOpened.value = true;
+  } finally {
+    aiLoading.value = false;
+    aiProgress.value = null;
+  }
 }
 
 const copied = ref(false);
@@ -93,23 +218,52 @@ function exportCsv() {
 </script>
 
 <template>
-  <div class="flex gap-1 justify-end mb-2">
-    <Button
-      size="small"
-      severity="secondary"
-      variant="text"
-      icon="pi pi-copy"
-      :label="copied ? 'Скопировано' : 'Копировать'"
-      @click="copyToClipboard"
-    />
-    <Button
-      size="small"
-      severity="secondary"
-      variant="text"
-      icon="pi pi-download"
-      label="CSV"
-      @click="exportCsv"
-    />
+  <div class="flex gap-1 justify-between mb-2">
+    <div class="flex gap-1">
+      <InputGroup :pt="{root: {style: {width: 'auto'}}}">
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          icon="pi pi-sparkles"
+          :label="aiButtonLabel"
+          :loading="aiLoading"
+          @click="aiAnalyze"
+        />
+        <Button
+          v-tooltip="'Доп. контекст для AI'"
+          size="small"
+          severity="secondary"
+          :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
+          @click="isAiContextModalOpened = true"
+        />
+        <Button
+          v-tooltip="'Просмотр системного промпта'"
+          size="small"
+          severity="secondary"
+          icon="pi pi-eye"
+          @click="isPromptPreviewModalOpened = true"
+        />
+      </InputGroup>
+    </div>
+    <div class="flex gap-1">
+      <Button
+        size="small"
+        severity="secondary"
+        variant="text"
+        icon="pi pi-copy"
+        :label="copied ? 'Скопировано' : 'Копировать'"
+        @click="copyToClipboard"
+      />
+      <Button
+        size="small"
+        severity="secondary"
+        variant="text"
+        icon="pi pi-download"
+        label="CSV"
+        @click="exportCsv"
+      />
+    </div>
   </div>
   <DataTable
     :value="rows"
@@ -178,8 +332,7 @@ function exportCsv() {
         {{ data.decompRatio }}
         <span
           v-if="data.deltaDecompRatio !== null"
-          class="text-sm"
-          :class="{'text-green-400': data.deltaDecompRatio > 0, 'text-red-400': data.deltaDecompRatio < 0, 'text-surface-400': data.deltaDecompRatio === 0}"
+          class="text-sm text-surface-400"
         ><template v-if="data.deltaDecompRatio > 0">+</template>{{ data.deltaDecompRatio }}</span>
       </template>
     </Column>
@@ -199,7 +352,7 @@ function exportCsv() {
     </Column>
     <Column
       field="avgPoints"
-      :header="`Средний балл / ${useWeeks ? 'нед.' : 'мес.'}`"
+      header="Средний балл / мес."
       :sortable="rows.length > 1"
     >
       <template #body="{ data }">
@@ -212,40 +365,116 @@ function exportCsv() {
       </template>
     </Column>
     <Column
-      v-if="!useWeeks"
-      field="avgPointsPerWeek"
-      header="Средний балл / нед."
-      :sortable="rows.length > 1"
-    >
-      <template #body="{ data }">
-        {{ data.avgPointsPerWeek }}
-        <span
-          v-if="data.deltaAvgPointsPerWeek !== null"
-          class="text-sm"
-          :class="{'text-green-400': data.deltaAvgPointsPerWeek > 0, 'text-red-400': data.deltaAvgPointsPerWeek < 0, 'text-surface-400': data.deltaAvgPointsPerWeek === 0}"
-        ><template v-if="data.deltaAvgPointsPerWeek > 0">+</template>{{ data.deltaAvgPointsPerWeek }}</span>
-      </template>
-    </Column>
-    <Column
       field="pointDistribution"
       header="Распределение"
     >
       <template #body="{ data }">
         <div
-          v-tooltip="buildDistTooltip(data.pointDistribution)"
-          class="flex h-4 rounded overflow-hidden min-w-25 gap-px"
+          v-tooltip="buildDistTooltip(data.pointDistribution, data.prevPointDistribution ?? null)"
+          class="flex flex-col gap-px"
         >
-          <div
-            v-for="seg in data.pointDistribution"
-            :key="seg.points"
-            :style="{
-              width: seg.pct + '%',
-              minWidth: '3px',
-              backgroundColor: getPointColor(seg.points),
-            }"
-          />
+          <div class="flex h-4 rounded overflow-hidden min-w-25 gap-px">
+            <div
+              v-for="seg in data.pointDistribution"
+              :key="seg.points"
+              :style="{
+                width: seg.pct + '%',
+                minWidth: '3px',
+                backgroundColor: getPointColor(seg.points),
+              }"
+            />
+          </div>
         </div>
       </template>
     </Column>
   </DataTable>
+
+  <div
+    v-if="aiResult"
+    class="mt-4 max-w-[1000px]"
+  >
+    <div class="flex items-center gap-1 mb-2 text-sm text-surface-400">
+      <i class="pi pi-sparkles" />
+      <span>Результат AI анализа</span>
+    </div>
+    <div
+      class="pts-ai-result p-3 rounded border border-surface-200 text-sm leading-relaxed"
+      v-html="aiResultHtml"
+    />
+  </div>
+
+  <Dialog
+    v-model:visible="isApiKeyModalOpened"
+    header="API ключ Пиксель Тулс"
+    dismissable-mask
+    modal
+    :style="{width: '400px'}"
+  >
+    <form @submit.prevent="saveApiKey">
+      <Password
+        v-model="apiKeyInputValue"
+        size="small"
+        :feedback="false"
+        toggle-mask
+        fluid
+        placeholder="Введите API ключ"
+        :input-props="{autocomplete: 'new-password'}"
+      />
+      <p class="text-xs text-surface-400 mt-1 mb-3">
+        <a
+          href="https://tools.pixelplus.ru/"
+          target="_blank"
+          class="underline"
+        >tools.pixelplus.ru</a>
+        → Меню → Настройки аккаунта → Ключ для доступа по API
+      </p>
+      <Button
+        type="submit"
+        label="Сохранить"
+        size="small"
+        :disabled="!apiKeyInputValue.trim()"
+      />
+    </form>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="isAiContextModalOpened"
+    header="Доп. контекст для AI"
+    dismissable-mask
+    modal
+    :style="{width: '480px'}"
+  >
+    <p class="text-sm text-surface-500 mb-3">
+      Дополнительная информация для AI: особенности команды, периода, что учесть при анализе.
+    </p>
+    <div class="relative">
+      <Textarea
+        :value="aiContext"
+        :maxlength="AI_CONTEXT_MAX_LENGTH"
+        rows="6"
+        fluid
+        placeholder="Например: Иван junior-разработчик, Мария совмещает разработку и аналитику, в марте команда онбордила двух новых сотрудников..."
+        @input="onAiContextInput"
+      />
+      <span class="absolute bottom-2 right-2 text-xs text-surface-400 pointer-events-none">
+        {{ aiContext.length }} / {{ AI_CONTEXT_MAX_LENGTH }}
+      </span>
+    </div>
+  </Dialog>
+
+  <Dialog
+    v-model:visible="isPromptPreviewModalOpened"
+    header="Системный промпт"
+    dismissable-mask
+    modal
+    :style="{width: '760px'}"
+  >
+    <pre
+      class="text-xs font-mono whitespace-pre-wrap break-words max-h-[60vh] overflow-y-auto overflow-x-hidden"
+      v-html="promptPreview"
+    />
+    <div class="text-right text-xs text-surface-400 mt-2">
+      {{ promptPreview.length }} символов
+    </div>
+  </Dialog>
 </template>

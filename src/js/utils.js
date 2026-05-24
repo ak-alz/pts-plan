@@ -110,10 +110,12 @@ function hslToHex(h, s, l) {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-export function insertCSS(css) {
+export function insertCSS(css, id = null) {
+  if (id && document.head.querySelector(`style[data-pts="${id}"]`)) return;
   const style = Object.assign(document.createElement('style'), {
     textContent: css.replace(/\s+/g, ' ').trim(),
   });
+  if (id) style.dataset.pts = id;
   document.head.appendChild(style);
 }
 
@@ -514,4 +516,13 @@ export function pluralize(n, titles) {
       ? 2
       : cases[(n % 10 < 5) ? n % 10 : 5]
     ];
+}
+
+export function minifyPrompt(str) {
+  return str
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

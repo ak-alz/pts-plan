@@ -44,7 +44,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
             if (removeChanges && /^(Изменила? задачу|Изменена задача) \[#/.test(notificationText)) return true;
             if (removeClosed && /^(Закрыла? задачу|Закрыта задача) \[#/.test(notificationText)) return true;
             if (removeNew && /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notificationText)) return true;
-            if (removeReactions && /^Отреагировала? на ваш комментарий/.test(notificationText)) return true;
+            if (removeReactions && (/^Отреагировал(\(а\)|а)? на ваш комментарий/.test(notificationText) || /^Благодарит вас в сообщении/.test(notificationText))) return true;
 
             return false;
           })
