@@ -169,6 +169,7 @@ async function fetchData() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'scrum-points',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,
@@ -264,6 +265,7 @@ ${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPoi
     await window.navigator.clipboard.writeText(summary);
 
     toast.add({
+      group: 'scrum-points',
       severity: 'success',
       summary: 'Успешно',
       detail: '[pts-plan]: Итоги скопированы в буфер обмена',
@@ -272,6 +274,7 @@ ${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPoi
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'scrum-points',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,

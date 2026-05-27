@@ -164,10 +164,26 @@ export default class BitrixApi {
   }
 
   getComments(taskId) {
-    return axios.postForm('/rest/task.commentitem.getlist.json', {
-      sessid: this.sessionId,
-      TASKID: taskId,
+    return axios
+      .postForm('/rest/task.commentitem.getlist.json', {
+        sessid: this.sessionId,
+        TASKID: taskId,
+        ORDER: { POST_DATE: 'asc' },
+      })
+      .then((response) => response.data?.result ?? []);
+  }
+
+  getAttachedObjectsBatch(attachmentIds) {
+    if (!attachmentIds.length) return Promise.resolve([]);
+    const cmd = {};
+    attachmentIds.forEach((id, i) => {
+      cmd[`a${i}`] = `disk.attachedObject.get?id=${id}`;
     });
+    return axios.postForm('/rest/batch.json', {
+      sessid: this.sessionId,
+      halt: false,
+      cmd,
+    }).then(({data}) => Object.values(data?.result?.result ?? {}).filter(Boolean));
   }
 
   getTask(taskId, select = []) {

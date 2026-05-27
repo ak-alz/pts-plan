@@ -78,7 +78,7 @@ export function notificationDetails(sessionId, options = {}) {
       color: #fff;
       flex-shrink: 0;
     }
-    .pts-nd-dimmed {
+    [data-pts-dimmed] {
       opacity: 0.5;
     }
     .pts-nd-skeleton {
@@ -115,7 +115,7 @@ export function notificationDetails(sessionId, options = {}) {
 
   if (shouldHighlight) {
     insertCSS(`
-      .pts-nd-my-task {
+      [data-pts-my-task] {
         border-color: ${options.notificationDetailsHighlightBorder} !important;
         background-color: ${options.notificationDetailsHighlightBackground} !important;
       }
@@ -124,7 +124,7 @@ export function notificationDetails(sessionId, options = {}) {
 
   if (shouldHighlightCreator) {
     insertCSS(`
-      .pts-nd-my-creator-task {
+      [data-pts-my-creator-task] {
         border-color: ${options.notificationDetailsHighlightCreatorBorder} !important;
         background-color: ${options.notificationDetailsHighlightCreatorBackground} !important;
       }
@@ -133,7 +133,7 @@ export function notificationDetails(sessionId, options = {}) {
 
   if (shouldHighlightMention) {
     insertCSS(`
-      .pts-nd-my-mention {
+      [data-pts-my-mention] {
         border-color: ${options.notificationDetailsHighlightMentionBorder} !important;
         background-color: ${options.notificationDetailsHighlightMentionBackground} !important;
       }
@@ -142,7 +142,7 @@ export function notificationDetails(sessionId, options = {}) {
 
   if (shouldHighlightTagall) {
     insertCSS(`
-      .pts-nd-tagall {
+      [data-pts-tagall] {
         border-color: ${options.notificationDetailsHighlightTagallBorder} !important;
         background-color: ${options.notificationDetailsHighlightTagallBackground} !important;
       }
@@ -151,7 +151,7 @@ export function notificationDetails(sessionId, options = {}) {
 
   if (shouldHighlightTagallStatus) {
     insertCSS(`
-      .pts-nd-tagall-status {
+      [data-pts-tagall-status] {
         border-color: ${options.notificationDetailsHighlightTagallStatusBorder} !important;
         background-color: ${options.notificationDetailsHighlightTagallStatusBackground} !important;
       }
@@ -159,7 +159,7 @@ export function notificationDetails(sessionId, options = {}) {
   }
 
   async function init() {
-    const container = document.querySelector('.bx-im-content-notification__elements');
+const container = document.querySelector('.bx-im-content-notification__elements');
     if (!container) return;
 
     const newItems = [...container.querySelectorAll(
@@ -230,10 +230,6 @@ export function notificationDetails(sessionId, options = {}) {
           : null,
       ]);
 
-      // Ждём макротаск, чтобы Bitrix успел дорендерить текст уведомления
-      // (при горячем кэше Promise.all резолвится мгновенно, и notifText ещё пуст)
-      await new Promise((r) => setTimeout(r, 0));
-
       // --- Отрисовка из кэша ---
       items.forEach(({el, skeleton, taskId}) => {
         skeleton.remove();
@@ -243,10 +239,10 @@ export function notificationDetails(sessionId, options = {}) {
         if (!task) return;
 
         if (shouldHighlight && task.responsibleId === String(options.userId)) {
-          el.classList.add('pts-nd-my-task');
+          el.setAttribute('data-pts-my-task', '');
         }
         if (shouldHighlightCreator && task.createdBy === String(options.userId)) {
-          el.classList.add('pts-nd-my-creator-task');
+          el.setAttribute('data-pts-my-creator-task', '');
         }
         const notifText = el.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent ?? '';
 
@@ -272,34 +268,34 @@ export function notificationDetails(sessionId, options = {}) {
 
         if (!isPersonalMentionInTagall) {
           if (shouldHighlightTagallStatus && isTagall && TAGALL_STATUS_RE.test(notifText)) {
-            el.classList.add('pts-nd-tagall-status');
+            el.setAttribute('data-pts-tagall-status', '');
           } else if (shouldHighlightTagall && isTagall) {
-            el.classList.add('pts-nd-tagall');
+            el.setAttribute('data-pts-tagall', '');
           }
         }
 
         if (shouldHighlightMention) {
-          const hasTagallClass = el.classList.contains('pts-nd-tagall') || el.classList.contains('pts-nd-tagall-status');
+          const hasTagallClass = el.hasAttribute('data-pts-tagall') || el.hasAttribute('data-pts-tagall-status');
           if (!hasTagallClass) {
             const isNewTask = /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notifText);
             const isNotResponsible = !options.userId || task.responsibleId !== String(options.userId);
             const mentioned = isPersonalMentionInTagall || isUserMentioned(notifText, options.userFirstName, options.userLastName);
             if (mentioned && !(isNewTask && isNotResponsible)) {
-              el.classList.add('pts-nd-my-mention');
+              el.setAttribute('data-pts-my-mention', '');
             }
           }
         }
 
-        const isHighlighted = el.classList.contains('pts-nd-my-task')
-          || el.classList.contains('pts-nd-my-creator-task')
-          || el.classList.contains('pts-nd-tagall')
-          || el.classList.contains('pts-nd-tagall-status')
-          || el.classList.contains('pts-nd-my-mention');
+        const isHighlighted = el.hasAttribute('data-pts-my-task')
+          || el.hasAttribute('data-pts-my-creator-task')
+          || el.hasAttribute('data-pts-tagall')
+          || el.hasAttribute('data-pts-tagall-status')
+          || el.hasAttribute('data-pts-my-mention');
 
         if (dimTypes.size && !isHighlighted) {
           const notifType = getNotifType(notifText);
           if (notifType && dimTypes.has(notifType.label)) {
-            el.classList.add('pts-nd-dimmed');
+            el.setAttribute('data-pts-dimmed', '');
           }
         }
 

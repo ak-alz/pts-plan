@@ -217,6 +217,7 @@ async function search() {
   } catch (e) {
     console.warn('[task-search]', e);
     toast.add({
+      group: 'task-search',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,

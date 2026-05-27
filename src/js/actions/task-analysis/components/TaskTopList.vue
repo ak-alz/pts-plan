@@ -16,6 +16,21 @@ defineProps({
     :default-sort-order="-1"
     size="small"
   >
+    <Column
+      v-if="multiUser"
+      header="Исполнители"
+    >
+      <template #body="{ data }">
+        <div class="flex flex-col gap-1">
+          <template
+            v-for="name in data.userNames"
+            :key="name"
+          >
+            {{ name }}
+          </template>
+        </div>
+      </template>
+    </Column>
     <Column header="Задача">
       <template #body="{ data }">
         <a
@@ -31,13 +46,5 @@ defineProps({
       header="Баллов всего"
       sortable
     />
-    <Column
-      v-if="multiUser"
-      header="Исполнители"
-    >
-      <template #body="{ data }">
-        {{ data.userNames.join(', ') }}
-      </template>
-    </Column>
   </DataTable>
 </template>

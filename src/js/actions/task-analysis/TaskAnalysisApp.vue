@@ -71,5 +71,8 @@ const isInfoModalOpened = ref(false);
     </div>
   </Dialog>
 
-  <Toast position="bottom-right" />
+  <Toast
+    group="task-analysis"
+    position="bottom-right"
+  />
 </template>

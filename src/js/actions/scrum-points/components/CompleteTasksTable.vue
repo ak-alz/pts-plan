@@ -53,6 +53,7 @@ async function completeSelectedTasks() {
     progress.value = 100;
 
     toast.add({
+      group: 'scrum-points',
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Задачи успешно завершены.',
@@ -63,6 +64,7 @@ async function completeSelectedTasks() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'scrum-points',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,

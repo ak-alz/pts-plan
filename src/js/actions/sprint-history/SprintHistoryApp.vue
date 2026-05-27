@@ -40,5 +40,8 @@ const modalOpened = ref(false);
     />
   </Dialog>
 
-  <Toast position="bottom-right" />
+  <Toast
+    group="sprint-history"
+    position="bottom-right"
+  />
 </template>

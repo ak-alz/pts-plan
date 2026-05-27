@@ -177,14 +177,14 @@ async function aiAnalyze() {
     let prompt = buildSystemPrompt(buildAiData(), props.dateRange, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      toast.add({ group: 'task-analysis', severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     aiResult.value = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
       aiProgress.value = p;
     });
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+    toast.add({ group: 'task-analysis', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
     isApiKeyModalOpened.value = true;
   } finally {
     aiLoading.value = false;

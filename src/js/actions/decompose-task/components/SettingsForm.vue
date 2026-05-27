@@ -50,6 +50,7 @@ async function saveSettings() {
     });
 
     toast.add({
+      group: 'decompose-task',
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

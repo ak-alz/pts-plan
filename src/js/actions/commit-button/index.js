@@ -21,6 +21,7 @@ import { getCommitMessage, getTaskIdFromUrl } from '../../utils.js';
 
     const commitButton = Object.assign(document.createElement('button'), {
       className: 'js-commit-button commit-button',
+      style: 'order: 1;',
       type: 'button',
       title: 'Копировать текст коммита',
       innerHTML: '<i class="pi pi-github"></i>',

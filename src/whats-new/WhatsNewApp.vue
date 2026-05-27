@@ -36,7 +36,7 @@ function getOptionsMap() {
   return result;
 }
 
-const form = reactive(getOptionsMap());
+let form = reactive(getOptionsMap());
 
 async function loadSettings() {
   const {options: stored} = await chrome.storage.local.get(['options']);

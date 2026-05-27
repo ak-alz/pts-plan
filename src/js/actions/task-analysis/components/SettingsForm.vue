@@ -66,6 +66,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
     toast.add({
+      group: 'task-analysis',
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

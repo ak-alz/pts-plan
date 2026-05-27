@@ -56,7 +56,7 @@ async function saveSettings() {
   isLoading.value = true;
   try {
     await chrome.storage.local.set({ 'task-search-settings': toRaw(form) });
-    toast.add({ severity: 'success', summary: 'Сохранено', life: 3000 });
+    toast.add({ group: 'task-search', severity: 'success', summary: 'Сохранено', life: 3000 });
     emit('success', toRaw(form));
   } catch (e) {
     console.warn('[task-search] saveSettings failed:', e);

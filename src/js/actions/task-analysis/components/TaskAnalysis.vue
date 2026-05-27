@@ -411,6 +411,7 @@ async function fetchData() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'task-analysis',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,

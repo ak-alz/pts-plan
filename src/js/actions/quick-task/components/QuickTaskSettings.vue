@@ -29,7 +29,7 @@ async function save() {
   isLoading.value = true;
   try {
     await chrome.storage.local.set({[props.settingsStorageKey]: toRaw(form)});
-    toast.add({severity: 'success', summary: 'Сохранено', life: 3000});
+    toast.add({group: 'quick-task', severity: 'success', summary: 'Сохранено', life: 3000});
     emit('success');
   } catch {
     // ignore

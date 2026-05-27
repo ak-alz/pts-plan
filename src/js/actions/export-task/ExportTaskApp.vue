@@ -2,14 +2,14 @@
 import { Dialog, Toast } from 'primevue';
 import { ref } from 'vue';
 
-import TaskSearchMain from './components/TaskSearch.vue';
+import ExportTask from './components/ExportTask.vue';
 
 defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  groupId: {
+  taskId: {
     type: String,
     required: true,
   },
@@ -20,29 +20,28 @@ const modalOpened = ref(false);
 
 <template>
   <button
-    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round --with-left-icon --with-collapsed-icon pts-btn-task-search"
+    class="export-task-button"
     type="button"
-    title="Поиск по задачам"
+    title="Экспортировать задачу"
     @click="modalOpened = true"
   >
-    Поиск
+    <i class="pi pi-download" />
   </button>
 
   <Dialog
     v-model:visible="modalOpened"
-    header="Поиск по задачам"
-    dismissable-mask
+    header="Экспорт задачи"
     modal
-    style="width: 1200px; max-width: 95vw;"
+    :style="{ width: '460px' }"
   >
-    <TaskSearchMain
+    <ExportTask
       :session-id
-      :group-id
+      :task-id
     />
   </Dialog>
 
   <Toast
-    group="task-search"
+    group="export-task"
     position="bottom-right"
   />
 </template>

@@ -6,6 +6,27 @@ function images(glob) {
 
 export default [
   {
+    version: '2.9.2',
+    date: '2026-05-27',
+    items: [
+      {
+        type: 'new',
+        optionKey: 'exportTask',
+        text: 'Экспорт задачи: новая кнопка рядом с заголовком задачи. Копирует или скачивает задачу в удобном для AI формате — буфер, .txt или ZIP со всеми вложениями. Системные комментарии фильтруются, настройки сохраняются.',
+      },
+      {
+        type: 'fix',
+        text: 'Исправлено дублирование тостов при одновременной работе нескольких функций.',
+      },
+      {
+        type: 'fix',
+        optionKey: 'notificationDetails',
+        text: 'Детали уведомлений: исправлена подсветка — цвет фона сбрасывался из-за ре-рендера Bitrix.',
+      },
+    ],
+    images: images(import.meta.glob('../assets/whats-new/2.9.2/*', {eager: true, import: 'default'})),
+  },
+  {
     version: '2.9.1',
     date: '2026-05-25',
     items: [

@@ -198,6 +198,7 @@ async function submit() {
       try {
         await navigator.clipboard.writeText(commitMessage);
         toast.add({
+          group: 'decompose-task',
           severity: 'info',
           summary: 'Текст коммита скопирован',
           detail: commitMessage,
@@ -211,6 +212,7 @@ async function submit() {
     const failedCount = total - createdTasks.length;
     const showTasks = settings.value.showCreatedTasks && createdTasks.length > 0;
     toast.add({
+      group: 'decompose-task',
       severity: failedCount > 0 ? 'warn' : 'success',
       summary: failedCount > 0 ? 'Частично' : 'Готово',
       detail: failedCount > 0
@@ -224,6 +226,7 @@ async function submit() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'decompose-task',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,
@@ -270,6 +273,7 @@ async function fetchData() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'decompose-task',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,
@@ -300,7 +304,7 @@ async function aiDecompose() {
     let prompt = buildSystemPrompt(title, description, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      toast.add({ group: 'decompose-task', severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     const rawResult = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
@@ -330,7 +334,7 @@ async function aiDecompose() {
       auditorIds: [...auditorIds],
     }));
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'AI', detail: `[pts-plan]: ${e.message}`, life: 5000 });
+    toast.add({ group: 'decompose-task', severity: 'error', summary: 'AI', detail: `[pts-plan]: ${e.message}`, life: 5000 });
     isApiKeyModalOpened.value = true;
   } finally {
     aiLoading.value = false;

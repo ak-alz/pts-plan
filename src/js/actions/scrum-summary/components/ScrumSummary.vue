@@ -138,8 +138,7 @@ async function fetchData() {
   isLoading.value = true;
 
   try {
-    const { data } = await bitrixApi.getComments(settings.value.taskId);
-    const comments = data.result;
+    const comments = await bitrixApi.getComments(settings.value.taskId);
 
     if (!comments.length) {
       throw new Error(`Не удалось найти комментарии для задачи ${settings.value.taskId}`);
@@ -203,6 +202,7 @@ async function fetchData() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'scrum-summary',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,
@@ -291,14 +291,14 @@ async function aiAnalyze() {
     let prompt = buildSystemPrompt(aiData, ignorePoints, form.dateRange, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      toast.add({ group: 'scrum-summary', severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     aiResult.value = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
       aiProgress.value = p;
     });
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+    toast.add({ group: 'scrum-summary', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
     isApiKeyModalOpened.value = true;
   } finally {
     aiLoading.value = false;

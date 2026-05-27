@@ -59,6 +59,7 @@ async function saveSettings() {
     });
 
     toast.add({
+      group: 'scrum-summary',
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

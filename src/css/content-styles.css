@@ -5,7 +5,8 @@
 @import 'primeicons/primeicons.css';
 
 .commit-button,
-.decompose-task-button {
+.decompose-task-button,
+.export-task-button {
   font-size: 16px;
   color: inherit;
   padding: 0;
@@ -17,7 +18,8 @@
 }
 
 .commit-button:not(.commit-button--success):hover,
-.decompose-task-button:hover {
+.decompose-task-button:hover,
+.export-task-button:hover {
   opacity: 0.8;
 }
 

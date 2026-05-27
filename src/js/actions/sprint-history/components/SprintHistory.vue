@@ -187,6 +187,7 @@ async function fetchData() {
   } catch (e) {
     console.warn(e);
     toast.add({
+      group: 'sprint-history',
       severity: 'error',
       summary: 'Ошибка',
       detail: `[pts-plan]: ${e.message}`,
@@ -205,6 +206,7 @@ watch(groupByParent, async (val) => {
     } catch (e) {
       console.warn(e);
       toast.add({
+        group: 'sprint-history',
         severity: 'error',
         summary: 'Ошибка',
         detail: `[pts-plan]: ${e.message}`,

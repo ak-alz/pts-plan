@@ -50,7 +50,10 @@ const modalOpened = ref(false);
     />
   </Dialog>
 
-  <Toast position="bottom-right">
+  <Toast
+    group="decompose-task"
+    position="bottom-right"
+  >
     <template #message="{ message }">
       <div class="flex flex-col gap-2 flex-1">
         <span class="p-toast-summary">{{ message.summary }}</span>

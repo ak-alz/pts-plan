@@ -6,44 +6,35 @@ import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
 import { getTaskIdFromUrl } from '../../utils.js';
-import DecomposeTaskApp from './DecomposeTaskApp.vue';
+import ExportTaskApp from './ExportTaskApp.vue';
 
-export async function decomposeTask(sessionId) {
+export async function exportTask(sessionId) {
   const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const titleBlock = document.querySelector('.ui-toolbar-title-item-box');
   if (!titleBlock) return;
 
-  const initialized = !!titleBlock.querySelector('.js-decompose-task');
+  const initialized = !!titleBlock.querySelector('.js-export-task');
   if (initialized) return;
-
-  const responsiveBlock = document.querySelector('.task-user-selector.single:not(.readonly) [data-item-value]');
-  if (!responsiveBlock) return;
-  const responsiveId = Number(responsiveBlock.getAttribute('data-item-value'));
 
   const buttonContainer = titleBlock.querySelector('.ui-toolbar-after-title');
   if (!buttonContainer) return;
 
-  const taskTitle = titleBlock.textContent.trim();
-
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-decompose-task',
-    style: 'order: 2;',
+    className: 'js-export-task',
+    style: 'order: 3;',
   });
 
   buttonContainer.appendChild(appContainer);
 
-  const app = createApp(DecomposeTaskApp, {
+  const app = createApp(ExportTaskApp, {
     sessionId,
-    responsiveId,
-    taskTitle,
     taskId: ids.taskId,
   });
   app.use(PrimeVue, primeVueOptions);
   app.use(ToastService);
   app.directive('tooltip', Tooltip);
   app.directive('ripple', Ripple);
-
   app.mount(appContainer);
 }

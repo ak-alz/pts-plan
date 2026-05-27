@@ -265,6 +265,18 @@ export default [
     },
   },
   {
+    key: 'exportTask',
+    name: 'Экспорт задачи',
+    tip: 'Кнопка для копирования или скачивания заголовка, описания и комментариев задачи (в буфер, .txt или .zip с вложениями)',
+    groups: ['tasks'],
+    popularity: 45,
+    new: true,
+    action: async ({ sessionId }) => {
+      const { exportTask } = await import('/src/js/actions/export-task');
+      exportTask(sessionId);
+    },
+  },
+  {
     key: 'fixLinks',
     name: 'Не обрезать длинные ссылки',
     tip: 'Автоматически возвращает длинные ссылки в описание и комментарии',
@@ -441,7 +453,7 @@ export default [
       {
         key: 'notificationDetailsDimTypes',
         name: 'Приглушить типы',
-        tip: 'Уведомления выбранных типов будут отображаться с уменьшенной непрозрачностью',
+        tip: 'Уведомления выбранных типов будут отображаться с уменьшенной непрозрачностью. Подсвеченные уведомления не приглушаются.',
         type: optionTypes.MULTISELECT,
         default: [],
         choices: NOTIF_TYPES.filter(({dimmable}) => dimmable !== false).map(({label}) => ({label, value: label})),

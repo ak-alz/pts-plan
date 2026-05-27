@@ -78,7 +78,7 @@ onMounted(async () => {
 
     applyDefaults();
   } catch {
-    toast.add({severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
+    toast.add({group: 'quick-task', severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
   } finally {
     isLoadingData.value = false;
   }
@@ -88,7 +88,7 @@ async function submit() {
   const title = form.title.trim();
   if (!title) return;
   if (!form.stageId) {
-    toast.add({severity: 'warn', summary: 'Выберите стадию', life: 3000});
+    toast.add({group: 'quick-task', severity: 'warn', summary: 'Выберите стадию', life: 3000});
     return;
   }
   isSubmitting.value = true;
@@ -106,21 +106,23 @@ async function submit() {
       const commitMsg = getCommitMessage(title, taskId);
       try {
         await navigator.clipboard.writeText(commitMsg);
-        toast.add({severity: 'info', summary: 'Текст коммита скопирован', detail: commitMsg, life: 5000});
+        toast.add({group: 'quick-task', severity: 'info', summary: 'Текст коммита скопирован', detail: commitMsg, life: 5000});
       } catch { /* ignore */ }
     }
 
     const taskUrl = taskId && settings.value.showCreatedTask ? getTaskUrl(props.groupId, taskId) : null;
     toast.add({
+      group: 'quick-task',
       severity: 'success',
       summary: 'Задача создана',
+      detail: true,
       taskUrl,
       taskTitle: title,
       life: taskUrl ? 8000 : 3000,
     });
     emit('success');
   } catch {
-    toast.add({severity: 'error', summary: 'Ошибка создания задачи', life: 3000});
+    toast.add({group: 'quick-task', severity: 'error', summary: 'Ошибка создания задачи', life: 3000});
   } finally {
     isSubmitting.value = false;
   }
