@@ -142,27 +142,26 @@ async function submit() {
       />
     </div>
 
-    <div class="grid grid-cols-3 gap-3">
-      <FormField label="Стадия">
-        <Select
-          v-model="form.stageId"
-          option-value="id"
-          option-label="title"
-          :options="stages"
-          :loading="isLoadingData"
-          show-clear
-          fluid
-          placeholder="Выбрать"
-        >
-          <template #option="{ option }">
-            <div class="flex gap-2 items-center">
-              <Badge :style="`background-color: ${option.color};`" />
-              {{ option.title }}
-            </div>
-          </template>
-        </Select>
-      </FormField>
+    <FormField label="Название">
+      <InputText
+        v-model="form.title"
+        placeholder="Название задачи"
+        autofocus
+        fluid
+        @keydown.enter.prevent="submit"
+      />
+    </FormField>
 
+    <FormField label="Описание">
+      <Textarea
+        v-model="form.description"
+        rows="3"
+        fluid
+        placeholder="Описание задачи (необязательно)"
+      />
+    </FormField>
+
+    <div class="grid grid-cols-3 gap-3">
       <FormField label="Исполнитель">
         <Select
           v-model="form.responsibleId"
@@ -184,6 +183,26 @@ async function submit() {
                 shape="circle"
                 size="small"
               />
+              {{ option.title }}
+            </div>
+          </template>
+        </Select>
+      </FormField>
+
+      <FormField label="Стадия">
+        <Select
+          v-model="form.stageId"
+          option-value="id"
+          option-label="title"
+          :options="stages"
+          :loading="isLoadingData"
+          show-clear
+          fluid
+          placeholder="Выбрать"
+        >
+          <template #option="{ option }">
+            <div class="flex gap-2 items-center">
+              <Badge :style="`background-color: ${option.color};`" />
               {{ option.title }}
             </div>
           </template>
@@ -217,25 +236,6 @@ async function submit() {
         </MultiSelect>
       </FormField>
     </div>
-
-    <FormField label="Название">
-      <InputText
-        v-model="form.title"
-        placeholder="Название задачи"
-        autofocus
-        fluid
-        @keydown.enter.prevent="submit"
-      />
-    </FormField>
-
-    <FormField label="Описание">
-      <Textarea
-        v-model="form.description"
-        rows="3"
-        fluid
-        placeholder="Описание задачи (необязательно)"
-      />
-    </FormField>
 
     <div
       v-if="settings.showCommitCheckbox"

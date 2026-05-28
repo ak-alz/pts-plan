@@ -226,6 +226,18 @@ export default [
     },
   },
   {
+    key: 'sprintPriorities',
+    name: 'Приоритеты спринта (виджет)',
+    tip: 'Загружает приоритизированный список задач из Google Таблицы и отображает их в виде таблицы с колонкой, исполнителем и постановщиком',
+    new: true,
+    groups: ['analytics'],
+    popularity: 60,
+    action: async ({sessionId}) => {
+      const {sprintPriorities} = await import('/src/js/actions/sprint-priorities');
+      sprintPriorities(sessionId);
+    },
+  },
+  {
     key: 'decomposeTask',
     name: 'Быстрое создание подзадач (виджет)',
     tip: 'Добавляет кнопку для быстрого создания подзадач с исполнителями и стадиями',
@@ -645,6 +657,7 @@ export default [
         choices: [
           {label: 'The Cat API (нужен VPN)', value: 'thecatapi'},
           {label: 'Cat as a service (нужен VPN)', value: 'cataas'},
+          {label: 'HTTP Cats (нужен VPN)', value: 'httpcat'},
         ],
       },
     ],

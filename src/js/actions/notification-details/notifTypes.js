@@ -1,37 +1,41 @@
+import {
+  NOTIF_CHANGE_RE,
+  NOTIF_CLOSE_RE,
+  NOTIF_COMMENT_RE,
+  NOTIF_NEW_TASK_RE,
+  NOTIF_REACTION_RE,
+  TAGALL_PHRASE_RE,
+} from '../../patterns.js';
+
 export const NOTIF_TYPES = [
   {
-    label: 'tagall',
-    color: '#7c3aed',
-    re: /и другие участники задачи/i,
+    label: 'Реакция',
+    color: '#ec4899',
+    re: NOTIF_REACTION_RE,
   },
   {
-    label: 'Создание',
-    color: '#166534',
-    re: /добавил[аи]? новую задачу|добавлена новая задача/i,
+    label: 'tagall',
+    color: '#a855f7',
+    re: TAGALL_PHRASE_RE,
   },
   {
     label: 'Комментарий',
-    color: '#1e40af',
-    re: /добавил[аи]? комментарий|добавлен комментарий|прокомментировал/i,
+    color: '#3b82f6',
+    re: NOTIF_COMMENT_RE,
   },
   {
-    label: 'Реакция',
-    color: '#854d0e',
-    re: /отреагировал(\(а\)|[аи])? на ваш комментарий|поставил[аи]? реакцию|благодарит вас в сообщении/i,
-  },
-  {
-    label: 'Закрытие',
-    color: '#374151',
-    re: /закрыл[аи]? задачу|закрыта задача/i,
-  },
-  {
-    label: 'Удаление',
-    color: '#991b1b',
-    re: /удалил[аи]? задачу|задача удалена/i,
+    label: 'Создание',
+    color: '#22c55e',
+    re: NOTIF_NEW_TASK_RE,
   },
   {
     label: 'Изменение',
-    color: '#c2410c',
-    re: /изменил[аи]? задачу|изменена задача|обновил[аи]? задачу/i,
+    color: '#f97316',
+    re: NOTIF_CHANGE_RE,
+  },
+  {
+    label: 'Закрытие',
+    color: '#64748b',
+    re: NOTIF_CLOSE_RE,
   },
 ];

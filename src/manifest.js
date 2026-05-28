@@ -57,5 +57,6 @@ export default defineManifest({
     : [
         'https://plan.pixelplus.ru/*',
         'https://*.bitrix24.ru/*',
+        'https://docs.google.com/*',
       ],
 });

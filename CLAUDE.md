@@ -8,6 +8,23 @@ Chrome extension (Manifest v3) for enhancing Bitrix24 Plan (plan.pixelplus.ru). 
 
 Bitrix24 has no public API for the features used here. All API calls were reverse-engineered from browser DevTools network requests and are replicated via axios. This works because the user's valid session cookie is included automatically — requests are made on behalf of the currently authenticated user. `src/js/BitrixApi.js` encapsulates these calls; the session ID (`BX_SESSION_ID`) is grabbed from `window` in the main world and passed through to `isolated.js`.
 
+### Code reuse
+
+Before implementing new functionality, check whether the codebase already solves the same problem. Prefer reusing existing utilities, components, and API methods over writing new ones from scratch:
+
+- **Utilities** (`src/js/utils.js`) — URL parsers, task helpers, color utilities, DOM helpers, text utilities. Check here before writing custom logic.
+- **Shared UI** (`src/js/ui/`) — `FormField.vue`, `DateRangePicker.vue`. Use them for form layouts and date inputs instead of rolling your own.
+- **`BitrixApi` methods** — batch helpers, user/stage/group fetchers. Add a new method to `BitrixApi` rather than inlining raw `axios` calls in feature code.
+- **Patterns from reference features** — `scrum-points` and `scrum-summary` establish conventions for Vue widgets (mounting, settings storage, toast groups, DataTable patterns). Follow them when building similar features.
+
+### API request optimization
+
+Always minimize the number of round-trips and the payload size when calling the Bitrix24 REST API:
+
+- **Batch requests:** Use `/rest/batch.json` to combine multiple independent API calls into a single HTTP request. `BitrixApi` already exposes batch helpers (`getTasksByIdsBatch`, `getStagesBatch`, `getImUsersBatch`, etc.) — prefer them over individual calls in a loop.
+- **Selective fields (`select[]`):** Always pass a `select[]` array with only the fields you actually need. Never fetch a full resource when you only need a subset. For example, requesting `['ID', 'TITLE', 'RESPONSIBLE_ID']` instead of the full task object avoids transferring dozens of unused fields per record.
+- **Incremental loading:** When a feature can display data page by page (e.g. paginated tables), fetch only the data needed for the current view. Cache already-loaded records and skip re-fetching them on subsequent pages.
+
 ## Commands
 
 ```bash
@@ -112,8 +129,37 @@ scrum-summary/
 ### Shared utilities
 
 - `src/js/BitrixApi.js` — Axios-based wrapper for Bitrix24 REST API calls using the session ID.
-- `src/js/utils.js` — DOM helpers, string utilities, and observer utilities used across feature modules.
 - `src/js/primeVueOptions.js` — PrimeVue theme/preset configuration shared by all Vue apps.
+- `src/js/patterns.js` — Single source of truth for all business-logic regular expressions (tagall phrases, notification type patterns, system notification filters). Edit regexes here, not inline in feature files.
+
+#### `src/js/utils.js`
+
+URL parsers:
+- `getTaskUrl(groupId, taskId)` — builds a Bitrix24 task view URL string.
+- `getTaskIdFromUrl(url)` — extracts `taskId` from a task view URL; returns `{ taskId }` or `null`.
+- `getGroupIdFromUrl(url)` — extracts group ID from a task list URL; returns the ID string or `null`.
+- `getUserIdFromUrl(url)` — extracts user ID from a user profile URL; returns the ID string or `null`.
+
+Task helpers:
+- `getCommitMessage(title, taskId)` — appends `taskId` to a task title in commit message format (`title | taskId`), replacing an existing trailing `| …` block if present.
+- `isHotfixTask(taskName)` — returns `true` if the task name starts with `"hotfix"`.
+- `getTaskPointsFromName(taskName)` — extracts story points from a task name (number after `|`, `I`, `/`, or `\`); returns `0` if not found.
+- `simplifyColumnName(columnName)` — abbreviates a column name to initials (first letter of each word, uppercased); falls back to first 3 characters for single-word names.
+
+DOM / CSS:
+- `insertCSS(css, id?)` — appends a `<style>` tag to `document.head`. When `id` is provided, deduplicates — won't insert if a tag with that id already exists.
+
+Colors:
+- `stringToPastelColor(str)` — deterministic pastel hex color derived from a string; used for avatar initials and group chips.
+- `validateHexColor(color)` — returns `true` for valid 3- or 6-digit hex color strings.
+- `colors` — plain object of PrimeVue color palettes (stone, neutral, zinc, gray, slate, rose, pink, fuchsia, purple, violet, indigo, blue, sky, cyan, teal, yellow, amber, orange, red, lime, green, emerald).
+- `getColors(palettes, weight?)` — returns a hex value (string) or array of hex values from `colors` at the given weight (default `'500'`).
+
+Observers / text:
+- `rehydrateOnChanges(callBack, target?, options?)` — throttled `MutationObserver` + `window focus` listener that calls `callBack` whenever the DOM changes. Accepts `filterMutation` to narrow which mutations trigger. Returns a cleanup function.
+- `isUserMentioned(text, firstName, lastName)` — returns `true` if `text` contains the user's name (either `"First Last"` or `"Last First"` order) or the word `TAGALL`.
+- `pluralize(n, titles)` — Russian noun declension: picks the correct form from `[form1, form2, form5]` based on `n`.
+- `minifyPrompt(str)` — trims trailing whitespace from each line and collapses 3+ consecutive newlines to 2; used to clean up AI prompts before sending.
 
 ### Shared UI components (`src/js/ui/`)
 

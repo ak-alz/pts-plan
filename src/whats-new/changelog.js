@@ -6,6 +6,28 @@ function images(glob) {
 
 export default [
   {
+    version: '2.9.3',
+    date: '2026-05-28',
+    items: [
+      {
+        type: 'new',
+        optionKey: 'sprintPriorities',
+        text: 'Приоритеты спринта: новый виджет в канбане для командного разбора приоритизированного списка задач. Источник данных — Google Таблица, колонка с URL задач определяется автоматически.',
+      },
+      {
+        type: 'upd',
+        optionKey: 'showCats',
+        text: 'Котики: добавлен провайдер HTTP Cats — коты с HTTP-кодами. Работает с VPN.',
+      },
+      {
+        type: 'upd',
+        optionKey: 'decomposeTask',
+        text: 'Декомпозиция: два новых режима — карточки (каждая подзадача отдельно) и быстрый (названия задач построчно с общими исполнителем/стадией/наблюдателями).',
+      },
+    ],
+    images: images(import.meta.glob('../assets/whats-new/2.9.3/*', {eager: true, import: 'default'})),
+  },
+  {
     version: '2.9.2',
     date: '2026-05-27',
     items: [

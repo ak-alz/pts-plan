@@ -410,7 +410,7 @@ export default class BitrixApi {
    * @param {string[]} taskIds
    * @return {Promise<Record<string, object>>} Карта taskId → task
    */
-  getTasksByIdsBatch(taskIds) {
+  getTasksByIdsBatch(taskIds, select = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_BY', 'GROUP_ID', 'STAGE_ID', 'CREATED_DATE', 'CHANGED_DATE']) {
     if (!taskIds.length) return Promise.resolve({});
     const CHUNK_SIZE = 50;
     const chunks = [];
@@ -421,7 +421,7 @@ export default class BitrixApi {
       const cmd = {};
       chunk.forEach((id, i) => {
         const params = new URLSearchParams({taskId: id});
-        ['ID', 'RESPONSIBLE_ID', 'CREATED_BY', 'GROUP_ID', 'STAGE_ID'].forEach((f) => params.append('select[]', f));
+        select.forEach((f) => params.append('select[]', f));
         cmd[`t${ci * CHUNK_SIZE + i}`] = `tasks.task.get?${params.toString()}`;
       });
       return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd});

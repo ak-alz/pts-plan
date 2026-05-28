@@ -1,4 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
+import {NOTIF_CHANGE_RE, NOTIF_CLOSE_RE, NOTIF_NEW_TASK_RE, NOTIF_REACTION_RE} from '../../patterns.js';
 import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 export function removeSystemNotifications(sessionId, options = {}) {
@@ -41,10 +42,10 @@ export function removeSystemNotifications(sessionId, options = {}) {
             if (removeSystem && notification.querySelector('.bx-im-content-notification-item-avatar__system-icon')) return true;
 
             const notificationText = notification.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent?.trim();
-            if (removeChanges && /^(Изменила? задачу|Изменена задача) \[#/.test(notificationText)) return true;
-            if (removeClosed && /^(Закрыла? задачу|Закрыта задача) \[#/.test(notificationText)) return true;
-            if (removeNew && /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notificationText)) return true;
-            if (removeReactions && (/^Отреагировал(\(а\)|а)? на ваш комментарий/.test(notificationText) || /^Благодарит вас в сообщении/.test(notificationText))) return true;
+            if (removeChanges && NOTIF_CHANGE_RE.test(notificationText)) return true;
+            if (removeClosed && NOTIF_CLOSE_RE.test(notificationText)) return true;
+            if (removeNew && NOTIF_NEW_TASK_RE.test(notificationText)) return true;
+            if (removeReactions && NOTIF_REACTION_RE.test(notificationText)) return true;
 
             return false;
           })

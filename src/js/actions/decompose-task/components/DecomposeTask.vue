@@ -1,13 +1,15 @@
 <script setup>
 import { jsonrepair } from 'jsonrepair';
-import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, InputGroup, MultiSelect, Password, Select, Textarea } from 'primevue';
+import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, InputGroup, MultiSelect, Password, Select, SelectButton, Textarea } from 'primevue';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import { getCommitMessage, getTaskUrl } from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import DecomposeCard from './DecomposeCard.vue';
+import DecomposeQuickMode from './DecomposeQuickMode.vue';
 import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
@@ -85,7 +87,25 @@ async function saveApiKey() {
   isApiKeyModalOpened.value = false;
   await aiDecompose();
 }
+
 const defaultAuditors = computed(() => settings.value.defaultAuditors ?? 'inherit');
+
+const VIEW_MODE_STORAGE_KEY = 'decompose-task-view-mode';
+const viewMode = ref('cards');
+
+const quickForm = ref({
+  titlesText: '',
+  responsibleId: null,
+  stageId: null,
+  auditorIds: [],
+});
+const viewModeOptions = ['table', 'cards', 'quick'];
+const viewModeIcons = { table: 'pi pi-table', cards: 'pi pi-th-large', quick: 'pi pi-bolt' };
+const viewModeLabels = { table: 'Таблица', cards: 'Карточки', quick: 'Быстрый режим' };
+
+watch(viewMode, async (newMode) => {
+  await chrome.storage.local.set({[VIEW_MODE_STORAGE_KEY]: newMode});
+});
 
 let rowIdCounter = 0;
 
@@ -103,6 +123,7 @@ function onCopyCommitChange(row) {
 function createRow() {
   return {
     _id: rowIdCounter++,
+    _collapsed: false,
     title: props.taskTitle,
     description: '',
     copyContent: settings.value.copyContentDefault ?? false,
@@ -118,6 +139,13 @@ function createRow() {
 }
 
 const rows = ref([]);
+
+const allCollapsed = computed(() => rows.value.length > 0 && rows.value.every((row) => row._collapsed));
+
+function toggleCollapseAll() {
+  const targetState = !allCollapsed.value;
+  rows.value.forEach((row) => { row._collapsed = targetState; });
+}
 
 function addRow() {
   if (settings.value.copyPreviousRow && rows.value.length > 0) {
@@ -148,21 +176,22 @@ async function onSaveSettings() {
   isSettingsModalOpened.value = false;
 }
 
-async function submit() {
+async function submit(overrideRows) {
+  const taskRows = overrideRows ?? rows.value;
   progress.value = null;
   isLoading.value = true;
-  const total = rows.value.length;
+  const total = taskRows.length;
 
   try {
     progress.value = 0;
 
     let parentDescription = '';
-    if (rows.value.some((r) => r.copyContent)) {
+    if (taskRows.some((r) => r.copyContent)) {
       const { data } = await bitrixApi.getTask(props.taskId, ['DESCRIPTION']);
       parentDescription = data?.result?.task?.description ?? '';
     }
 
-    const responses = await bitrixApi.addTasksBatch(rows.value.map((row) => ({
+    const responses = await bitrixApi.addTasksBatch(taskRows.map((row) => ({
       TITLE: row.title,
       DESCRIPTION: row.copyContent ? parentDescription : row.description,
       CREATED_BY: userId.value,
@@ -174,7 +203,7 @@ async function submit() {
     })));
     progress.value = 100;
 
-    const createdIds = new Array(rows.value.length).fill(null);
+    const createdIds = new Array(taskRows.length).fill(null);
     responses.forEach((response) => {
       const results = response.data?.result?.result ?? {};
       Object.entries(results).forEach(([key, value]) => {
@@ -186,13 +215,13 @@ async function submit() {
       });
     });
 
-    const createdTasks = rows.value
+    const createdTasks = taskRows
       .map((row, i) => createdIds[i] ? { id: createdIds[i], title: row.title, url: getTaskUrl(groupId.value, createdIds[i]) } : null)
       .filter(Boolean);
 
-    const commitRowIndex = rows.value.findIndex((r) => r.copyCommit);
+    const commitRowIndex = taskRows.findIndex((r) => r.copyCommit);
     if (commitRowIndex !== -1 && createdIds[commitRowIndex]) {
-      const commitRow = rows.value[commitRowIndex];
+      const commitRow = taskRows[commitRowIndex];
       const commitId = createdIds[commitRowIndex];
       const commitMessage = getCommitMessage(commitRow.title, commitId);
       try {
@@ -248,6 +277,10 @@ async function fetchData() {
     await loadSettings();
     const storedContext = await chrome.storage.local.get([aiContextStorageKey.value]);
     if (storedContext[aiContextStorageKey.value]) aiContext.value = storedContext[aiContextStorageKey.value];
+
+    const storedViewMode = await chrome.storage.local.get([VIEW_MODE_STORAGE_KEY]);
+    if (storedViewMode[VIEW_MODE_STORAGE_KEY]) viewMode.value = storedViewMode[VIEW_MODE_STORAGE_KEY];
+
     const [groupUsers, stagesResponse, currentUser] = await Promise.all([
       bitrixApi.getGroupUsers(groupId.value),
       bitrixApi.getStages(groupId.value),
@@ -270,6 +303,18 @@ async function fetchData() {
       .sort((a, b) => a.SORT - b.SORT)
       .map((s) => ({ id: s.ID, title: s.TITLE, color: `#${s.COLOR}` }));
     addRow();
+    quickForm.value = {
+      titlesText: '',
+      responsibleId: !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit'
+        ? props.responsiveId
+        : userId.value,
+      stageId: settings.value.defaultStageId ?? null,
+      auditorIds: defaultAuditors.value === 'all'
+        ? users.value.map((u) => u.id)
+        : defaultAuditors.value === 'inherit'
+          ? [...parentAuditorIds.value]
+          : [userId.value],
+    };
   } catch (e) {
     console.warn(e);
     toast.add({
@@ -325,6 +370,7 @@ async function aiDecompose() {
 
     rows.value = parsed.map((item) => ({
       _id: rowIdCounter++,
+      _collapsed: false,
       title: item.title ?? '',
       description: settings.value.description ? (item.description ?? '') : '',
       copyContent: false,
@@ -348,8 +394,68 @@ onMounted(() => {
 </script>
 
 <template>
-  <form @submit.prevent="submit">
+  <form
+    class="min-w-[800px]"
+    @submit.prevent="() => submit()"
+  >
+    <div class="flex gap-1 items-center mb-2">
+      <Button
+        icon="pi pi-cog"
+        label="Настройки"
+        size="small"
+        severity="secondary"
+        variant="text"
+        :disabled="isLoading || aiLoading"
+        @click="isSettingsModalOpened = true"
+      />
+      <InputGroup
+        v-if="!isLoading && viewMode !== 'quick'"
+        :pt="{root: {style: {width: 'auto'}}}"
+      >
+        <Button
+          icon="pi pi-sparkles"
+          :label="aiButtonLabel"
+          size="small"
+          outlined
+          severity="secondary"
+          :loading="aiLoading"
+          :disabled="isLoading"
+          @click="aiDecompose"
+        />
+        <Button
+          v-tooltip="'Доп. контекст для AI'"
+          size="small"
+          severity="secondary"
+          :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
+          :disabled="isLoading"
+          @click="isAiContextModalOpened = true"
+        />
+        <Button
+          v-tooltip="'Просмотр системного промпта'"
+          size="small"
+          severity="secondary"
+          icon="pi pi-eye"
+          :disabled="isLoading"
+          @click="isPromptPreviewModalOpened = true"
+        />
+      </InputGroup>
+      <SelectButton
+        v-model="viewMode"
+        :options="viewModeOptions"
+        size="small"
+        class="ml-auto"
+      >
+        <template #option="{ option }">
+          <i
+            v-tooltip.top="viewModeLabels[option]"
+            :class="viewModeIcons[option]"
+          />
+        </template>
+      </SelectButton>
+    </div>
+
     <DataTable
+      v-if="viewMode === 'table'"
       :value="rows"
       :loading="isLoading || aiLoading"
       data-key="_id"
@@ -363,51 +469,6 @@ onMounted(() => {
         <template v-else>
           Загрузка...
         </template>
-      </template>
-
-      <template #header>
-        <div class="flex gap-1 items-center">
-          <Button
-            icon="pi pi-cog"
-            label="Настройки"
-            size="small"
-            severity="secondary"
-            variant="text"
-            :disabled="isLoading || aiLoading"
-            @click="isSettingsModalOpened = true"
-          />
-          <InputGroup
-            v-if="!isLoading"
-            :pt="{root: {style: {width: 'auto'}}}"
-          >
-            <Button
-              icon="pi pi-sparkles"
-              :label="aiButtonLabel"
-              size="small"
-              outlined
-              severity="secondary"
-              :loading="aiLoading"
-              :disabled="isLoading"
-              @click="aiDecompose"
-            />
-            <Button
-              v-tooltip="'Доп. контекст для AI'"
-              size="small"
-              severity="secondary"
-              :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
-              :disabled="isLoading"
-              @click="isAiContextModalOpened = true"
-            />
-            <Button
-              v-tooltip="'Просмотр системного промпта'"
-              size="small"
-              severity="secondary"
-              icon="pi pi-eye"
-              :disabled="isLoading"
-              @click="isPromptPreviewModalOpened = true"
-            />
-          </InputGroup>
-        </div>
       </template>
 
       <Column header="Название">
@@ -582,6 +643,89 @@ onMounted(() => {
         </div>
       </template>
     </DataTable>
+
+    <div
+      v-else-if="viewMode === 'cards'"
+      class="flex flex-col gap-3"
+    >
+      <div
+        v-if="isLoading || aiLoading"
+        class="flex items-center justify-center p-8 text-surface-500"
+      >
+        <template v-if="typeof progress === 'number'">
+          {{ progress }}%
+        </template>
+        <template v-else>
+          Загрузка...
+        </template>
+      </div>
+
+      <template v-else>
+        <DecomposeCard
+          v-for="(row, index) in rows"
+          :key="row._id"
+          v-model="rows[index]"
+          :index="index"
+          :settings="settings"
+          :users="users"
+          :stages="stages"
+          :is-only-row="rows.length === 1"
+          :ai-loading="aiLoading"
+          @remove="removeRow(index)"
+          @copy-commit-change="onCopyCommitChange(row)"
+        />
+      </template>
+
+      <div class="flex gap-2 items-center">
+        <Button
+          label="Добавить"
+          icon="pi pi-plus"
+          text
+          severity="secondary"
+          size="small"
+          :disabled="aiLoading || isLoading"
+          @click="addRow"
+        />
+        <Button
+          :label="allCollapsed ? 'Развернуть все' : 'Свернуть все'"
+          :icon="`pi pi-chevron-${allCollapsed ? 'down' : 'up'}`"
+          text
+          severity="secondary"
+          size="small"
+          :disabled="aiLoading || isLoading"
+          @click="toggleCollapseAll"
+        />
+        <Button
+          type="submit"
+          label="Создать задачи"
+          icon="pi pi-check"
+          size="small"
+          :loading="isLoading"
+          :disabled="aiLoading"
+        />
+      </div>
+    </div>
+
+    <div
+      v-else
+      class="flex flex-col gap-3"
+    >
+      <div
+        v-if="isLoading"
+        class="flex items-center justify-center p-8 text-surface-500"
+      >
+        Загрузка...
+      </div>
+
+      <DecomposeQuickMode
+        v-else
+        v-model="quickForm"
+        :users="users"
+        :stages="stages"
+        :is-loading="isLoading"
+        @submit="submit($event)"
+      />
+    </div>
   </form>
 
   <Dialog

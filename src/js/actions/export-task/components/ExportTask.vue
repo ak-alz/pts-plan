@@ -304,7 +304,6 @@ async function downloadZip() {
     v-else
     class="flex flex-col gap-4 py-1"
   >
-    <!-- Доп. контекст -->
     <div class="flex flex-col gap-2">
       <div class="flex items-center gap-2 select-none">
         <ToggleSwitch
@@ -326,7 +325,6 @@ async function downloadZip() {
       />
     </div>
 
-    <!-- Заголовок -->
     <div class="flex items-center gap-2 select-none">
       <ToggleSwitch
         v-model="includeTitle"
@@ -338,7 +336,6 @@ async function downloadZip() {
       >Заголовок</label>
     </div>
 
-    <!-- Описание -->
     <div class="flex items-center gap-2 select-none">
       <ToggleSwitch
         v-model="includeDescription"
@@ -358,7 +355,6 @@ async function downloadZip() {
       </label>
     </div>
 
-    <!-- Комментарии -->
     <div class="flex items-center gap-2 select-none">
       <ToggleSwitch
         v-model="includeComments"
@@ -376,14 +372,10 @@ async function downloadZip() {
           class="text-xs font-normal text-surface-400"
         >
           {{ userComments.length }}
-          <template v-if="allComments.length !== userComments.length">
-            из {{ allComments.length }}
-          </template>
         </span>
       </label>
     </div>
 
-    <!-- Кнопки действий -->
     <div class="flex gap-2 flex-wrap pt-1 border-t border-surface-200 items-center">
       <Button
         label="Скопировать"

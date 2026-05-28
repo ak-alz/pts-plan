@@ -1,8 +1,7 @@
 import BitrixApi from '../../BitrixApi.js';
+import {NOTIF_NEW_TASK_RE, NOTIF_REACTION_RE, TAGALL_PHRASE_RE, TAGALL_STATUS_RE} from '../../patterns.js';
 import {getTaskIdFromUrl, insertCSS, isUserMentioned, rehydrateOnChanges, stringToPastelColor} from '../../utils.js';
 import {NOTIF_TYPES} from './notifTypes.js';
-
-const TAGALL_STATUS_RE = /и другие участники задачи,?\s*(на прод[еу]?|в прод[еу]?|прод[еу]?\b|готов[оа]?|сделал[аи]?|сделано|выкатил[аи]?|задеплоил[аи]?|задеплоен[оа]?|задеплой|деплой|выпустил[аи]?|запустил[аи]?|опубликовал[аи]?|завершил[аи]?|завершен[оа]?|выполнил[аи]?|выполнен[оа]?|закончил[аи]?|закончен[оа]?|исправил[аи]?|исправлен[оа]?|пофиксил[аи]?|фикс\b|смержил[аи]?|смержен[оа]?|merged|протестировал[аи]?|протестирован[оа]?|оттестировал[аи]?|запушил[аи]?|зарелизил[аи]?|релиз|ок\b|ok\b|done|ready|fixed)/i;
 
 export function notificationDetails(sessionId, options = {}) {
   const bitrixApi = new BitrixApi(sessionId);
@@ -246,7 +245,7 @@ const container = document.querySelector('.bx-im-content-notification__elements'
         }
         const notifText = el.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent ?? '';
 
-        const isTagall = notifText.includes('и другие участники задачи');
+        const isTagall = TAGALL_PHRASE_RE.test(notifText) && !NOTIF_REACTION_RE.test(notifText);
         let isPersonalMentionInTagall = false;
 
         if (isTagall && shouldHighlightMention) {
@@ -276,8 +275,9 @@ const container = document.querySelector('.bx-im-content-notification__elements'
 
         if (shouldHighlightMention) {
           const hasTagallClass = el.hasAttribute('data-pts-tagall') || el.hasAttribute('data-pts-tagall-status');
-          if (!hasTagallClass) {
-            const isNewTask = /^(Добавила? новую задачу|Добавлена новая задача) \[#/.test(notifText);
+          const isReaction = NOTIF_REACTION_RE.test(notifText);
+          if (!hasTagallClass && !isReaction) {
+            const isNewTask = NOTIF_NEW_TASK_RE.test(notifText);
             const isNotResponsible = !options.userId || task.responsibleId !== String(options.userId);
             const mentioned = isPersonalMentionInTagall || isUserMentioned(notifText, options.userFirstName, options.userLastName);
             if (mentioned && !(isNewTask && isNotResponsible)) {
