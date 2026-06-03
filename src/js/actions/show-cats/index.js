@@ -61,6 +61,28 @@ const providers = {
   },
 };
 
+async function fetchCats(preferredProvider) {
+  // выбранный провайдер пробуем первым, остальные — как запасные
+  const orderedKeys = [
+    preferredProvider,
+    ...Object.keys(providers).filter((key) => key !== preferredProvider),
+  ];
+
+  for (const key of orderedKeys) {
+    const provider = providers[key];
+    if (!provider) continue;
+
+    try {
+      const cats = await provider.fetch();
+      if (cats?.length) return cats;
+    } catch {
+      // провайдер недоступен или вернул ошибку — пробуем следующий
+    }
+  }
+
+  return [];
+}
+
 export async function showCats(options) {
   const leftMenu = document.querySelector('.menu-items-footer-inner');
   const leftMenuCollapsed = !!document.querySelector('.menu-collapsed-mode');
@@ -69,12 +91,10 @@ export async function showCats(options) {
   const initialized = !!leftMenu.querySelector('.js-show-cats');
   if (initialized) return;
 
-  const provider = providers[options?.showCatsProvider] ?? providers.thecatapi;
-
   let catIndex = 0;
   const timeout = 6 * 60 * 1000;
-  const cats = await provider.fetch();
-  if (!cats?.length) return;
+  const cats = await fetchCats(options?.showCatsProvider);
+  if (!cats.length) return;
 
   const image = Object.assign(document.createElement('img'), {
     className: 'rounded cursor-pointer js-show-cats',

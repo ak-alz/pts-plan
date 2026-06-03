@@ -53,7 +53,6 @@ const userId = ref(0);
 const users = ref([]);
 const stages = ref([]);
 const isLoading = ref(false);
-const progress = ref(null);
 
 const settings = ref({});
 const settingsStorageKey = computed(() => `decompose-task-settings-${groupId.value}`);
@@ -178,13 +177,10 @@ async function onSaveSettings() {
 
 async function submit(overrideRows) {
   const taskRows = overrideRows ?? rows.value;
-  progress.value = null;
   isLoading.value = true;
   const total = taskRows.length;
 
   try {
-    progress.value = 0;
-
     let parentDescription = '';
     if (taskRows.some((r) => r.copyContent)) {
       const { data } = await bitrixApi.getTask(props.taskId, ['DESCRIPTION']);
@@ -201,7 +197,6 @@ async function submit(overrideRows) {
       PARENT_ID: props.taskId,
       STAGE_ID: row.stageId || 0,
     })));
-    progress.value = 100;
 
     const createdIds = new Array(taskRows.length).fill(null);
     responses.forEach((response) => {
@@ -380,8 +375,8 @@ async function aiDecompose() {
       auditorIds: [...auditorIds],
     }));
   } catch (e) {
-    toast.add({ group: 'decompose-task', severity: 'error', summary: 'AI', detail: `[pts-plan]: ${e.message}`, life: 5000 });
-    isApiKeyModalOpened.value = true;
+    toast.add({ group: 'decompose-task', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+    if (e.isAuthError) isApiKeyModalOpened.value = true;
   } finally {
     aiLoading.value = false;
     aiProgress.value = null;
@@ -462,15 +457,6 @@ onMounted(() => {
       size="small"
       striped-rows
     >
-      <template #loading>
-        <template v-if="typeof progress === 'number'">
-          {{ progress }}%
-        </template>
-        <template v-else>
-          Загрузка...
-        </template>
-      </template>
-
       <Column header="Название">
         <template #body="{ data: row }">
           <div class="flex flex-col gap-1">
@@ -652,12 +638,7 @@ onMounted(() => {
         v-if="isLoading || aiLoading"
         class="flex items-center justify-center p-8 text-surface-500"
       >
-        <template v-if="typeof progress === 'number'">
-          {{ progress }}%
-        </template>
-        <template v-else>
-          Загрузка...
-        </template>
+        Загрузка...
       </div>
 
       <template v-else>

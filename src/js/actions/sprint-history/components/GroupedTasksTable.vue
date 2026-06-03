@@ -79,6 +79,7 @@ const modalTasks = computed(() => {
     <Column header="Задача">
       <template #body="{ data }">
         <a
+          class="pts-blur"
           :href="getTaskUrl(groupId, data.parentId)"
           target="_top"
         >

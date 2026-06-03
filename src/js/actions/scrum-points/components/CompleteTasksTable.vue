@@ -39,18 +39,15 @@ const tasks = computed(() => {
 
 const selectedTasks = ref(tasks.value);
 
-const progress = ref(null);
 const isLoading = ref(false);
 
 async function completeSelectedTasks() {
-  progress.value = 0;
   isLoading.value = true;
 
   try {
     const taskIds = selectedTasks.value.map((task) => task.id);
 
     await bitrixApi.completeTasksBatch(taskIds);
-    progress.value = 100;
 
     toast.add({
       group: 'scrum-points',
@@ -102,13 +99,6 @@ async function completeSelectedTasks() {
       />
     </template>
 
-    <template
-      v-if="typeof progress === 'number'"
-      #loading
-    >
-      {{ progress }}%
-    </template>
-
     <Column selection-mode="multiple" />
     <Column
       field="name"
@@ -116,6 +106,7 @@ async function completeSelectedTasks() {
     >
       <template #body="{data}">
         <a
+          class="pts-blur"
           target="_top"
           :href="data.url"
           v-html="data.name"

@@ -40,6 +40,12 @@ export class PixelToolsApi {
     });
 
     if (!data?.report_id) {
+      // code -1 (нет ключа) и -2 (невалидный ключ) — ошибки аутентификации
+      if (data?.code === -1 || data?.code === -2) {
+        const error = new Error('Неверный API-ключ');
+        error.isAuthError = true;
+        throw error;
+      }
       const detail = data?.details?.join(' ') ?? data?.error ?? JSON.stringify(data);
       throw new Error(detail);
     }

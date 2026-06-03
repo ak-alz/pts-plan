@@ -50,6 +50,9 @@ const isLoading = computed(() => isSheetLoading.value || isTasksLoading.value);
 const dateUpdated = ref(null);
 const isSettingsModalOpened = ref(false);
 
+const REFRESH_STORAGE_KEY = 'sprint-priorities-last-refresh';
+const lastRefreshKey = ref('all');
+
 const sheetRows = ref([]);
 const enrichedRows = ref([]);
 const teamRows = ref([]);
@@ -296,8 +299,10 @@ async function fetchTasksData() {
         stageName: stage?.TITLE ?? null,
         responsible: responsible ? { name: responsible.name, url: `/company/personal/user/${responsible.id}/`, photo: responsible.avatar || null } : null,
         createdBy: creator ? { name: creator.name, url: `/company/personal/user/${creator.id}/` } : null,
-        createdDate: task.createdDate ? dayjs(task.createdDate).format('DD.MM.YYYY') : null,
-        changedDate: task.changedDate ? dayjs(task.changedDate).format('DD.MM.YYYY') : null,
+        createdDate: task.createdDate,
+        formattedCreatedDate: task.createdDate ? dayjs(task.createdDate).format('DD.MM.YYYY') : null,
+        changedDate: task.changedDate,
+        formattedChangedDate: task.changedDate ? dayjs(task.changedDate).format('DD.MM.YYYY') : null,
       };
     });
 
@@ -455,29 +460,42 @@ function onTeamCellClick({ user, stage }) {
 async function onSaveSettings() {
   isSettingsModalOpened.value = false;
   await loadSettings();
+  stageFilter.value = settings.value?.defaultStageFilter ?? [];
   await Promise.all([fetchSheetRows(), fetchTeamPoints()]);
 }
 
-const refreshMenuItems = [
-  {
-    label: 'Обновить Google Таблицу',
-    icon: 'pi pi-table',
-    command: fetchSheetRows,
-  },
-  {
-    label: 'Обновить данные задач',
-    icon: 'pi pi-list',
-    command: fetchTasksData,
-  },
-  {
-    label: 'Обновить баллы команды',
-    icon: 'pi pi-chart-bar',
-    command: fetchTeamPoints,
-  },
+async function fetchTasksAndTeam() {
+  await Promise.all([fetchTasksData(), fetchTeamPoints()]);
+}
+
+const refreshActions = [
+  { key: 'all', label: 'Обновить всё', icon: 'pi pi-sync', command: fetchAll },
+  { key: 'sheet', label: 'Обновить Google Таблицу', icon: 'pi pi-table', command: fetchSheetRows },
+  { key: 'tasks', label: 'Обновить данные задач', icon: 'pi pi-list', command: fetchTasksData },
+  { key: 'team', label: 'Обновить баллы команды', icon: 'pi pi-chart-bar', command: fetchTeamPoints },
+  { key: 'tasksTeam', label: 'Обновить задачи и баллы команды', icon: 'pi pi-refresh', command: fetchTasksAndTeam },
 ];
+
+const activeRefreshAction = computed(
+  () => refreshActions.find((action) => action.key === lastRefreshKey.value) ?? refreshActions[0],
+);
+
+const refreshMenuItems = refreshActions.map((action) => ({
+  label: action.label,
+  icon: action.icon,
+  command: () => selectRefreshAction(action),
+}));
+
+function selectRefreshAction(action) {
+  lastRefreshKey.value = action.key;
+  chrome.storage.local.set({ [REFRESH_STORAGE_KEY]: action.key });
+  action.command();
+}
 
 onMounted(async () => {
   await loadSettings();
+  const storedRefresh = await chrome.storage.local.get([REFRESH_STORAGE_KEY]);
+  lastRefreshKey.value = storedRefresh[REFRESH_STORAGE_KEY] ?? 'all';
   stageFilter.value = settings.value?.defaultStageFilter ?? [];
   if (settings.value?.sheetUrl) {
     await Promise.all([fetchGroupMeta(), fetchSheetRows(), fetchTeamPoints()]);
@@ -488,7 +506,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div v-if="settings?.sheetUrl">
+  <div
+    v-if="settings?.sheetUrl"
+    class="min-w-[1100px]"
+  >
     <div class="flex gap-2 mb-3 items-center flex-wrap">
       <Button
         label="Настройки"
@@ -501,14 +522,15 @@ onMounted(async () => {
       />
       <SplitButton
         v-tooltip="dateUpdated"
-        label="Обновить всё"
+        :label="activeRefreshAction.label"
+        :icon="activeRefreshAction.icon"
         :model="refreshMenuItems"
         :loading="isLoading"
         :disabled="isLoading"
         size="small"
         severity="secondary"
         outlined
-        @click="fetchAll"
+        @click="activeRefreshAction.command()"
       />
     </div>
 
@@ -534,6 +556,7 @@ onMounted(async () => {
         option-label="name"
         option-value="name"
         filter
+        filter-placeholder="Поиск"
         size="small"
         placeholder="Все колонки"
         :max-selected-labels="1"
@@ -603,6 +626,7 @@ onMounted(async () => {
         <template #body="{ data }">
           <a
             v-if="data.taskUrl"
+            class="pts-blur"
             :href="data.taskUrl"
             target="_top"
           >{{ data.title }}</a>
@@ -677,7 +701,8 @@ onMounted(async () => {
 
       <Column
         v-if="visibleColumnKeys.includes('createdDate')"
-        field="createdDate"
+        field="formattedCreatedDate"
+        sort-field="createdDate"
         header="Создана"
         sortable
         style="white-space: nowrap;"
@@ -685,7 +710,8 @@ onMounted(async () => {
 
       <Column
         v-if="visibleColumnKeys.includes('changedDate')"
-        field="changedDate"
+        field="formattedChangedDate"
+        sort-field="changedDate"
         header="Изменена"
         sortable
         style="white-space: nowrap;"
@@ -730,6 +756,7 @@ onMounted(async () => {
         >
           <template #body="{ data }">
             <a
+              class="pts-blur"
               :href="data.url"
               target="_top"
             >{{ data.title }}</a>

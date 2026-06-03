@@ -42,6 +42,7 @@ function openTaskList(row) {
     <Column header="Корневая задача">
       <template #body="{ data }">
         <a
+          class="pts-blur"
           :href="data.url"
           target="_top"
         >

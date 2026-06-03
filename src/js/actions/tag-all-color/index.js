@@ -21,7 +21,7 @@ export function tagAllColor(color) {
     if (!comments.length) return;
 
     comments.forEach((comment) => {
-      if (TAGALL_WORD_RE.test(comment.textContent)) {
+      if (!comment.querySelector(`.${className}`) && TAGALL_WORD_RE.test(comment.textContent)) {
         comment.innerHTML = comment.innerHTML.replace(TAGALL_WORD_RE, (match) => `<b class="${className}">${match}</b>`);
       }
     });

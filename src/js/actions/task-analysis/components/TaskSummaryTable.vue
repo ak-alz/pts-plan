@@ -185,7 +185,7 @@ async function aiAnalyze() {
     });
   } catch (e) {
     toast.add({ group: 'task-analysis', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
-    isApiKeyModalOpened.value = true;
+    if (e.isAuthError) isApiKeyModalOpened.value = true;
   } finally {
     aiLoading.value = false;
     aiProgress.value = null;

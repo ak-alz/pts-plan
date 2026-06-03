@@ -12,6 +12,7 @@ import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import {stringToPastelColor} from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 import { computeTrendLine, defaultIgnorePoints, defaultMonths } from '../variables.js';
+import CreateTaskTemplate from './CreateTaskTemplate.vue';
 import SettingsForm from './SettingsForm.vue';
 import SummaryChart from './SummaryChart.vue';
 import SummaryTable from './SummaryTable.vue';
@@ -100,6 +101,7 @@ const computedUsers = computed(() => {
         avg,
         median,
 
+        hasPrevPeriod: prevPoints.length > 0,
         deltaAvg: prevPoints.length ? avg - prevAvg : 0,
         deltaMedian: prevPoints.length ? median - prevMedian : 0,
 
@@ -145,7 +147,8 @@ async function fetchData() {
     }
 
     // Паттерн отбирает из всех комментариев задачи только комментарии с итогами спринта
-    const sprintPattern = /итоги?[^]*?(\d+)[^]*?спринт/gi;
+    // Номер спринта необязателен: «Итоги спринта» и «Итоги 42 спринта» — оба валидны
+    const sprintPattern = /итоги?[^]*?(?:(\d+)[^]*?)?спринт/gi;
     // Новый формат: [URL=.../user/ID/]Имя[/URL] — N балл
     const urlUserPattern = /\[URL=([^\]]*\/company\/personal\/user\/(\d+)\/)]([^[\n]+)\[\/URL][^\d\n]*(\d+)\s+балл/g;
     // Старый формат: [USER=ID]Имя[/USER] — N балл
@@ -159,7 +162,7 @@ async function fetchData() {
       const match = sprintPattern.exec(comment.POST_MESSAGE);
       if (!match) return;
 
-      const sprintNumber = Number(match[1]);
+      const sprintNumber = match[1] !== undefined ? Number(match[1]) : null;
       const dateTs = dayjs(comment.POST_DATE).valueOf();
 
       urlUserPattern.lastIndex = 0;
@@ -235,7 +238,7 @@ function buildAiData() {
       entry.тренд_дельта = user.trendDelta;
       if (user.trendPct !== null) entry.тренд_процент = `${user.trendPct > 0 ? '+' : ''}${user.trendPct}%`;
     }
-    if (user.deltaAvg) {
+    if (user.hasPrevPeriod) {
       entry.дельта_среднего = user.deltaAvg;
       entry.дельта_медианы = user.deltaMedian;
     }
@@ -299,7 +302,7 @@ async function aiAnalyze() {
     });
   } catch (e) {
     toast.add({ group: 'scrum-summary', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
-    isApiKeyModalOpened.value = true;
+    if (e.isAuthError) isApiKeyModalOpened.value = true;
   } finally {
     aiLoading.value = false;
     aiProgress.value = null;
@@ -308,6 +311,14 @@ async function aiAnalyze() {
 
 /* Настройки */
 const isSettingsModalOpened = ref(false);
+const isCreateTaskModalOpened = ref(false);
+
+async function onTaskTemplateCreated() {
+  isCreateTaskModalOpened.value = false;
+  await loadSettings();
+  Object.assign(form, getDefaults());
+  fetchData();
+}
 
 async function onSaveSettings() {
   isSettingsModalOpened.value = false;
@@ -319,7 +330,7 @@ async function onSaveSettings() {
   Object.assign(form, getDefaults());
 
   if (settings.value.taskId !== oldTaskId) {
-    fetchData();
+    await fetchData();
   }
 }
 
@@ -443,15 +454,38 @@ onMounted(async () => {
     </div>
   </div>
 
-  <SettingsForm
-    v-else
-    :users
+  <template v-else>
+    <SettingsForm
+      :users
 
-    :initial="settings"
-    :settings-storage-key
-    simple
-    @success="onSaveSettings"
-  />
+      :initial="settings"
+      :settings-storage-key
+      simple
+      @success="onSaveSettings"
+    />
+    <Button
+      class="mt-3"
+      label="Создать шаблон задачи"
+      size="small"
+      severity="secondary"
+      icon="pi pi-plus"
+      @click="isCreateTaskModalOpened = true"
+    />
+  </template>
+
+  <Dialog
+    v-model:visible="isCreateTaskModalOpened"
+    header="Создать шаблон задачи"
+    dismissable-mask
+    modal
+  >
+    <CreateTaskTemplate
+      :session-id
+      :group-id
+      :settings-storage-key
+      @success="onTaskTemplateCreated"
+    />
+  </Dialog>
 
   <Dialog
     v-model:visible="isSettingsModalOpened"

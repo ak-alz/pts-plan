@@ -1,12 +1,12 @@
 <script setup>
-import { Button, InputNumber, InputText, Message, Password } from 'primevue';
+import { Button, InputNumber, InputText, Password } from 'primevue';
 
 import FormField from '../../js/ui/FormField.vue';
 import { useAutoFill } from '../useAutoFill.js';
 
 const model = defineModel({ type: Object, required: true });
 
-const { autoFill, isFetching, fetchError } = useAutoFill(model);
+const { autoFill, isFetching } = useAutoFill(model);
 </script>
 
 <template>
@@ -19,13 +19,6 @@ const { autoFill, isFetching, fetchError } = useAutoFill(model);
       :loading="isFetching"
       @click="autoFill"
     />
-    <Message
-      v-if="fetchError"
-      severity="error"
-      size="small"
-    >
-      Не удалось получить данные. Убедитесь, что вы авторизованы на plan.pixelplus.ru
-    </Message>
     <FormField
       id="profile_firstName"
       label="Имя"

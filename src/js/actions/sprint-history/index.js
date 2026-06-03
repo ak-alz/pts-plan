@@ -5,7 +5,7 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl } from '../../utils.js';
+import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
 import SprintHistoryApp from './SprintHistoryApp.vue';
 
 export function sprintHistory(sessionId) {
@@ -19,7 +19,7 @@ export function sprintHistory(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-sprint-history',
+    className: 'js-sprint-history pts-actions-bar-btn',
     style: 'order: 2;',
   });
 
@@ -35,4 +35,5 @@ export function sprintHistory(sessionId) {
   app.directive('ripple', Ripple);
 
   app.mount(appContainer);
+  refreshActionBarButtonGroup();
 }

@@ -61,7 +61,9 @@ const chartOptions = computed(() => {
               const isEnd = tooltipItems[0].dataIndex === 1;
               return `${isEnd ? 'Конец' : 'Начало'} тренда (${dayjs(x).format('DD.MM.YYYY')})`;
             }
-            return `Итоги спринта №${sprint} (${dayjs(x).format('DD.MM.YYYY')})`;
+            return sprint !== null && sprint !== undefined
+              ? `Итоги спринта №${sprint} (${dayjs(x).format('DD.MM.YYYY')})`
+              : `Итоги спринта (${dayjs(x).format('DD.MM.YYYY')})`;
           },
           label(context) {
             if (isTrend) {

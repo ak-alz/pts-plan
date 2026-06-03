@@ -8,6 +8,7 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  multiUser: {type: Boolean, default: false},
 });
 
 const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0));
@@ -22,9 +23,24 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
     :default-sort-order="-1"
     size="small"
   >
+    <Column
+      v-if="multiUser"
+      field="responsible.name"
+      header="Исполнитель"
+    >
+      <template #body="{ data }">
+        <a
+          :href="data.responsible.url"
+          target="_top"
+        >
+          {{ data.responsible.name }}
+        </a>
+      </template>
+    </Column>
     <Column header="Задача">
       <template #body="{ data }">
         <a
+          class="pts-blur"
           :href="data.url"
           target="_top"
         >
@@ -49,6 +65,7 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
 
     <ColumnGroup type="footer">
       <Row>
+        <Column v-if="multiUser" />
         <Column />
         <Column
           footer="Итого:"

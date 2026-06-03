@@ -11,6 +11,13 @@ function compareVersions(a, b) {
   return 0;
 }
 
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason !== 'install') return;
+
+  // Новый юзер: сразу открываем «Что нового» с авто-открытием быстрой настройки.
+  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?setup=1') });
+});
+
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason !== 'update') return;
 

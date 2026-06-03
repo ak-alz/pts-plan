@@ -5,7 +5,7 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl } from '../../utils.js';
+import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
 import TaskSearchApp from './TaskSearchApp.vue';
 
 export function taskSearch(sessionId) {
@@ -19,7 +19,7 @@ export function taskSearch(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-task-search',
+    className: 'js-task-search pts-actions-bar-btn',
     style: 'order: 5;',
   });
 
@@ -35,4 +35,5 @@ export function taskSearch(sessionId) {
   app.directive('ripple', Ripple);
 
   app.mount(appContainer);
+  refreshActionBarButtonGroup();
 }

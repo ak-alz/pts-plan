@@ -39,12 +39,10 @@ const visibleColumns = computed(() => columns.value.filter(({ id }) => settings.
 const users = ref([]);
 const groupUsers = ref([]);
 const visibleUsers = computed(() => users.value.filter(({ id }) => settings.value.users?.length && settings.value.users?.includes(id)));
-const progress = ref(null);
 const isLoading = ref(false);
 const dateUpdated = ref(null);
 
 async function fetchData() {
-  progress.value = null;
   isLoading.value = true;
 
   const res = await chrome.storage.local.get([settingsStorageKey.value]);
@@ -59,7 +57,6 @@ async function fetchData() {
     const savedColumnIds = settings.value.columns || [];
     const firstPageRequests = savedColumnIds.map((id) => ({ key: `col_${id}`, stageId: id, start: 0 }));
 
-    progress.value = 0;
     const [stagesResponse, firstRoundResponses, rawGroupUsers] = await Promise.all([
       bitrixApi.getStages(props.groupId),
       bitrixApi.getTasksBatch(firstPageRequests, props.groupId),
@@ -113,8 +110,6 @@ async function fetchData() {
         });
       });
     }
-
-    progress.value = 100;
 
     // Раскидываем задачи по исполнителям и колонкам
     const usersMap = {};
@@ -242,8 +237,8 @@ function formatPointsCount(count) {
   return `${count} ${pluralize(count, ['балл', 'балла', 'баллов'])}`;
 }
 
-/* Кнопка "Копировать итоги" */
-async function copySummary(column) {
+/* Кнопка "Копировать итоги" / "Опубликовать итоги" */
+function buildSummaryText(column) {
   const usersData = visibleUsers.value.map((user) => ({
     id: user.id,
     name: user.name,
@@ -251,19 +246,19 @@ async function copySummary(column) {
   }));
 
   const ordered = orderBy(usersData, ['totalPoints', 'name'], ['desc', 'asc']);
-
   const totalPoints = sumBy(usersData, (item) => item.totalPoints);
 
-  const summary = `Итог 123 спринта
+  return `Итоги спринта
 
 ${formatPointsCount(totalPoints)}
 [LIST]
 ${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPointsCount(user.totalPoints)}`).join('\n')}
 [/LIST]`;
+}
 
+async function copySummary(column) {
   try {
-    await window.navigator.clipboard.writeText(summary);
-
+    await window.navigator.clipboard.writeText(buildSummaryText(column));
     toast.add({
       group: 'scrum-points',
       severity: 'success',
@@ -280,6 +275,38 @@ ${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPoi
       detail: `[pts-plan]: ${e.message}`,
       life: 5000,
     });
+  }
+}
+
+const isPosting = ref(false);
+
+async function postSummary(column) {
+  if (!settings.value.summaryTaskId) return;
+  isPosting.value = true;
+  try {
+    const response = await bitrixApi.addComment(settings.value.summaryTaskId, `TAGALL,\n${buildSummaryText(column)}`);
+    const commentId = response.data?.result;
+    const commentUrl = commentId
+      ? `/workgroups/group/${props.groupId}/tasks/task/view/${settings.value.summaryTaskId}/?MID=${commentId}#com${commentId}`
+      : null;
+    toast.add({
+      group: 'scrum-points',
+      severity: 'success',
+      summary: 'Итоги опубликованы',
+      commentUrl,
+      life: 8000,
+    });
+  } catch (e) {
+    console.warn(e);
+    toast.add({
+      group: 'scrum-points',
+      severity: 'error',
+      summary: 'Ошибка',
+      detail: `[pts-plan]: ${e.message}`,
+      life: 5000,
+    });
+  } finally {
+    isPosting.value = false;
   }
 }
 
@@ -319,13 +346,6 @@ onMounted(() => {
           @click="fetchData"
         />
       </div>
-    </template>
-
-    <template
-      v-if="typeof progress === 'number'"
-      #loading
-    >
-      {{ progress }}%
     </template>
 
     <Column
@@ -408,7 +428,7 @@ onMounted(() => {
     </Column>
 
     <ColumnGroup
-      v-if="settings.showCompleteTasksButton?.length || settings.showCopyButton?.length"
+      v-if="settings.showCompleteTasksButton?.length || settings.showCopyButton?.length || settings.showPostButton?.length"
       type="footer"
     >
       <Row>
@@ -440,6 +460,17 @@ onMounted(() => {
                 severity="secondary"
                 :disabled="isLoading"
                 @click="copySummary(column)"
+              />
+              <Button
+                v-if="settings.showPostButton?.includes(column.id)"
+                v-tooltip="settings.summaryTaskId ? `Опубликовать итоги для колонки «${column.name}»` : 'Укажите ID задачи в настройках'"
+                icon="pi pi-send"
+                size="small"
+                rounded
+                variant="text"
+                severity="secondary"
+                :disabled="isLoading || isPosting || !settings.summaryTaskId"
+                @click="postSummary(column)"
               />
             </div>
           </template>

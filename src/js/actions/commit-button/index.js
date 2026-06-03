@@ -11,7 +11,7 @@ import { getCommitMessage, getTaskIdFromUrl } from '../../utils.js';
     const initialized = !!titleBlock.querySelector('.js-commit-button');
     if (initialized) return;
 
-    const title = titleBlock.textContent.trim();
+    const title = titleBlock.querySelector('.ui-toolbar-title-item')?.textContent.trim() ?? '';
     if (!title) return;
 
     const commitButtonContainer = titleBlock.querySelector('.ui-toolbar-after-title');

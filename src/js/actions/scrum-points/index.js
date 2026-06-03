@@ -5,7 +5,7 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl } from '../../utils.js';
+import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
 import ScrumPointsApp from './ScrumPointsApp.vue';
 
 export function scrumPoints(sessionId) {
@@ -19,7 +19,7 @@ export function scrumPoints(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-scrum-points',
+    className: 'js-scrum-points pts-actions-bar-btn',
     style: 'order: 1;',
   });
 
@@ -35,4 +35,5 @@ export function scrumPoints(sessionId) {
   app.directive('ripple', Ripple);
 
   app.mount(appContainer);
+  refreshActionBarButtonGroup();
 }

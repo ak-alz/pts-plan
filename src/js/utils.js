@@ -42,7 +42,7 @@ export function getUserIdFromUrl(url) {
 export function simplifyColumnName(columnName) {
   if (typeof columnName !== 'string') return '';
 
-  const words = columnName.replace(/[^A-Za-zА-Яа-я\s]/g, '').trim().split(' ');
+  const words = columnName.replace(/[^A-Za-zА-Яа-я\s]/g, '').trim().split(' ').filter(Boolean);
   if (words.length === 1) {
     return columnName.substring(0, 3);
   }
@@ -516,6 +516,23 @@ export function pluralize(n, titles) {
       ? 2
       : cases[(n % 10 < 5) ? n % 10 : 5]
     ];
+}
+
+/**
+ * Обновляет классы --first/--last у всех .pts-actions-bar-btn в панели Bitrix,
+ * учитывая визуальный порядок (flex order). Вызывать после каждого монтирования.
+ */
+export function refreshActionBarButtonGroup() {
+  const container = document.querySelector('.ui-actions-bar__buttons');
+  if (!container) return;
+
+  const buttons = [...container.querySelectorAll('.pts-actions-bar-btn')];
+  buttons.sort((a, b) => (parseInt(a.style.order) || 0) - (parseInt(b.style.order) || 0));
+
+  buttons.forEach((button, index) => {
+    button.classList.toggle('pts-actions-bar-btn--first', index === 0);
+    button.classList.toggle('pts-actions-bar-btn--last', index === buttons.length - 1);
+  });
 }
 
 export function minifyPrompt(str) {

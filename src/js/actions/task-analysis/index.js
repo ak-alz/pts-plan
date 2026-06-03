@@ -5,7 +5,7 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, insertCSS } from '../../utils.js';
+import { getGroupIdFromUrl, insertCSS, refreshActionBarButtonGroup } from '../../utils.js';
 import TaskAnalysisApp from './TaskAnalysisApp.vue';
 
 insertCSS(`
@@ -25,7 +25,7 @@ export function taskAnalysis(sessionId, options) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-task-analysis',
+    className: 'js-task-analysis pts-actions-bar-btn',
     style: 'order: 4;',
   });
 
@@ -42,4 +42,5 @@ export function taskAnalysis(sessionId, options) {
   app.directive('ripple', Ripple);
 
   app.mount(appContainer);
+  refreshActionBarButtonGroup();
 }

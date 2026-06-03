@@ -7,6 +7,7 @@ import {
   Avatar,
   Badge,
   Button,
+  InputNumber,
   MultiSelect,
   Select,
 } from 'primevue';
@@ -60,6 +61,8 @@ const form = reactive({
   sortColumn: props.initial.sortColumn ? toRaw(props.initial.sortColumn) : defaultSortColumn,
   excludeFromTotal: props.initial.excludeFromTotal ? toRaw(props.initial.excludeFromTotal) : [],
   showCopyButton: props.initial.showCopyButton ? toRaw(props.initial.showCopyButton) : [],
+  showPostButton: props.initial.showPostButton ? toRaw(props.initial.showPostButton) : [],
+  summaryTaskId: props.initial.summaryTaskId ?? null,
 });
 
 async function saveSettings() {
@@ -267,6 +270,45 @@ const sortableColumns = computed(() => {
                   {{ option.name }}
                 </template>
               </MultiSelect>
+            </FormField>
+
+            <FormField
+              id="settings_show_post_button"
+              label="Опубликовать итоги"
+              tip="Для выбранных колонок появится кнопка, которая автоматически создаёт комментарий с итогами спринта в указанной задаче."
+            >
+              <MultiSelect
+                v-model="form.showPostButton"
+                option-value="id"
+                option-label="name"
+                :options="columns"
+                filter
+                filter-placeholder="Поиск"
+                fluid
+                input-id="settings_show_post_button"
+                :max-selected-labels="3"
+                placeholder="Выбрать"
+              >
+                <template #option="{option}">
+                  <Badge :style="`background-color: ${option.color};`" />
+                  {{ option.name }}
+                </template>
+              </MultiSelect>
+            </FormField>
+
+            <FormField
+              id="settings_summary_task_id"
+              label="ID задачи для итогов"
+              tip="ID задачи, в которую будет публиковаться комментарий с итогами спринта."
+            >
+              <InputNumber
+                v-model="form.summaryTaskId"
+                :max-fraction-digits="0"
+                :use-grouping="false"
+                fluid
+                input-id="settings_summary_task_id"
+                placeholder="Не указан"
+              />
             </FormField>
           </div>
         </AccordionContent>

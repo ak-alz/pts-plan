@@ -1,3 +1,5 @@
+import {debounce} from 'lodash-es';
+
 import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
@@ -15,7 +17,7 @@ import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
   }
 
   rehydrateOnChanges(
-    autoChoiceUser,
+    debounce(autoChoiceUser, 600),
     document.body,
     {
       filterMutation: (mutation) => mutation.target.closest('.popup-window'),

@@ -185,10 +185,16 @@ const topTasksData = computed(() => {
   const byTask = {};
   displayRows.value.forEach((row) => {
     if (!byTask[row.id]) {
-      byTask[row.id] = {key: row.id, title: row.title, url: row.url, totalPoints: 0, userNames: new Set()};
+      byTask[row.id] = {key: row.id, title: row.title, url: row.url, totalPoints: 0, users: new Map(), tasks: []};
     }
     byTask[row.id].totalPoints += row.totalPoints;
-    byTask[row.id].userNames.add(row.userName);
+    byTask[row.id].tasks.push(...row.tasks.map((task) => ({
+      ...task,
+      responsible: {name: row.userName, url: `/company/personal/user/${row.userId}/`},
+    })));
+    if (!byTask[row.id].users.has(row.userId)) {
+      byTask[row.id].users.set(row.userId, {id: row.userId, name: row.userName, url: `/company/personal/user/${row.userId}/`});
+    }
   });
 
   const top = Object.values(byTask).sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 10);
@@ -199,7 +205,8 @@ const topTasksData = computed(() => {
       title: row.title,
       url: row.url,
       totalPoints: row.totalPoints,
-      userNames: [...row.userNames],
+      users: [...row.users.values()],
+      tasks: row.tasks,
     })),
   };
 });

@@ -16,6 +16,7 @@ Before implementing new functionality, check whether the codebase already solves
 - **Shared UI** (`src/js/ui/`) — `FormField.vue`, `DateRangePicker.vue`. Use them for form layouts and date inputs instead of rolling your own.
 - **`BitrixApi` methods** — batch helpers, user/stage/group fetchers. Add a new method to `BitrixApi` rather than inlining raw `axios` calls in feature code.
 - **Patterns from reference features** — `scrum-points` and `scrum-summary` establish conventions for Vue widgets (mounting, settings storage, toast groups, DataTable patterns). Follow them when building similar features.
+- **`lodash-es`** — available as a dependency. Use it for utility functions (debounce, throttle, groupBy, etc.) instead of reimplementing them manually. Import individual functions: `import {debounce} from 'lodash-es'`.
 
 ### API request optimization
 
@@ -28,7 +29,7 @@ Always minimize the number of round-trips and the payload size when calling the 
 ## Commands
 
 ```bash
-npm run dev      # Dev mode (rebuilds CSS + starts Vite dev server on port 5173)
+npm run dev      # Dev mode (rebuilds CSS + starts Vite dev server on port 5174)
 npm run build    # Production build → build/
 npm run build-css  # Rebuild Tailwind CSS only (needed when adding new utility classes)
 ```
@@ -59,6 +60,12 @@ Simple features do direct DOM manipulation; complex ones (e.g., `scrum-points`, 
 
 In `.vue` files, `<script setup>` always comes before `<template>`.
 
+### Comments
+
+- **Shared utilities** (`src/js/utils.js`, `src/js/BitrixApi.js`, `src/js/patterns.js`, shared UI components): document every exported function and component with JSDoc — `@param`, `@returns`, and a one-line description.
+- **Vue templates and HTML**: no comments. Structural intent should be clear from element names and component composition.
+- **Feature business logic** (`src/js/actions/**`): short inline comments are welcome when they explain a non-obvious constraint, a workaround, or a domain rule — one line max. Skip comments that just restate what the code does.
+
 ### Naming conventions
 
 **Do not abbreviate variable, parameter, or function names.** Use full descriptive names:
@@ -78,12 +85,15 @@ The project uses **Tailwind CSS v4** and the **`tailwindcss-primeui`** plugin. T
 
 Prefer these classes over arbitrary hex values where PrimeVue theme integration is needed.
 
+**No inline `style` attributes.** Style with Tailwind utility classes, preferring `tailwindcss-primeui` theme tokens (`text-primary`, `bg-surface-100`, …) over raw palette classes (`text-amber-500`). Inline `style` is a last resort — only for genuinely dynamic values that can't be a static class (e.g. a color string coming from data: `:style="{ backgroundColor: column.color }"`). Never use inline `style` for static styling that a utility class can express. Remember new utility classes need `npm run build-css`.
+
 ### Critical constraints
 
-- **Do not use `<style>` blocks in Vue components used inside content scripts.** The CRXJS build pipeline injects these into `document.head`, which breaks content script isolation. Use Tailwind utility classes or inject styles via JS instead.
+- **Do not use `<style>` blocks in Vue components used inside content scripts.** The CRXJS build pipeline injects these into `document.head`, which breaks content script isolation. Use Tailwind utility classes or `src/css/content-styles.css` instead. `<style>` blocks work fine in popup and whats-new components.
+- **Global CSS:** `src/css/content-styles.css` — for content scripts; `src/css/app.css` — for the popup and whats-new pages. Avoid `insertCSS` from `utils.js` for static styles — it's for dynamic/runtime cases only. For PrimeVue overrides that PT can't reach (e.g. pseudo-elements), add a class via `:pt="{ root: { class: '...' } }"` and target it in a `<style>` block (popup/whats-new) or in `content-styles.css` (content scripts).
 - **Tailwind CSS is compiled separately** (`build-css` script). New Tailwind utility classes won't hot-reload; run `npm run build-css` after adding new classes.
 - **Update version in `package.json`** before publishing (CRXJS reads it for `manifest.json`).
-- **Toast isolation: always set `group` on `<Toast>` and in every `toast.add()` call.** PrimeVue's `ToastEventBus` is a module-level singleton — all Vue apps on the page share it. Without a `group`, every `<Toast>` component renders every notification. Each app uses its own kebab-case feature name as the group (e.g. `group="quick-task"` on the component, `group: 'quick-task'` in `toast.add({...})`). Not all apps have this applied yet — add it when touching an app's toast calls.
+- **Toast isolation (content scripts only): set `group` on `<Toast>` and in every `toast.add()` call.** PrimeVue's `ToastEventBus` is a module-level singleton shared by every Vue app mounted into the same document. On the Bitrix page multiple feature widgets each mount their own Vue app into one document, so without a `group` every `<Toast>` renders every notification. Each content-script app uses its own kebab-case feature name as the group (e.g. `group="quick-task"` on the component, `group: 'quick-task'` in `toast.add({...})`). Not all content-script apps have this applied yet — add it when touching an app's toast calls. **The popup and whats-new pages are each a single Vue app in their own document, so the group is unnecessary there** — a plain `<Toast />` with groupless `toast.add({...})` is fine.
 
 ### What's new page
 
@@ -91,6 +101,13 @@ On every extension update `src/background/index.js` automatically opens the `wha
 
 - **`src/whats-new/changelog.js`** — array of `{ version, date, items[], images[] }` objects, where each item is `{ type: 'new'|'fix'|'upd', text, optionKey? }`. **Prepend a new entry for every release.**
 - Store images in `public/assets/whats-new/<version>/` and import them via `import.meta.glob` — see existing entries as an example.
+
+### Setup quiz (feature onboarding)
+
+A short wizard that asks the user a few questions and offers matching features to enable. Opens automatically for new users after install and is reachable from the popup (`whats-new.html?setup=1`).
+
+- **`src/whats-new/components/setup-steps.js`** — the quiz config: questions and the feature keys each answer unlocks. `step.features` are offered to everyone who answers the question; `option.features` only when that option is selected.
+- **Wire every new feature into the quiz.** After registering a feature in `src/js/options.js`, add its `key` to the most relevant question or answer option in `setup-steps.js` — otherwise the quiz never surfaces it. Nothing enforces this, same as prepending a changelog entry. If a feature genuinely doesn't belong in onboarding (niche/advanced), mark it `excludeFromSetup: true` in `options.js` instead — that's the only accepted reason for it to be absent from `setup-steps.js`.
 
 ### Reference Vue widget: `scrum-summary`
 
@@ -125,6 +142,7 @@ scrum-summary/
 ### MCP servers
 
 - **b24-dev-mcp** — official Bitrix24 REST API docs. Use `bitrix-search`, `bitrix-method-details`, `bitrix-event-details`, `bitrix-article-details` to look up API methods and events.
+- **primevue-mcp** ([@primevue/mcp](https://primevue.org/mcp/)) — official PrimeVue component docs. Use it to look up component props, events, slots, methods, theming tokens and Pass Through (`pt`) options when building or adjusting Vue widgets. Useful tools: `search_components`, `get_component`, `get_component_props`, `get_component_slots`, `get_component_pt`, `get_usage_example`.
 
 ### Shared utilities
 

@@ -63,6 +63,7 @@ const totalPoints = computed(() => props.tasks.reduce((sum, t) => sum + t.points
         <a
           :href="getTaskUrl(groupId, data.id)"
           target="_top"
+          class="pts-blur"
           :class="{ 'font-bold': highlightIds.includes(String(data.id)) }"
         >
           {{ data.title }}

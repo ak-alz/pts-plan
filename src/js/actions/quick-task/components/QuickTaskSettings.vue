@@ -19,7 +19,7 @@ const isLoading = ref(false);
 
 const form = reactive({
   defaultResponsible: props.initial.defaultResponsible ?? props.currentUserId,
-  defaultAuditors: props.initial.defaultAuditors ?? [],
+  defaultAuditors: props.initial.defaultAuditors ? toRaw(props.initial.defaultAuditors) : [],
   showCommitCheckbox: props.initial.showCommitCheckbox ?? false,
   copyCommitDefault: props.initial.copyCommitDefault ?? false,
   showCreatedTask: props.initial.showCreatedTask ?? false,
@@ -28,7 +28,12 @@ const form = reactive({
 async function save() {
   isLoading.value = true;
   try {
-    await chrome.storage.local.set({[props.settingsStorageKey]: toRaw(form)});
+    await chrome.storage.local.set({
+      [props.settingsStorageKey]: {
+        ...toRaw(form),
+        defaultAuditors: [...form.defaultAuditors],
+      },
+    });
     toast.add({group: 'quick-task', severity: 'success', summary: 'Сохранено', life: 3000});
     emit('success');
   } catch {

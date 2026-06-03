@@ -36,6 +36,7 @@ const totalPoints = computed(() => {
     >
       <template #body="{data}">
         <a
+          class="pts-blur"
           target="_top"
           :href="data.url"
           v-html="data.name"

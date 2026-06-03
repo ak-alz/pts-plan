@@ -1,10 +1,34 @@
 // Типы пунктов: 'new' | 'fix' | 'upd'
 
-function images(glob) {
-  return Object.values(glob);
-}
-
 export default [
+  {
+    version: '2.10.0',
+    date: '2026-06-04',
+    items: [
+      {
+        type: 'new',
+        optionKey: 'kanbanCommitButton',
+        text: 'Кнопка коммита в канбане: на каждой карточке задачи появилась кнопка с иконкой GitHub. Нажмите — и готовое название коммита вида «Название | ID» скопируется в буфер.',
+      },
+      {
+        type: 'new',
+        text: 'Быстрая настройка: расширение задаёт несколько вопросов о том, как вы работаете, и само предлагает подходящие функции. Запускается автоматически при первом открытии, а также в любой момент через кнопку «Помощь» в попапе расширения.',
+      },
+      {
+        type: 'new',
+        text: 'Превью функций: у каждой функции в настройках теперь есть наглядный пример того, как она выглядит в интерфейсе.',
+      },
+      {
+        type: 'new',
+        text: 'Блюр данных для записи экрана: новая галочка размывает важные данные (заголовки задач в канбане, описание задачи, текст уведомлений и чатов), чтобы их не было видно при записи экрана и скриншотах.',
+      },
+      {
+        type: 'upd',
+        optionKey: 'scrumSummary',
+        text: 'Scrum-сводка: если задача для хранения итогов спринтов ещё не настроена, появляется кнопка «Создать шаблон задачи». По клику открывается форма — выберите стадию и наблюдателей, и задача создастся автоматически: с описанием процесса работы по Scrum и шаблонным комментарием итогов спринта.',
+      },
+    ],
+  },
   {
     version: '2.9.3',
     date: '2026-05-28',
@@ -25,7 +49,6 @@ export default [
         text: 'Декомпозиция: два новых режима — карточки (каждая подзадача отдельно) и быстрый (названия задач построчно с общими исполнителем/стадией/наблюдателями).',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.9.3/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.9.2',
@@ -46,7 +69,6 @@ export default [
         text: 'Детали уведомлений: исправлена подсветка — цвет фона сбрасывался из-за ре-рендера Bitrix.',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.9.2/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.9.1',
@@ -108,7 +130,6 @@ export default [
         text: 'Анализ задач, вкладка «Сводка»: новая колонка. «Корневые задачи» — сколько разных родительских задач охвачено за период.',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.9/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.8.0',
@@ -120,7 +141,6 @@ export default [
         text: 'Новый виджет «Анализ задач» в канбане. Суммирует баллы по деревьям задач с учётом всех подзадач любой вложенности. Фильтры: период, исполнитель, статус, группа (текущая или все задачи), сравнение с предыдущим периодом. Клик по строке — список задач с суммой баллов. Четыре вкладки: «Динамика» (график по неделям/месяцам), «Сводка» (таблица со средними, дельтами и распределением; копирование и экспорт CSV), «Топ задач» (топ-10 корневых задач по баллам), «Размеры задач» (гистограмма по размерам). Настройки: период и вкладка по умолчанию, исполнители, разделители копирования и CSV',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.8/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.7.6',
@@ -242,7 +262,6 @@ export default [
         text: 'Поиск по задачам: новая кнопка «Поиск» в канбане — ищет задачи по названию, постановщику, исполнителю, статусу и диапазонам дат создания/изменения. Сортировка и пагинация на фронте',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.7/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.6.1',
@@ -265,7 +284,6 @@ export default [
         text: 'История спринта: новая кнопка «История» в канбане — показывает завершённые задачи за выбранный период с фильтром по исполнителю и сортировкой по баллам',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.6/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.5.2',
@@ -319,7 +337,6 @@ export default [
         text: 'Баннер с котами: добавлен провайдер CATAAS — работает с VPN. Выбор провайдера в настройках',
       },
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.5/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.4.2',
@@ -355,7 +372,6 @@ export default [
       {type: 'upd', optionKey: 'decomposeTask', text: 'Улучшения декомпозиции'},
       {type: 'upd', optionKey: 'removeSystemNotifications', text: 'Расширен список типов уведомлений для удаления'},
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.4/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.3',
@@ -363,7 +379,6 @@ export default [
     items: [
       {type: 'new', optionKey: 'decomposeTask', text: 'Декомпозиция задач — быстрое создание подзадач прямо из карточки задачи'},
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.3/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.2',
@@ -374,7 +389,6 @@ export default [
       {type: 'upd', optionKey: 'scrumPoints', text: 'Отображение участников без задач в спринте'},
       {type: 'fix', optionKey: 'scrumSummary', text: 'Фикс коротких названий колонок в скрам-сводке'},
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.2/*', {eager: true, import: 'default'})),
   },
   {
     version: '2.1',
@@ -398,6 +412,5 @@ export default [
       {type: 'new', optionKey: 'removeNotifications', text: 'Кнопка удаления уведомлений'},
       {type: 'upd', optionKeys: ['userNameColor', 'tagAllColor', 'quoteColor'], text: 'Подсветка упоминаний, цитат и тегов'},
     ],
-    images: images(import.meta.glob('../assets/whats-new/2.0/*', {eager: true, import: 'default'})),
   },
 ];

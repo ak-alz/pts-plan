@@ -5,7 +5,7 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl } from '../../utils.js';
+import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
 import SprintPrioritiesApp from './SprintPrioritiesApp.vue';
 
 export function sprintPriorities(sessionId) {
@@ -19,7 +19,7 @@ export function sprintPriorities(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-sprint-priorities',
+    className: 'js-sprint-priorities pts-actions-bar-btn',
     style: 'order: 6;',
   });
 
@@ -35,4 +35,5 @@ export function sprintPriorities(sessionId) {
   app.directive('ripple', Ripple);
 
   app.mount(appContainer);
+  refreshActionBarButtonGroup();
 }

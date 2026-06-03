@@ -5,7 +5,7 @@ import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, insertCSS } from '../../utils.js';
+import { getGroupIdFromUrl, insertCSS, refreshActionBarButtonGroup } from '../../utils.js';
 import ScrumSummaryApp from './ScrumSummaryApp.vue';
 
 insertCSS(`
@@ -25,7 +25,7 @@ export function scrumSummary(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-scrum-summary',
+    className: 'js-scrum-summary pts-actions-bar-btn',
     style: 'order: 3;',
   });
 
@@ -41,4 +41,5 @@ export function scrumSummary(sessionId) {
   app.directive('ripple', Ripple);
 
   app.mount(appContainer);
+  refreshActionBarButtonGroup();
 }

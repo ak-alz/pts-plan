@@ -13,6 +13,7 @@ const emit = defineEmits(['apply']);
 const importExportJson = ref('');
 const importError = ref('');
 const copyDone = ref(false);
+const resetConfirm = ref(false);
 
 function getOptionsMap() {
   const result = {};
@@ -43,9 +44,10 @@ watch(() => props.visible, async (val) => {
   if (!val) return;
   const all = await chrome.storage.local.get(null);
   const { sessionId: _sessionId, ...exportData } = all;
-  importExportJson.value = JSON.stringify(exportData, null, 2);
+  importExportJson.value = JSON.stringify(exportData, null, 4);
   importError.value = '';
   copyDone.value = false;
+  resetConfirm.value = false;
 }, { immediate: true });
 
 async function copySettings() {
@@ -90,6 +92,11 @@ async function applyImport() {
   }
   emit('apply', data.options ?? {});
 }
+
+async function resetSettings() {
+  await chrome.storage.local.clear();
+  location.reload();
+}
 </script>
 
 <template>
@@ -110,7 +117,7 @@ async function applyImport() {
     >
       {{ importError }}
     </Message>
-    <div class="flex gap-2">
+    <div class="flex gap-2 items-center">
       <Button
         :label="copyDone ? 'Скопировано!' : 'Скопировать'"
         :icon="copyDone ? 'pi pi-check' : 'pi pi-copy'"
@@ -123,6 +130,34 @@ async function applyImport() {
         size="small"
         @click="applyImport"
       />
+      <Button
+        v-if="!resetConfirm"
+        v-tooltip.bottom="'Полностью очистит хранилище расширения без возможности восстановления'"
+        class="ml-auto"
+        label="Сбросить настройки"
+        icon="pi pi-trash"
+        severity="danger"
+        text
+        size="small"
+        @click="resetConfirm = true"
+      />
+      <template v-else>
+        <Button
+          class="ml-auto"
+          label="Да, сбросить"
+          icon="pi pi-trash"
+          severity="danger"
+          size="small"
+          @click="resetSettings"
+        />
+        <Button
+          label="Отмена"
+          severity="secondary"
+          text
+          size="small"
+          @click="resetConfirm = false"
+        />
+      </template>
     </div>
   </div>
 </template>

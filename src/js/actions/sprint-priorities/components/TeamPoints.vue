@@ -29,10 +29,14 @@ defineEmits(['cell-click']);
     :loading="loading"
     data-key="id"
     size="small"
+    sort-field="totalPoints"
+    :sort-order="-1"
+    removable-sort
   >
     <Column
       field="name"
       header="Исполнитель"
+      sortable
     >
       <template #body="{ data }">
         <div class="flex items-center gap-2">

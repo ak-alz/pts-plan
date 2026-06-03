@@ -7,6 +7,7 @@ import {useAutoFill} from '../useAutoFill.js';
 import ColorPicker from './ColorPicker.vue';
 import CommentDemo from './CommentDemo.vue';
 import NotificationDemo from './NotificationDemo.vue';
+import OptionHint from './OptionHint.vue';
 
 const props = defineProps({
   level: {
@@ -27,12 +28,12 @@ const model = defineModel({
 });
 
 const profileKeys = new Set(allOptions.filter(opt => opt.groups?.includes('profile')).map(opt => opt.key));
-const {autoFill, isFetching: autoFillFetching, fetchError: autoFillError} = useAutoFill(model);
+const {autoFill, isFetching: autoFillFetching} = useAutoFill(model);
 
 const style = computed(() => {
   if (!props.level) return null;
 
-  return `padding-left: calc(${props.level * 20}px + var(--spacing));`;
+  return 'padding-left: calc(20px + var(--spacing));';
 });
 
 function flattenOptions(opts) {
@@ -137,7 +138,7 @@ watch(
         />
         <Button
           v-if="profileKeys.has(option.key)"
-          v-tooltip.bottom="autoFillError ? 'Не удалось получить данные' : 'Заполнить автоматически'"
+          v-tooltip.bottom="'Заполнить автоматически'"
           icon="pi pi-download"
           size="small"
           severity="secondary"
@@ -207,10 +208,10 @@ watch(
         v-if="option.new"
         class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-surface-500"
       >new</span>
-      <i
+      <OptionHint
         v-if="option.tip"
-        v-tooltip.bottom="option.tip"
-        class="pi pi-question-circle text-surface-500"
+        :tip="option.tip"
+        :option-key="option.key"
       />
     </div>
     <OptionsTree

@@ -107,7 +107,7 @@ async function saveSettings() {
           :options="users"
           option-label="name"
           option-value="id"
-          placeholder="Из настроек расширения"
+          placeholder="Вы"
           :max-selected-labels="3"
           filter
           filter-placeholder="Поиск"

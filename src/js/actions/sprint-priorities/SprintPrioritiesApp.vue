@@ -20,7 +20,7 @@ const modalOpened = ref(false);
 
 <template>
   <button
-    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round --with-left-icon --with-collapsed-icon"
+    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round --with-left-icon --with-collapsed-icon pts-btn-sprint-priorities"
     type="button"
     title="Приоритеты спринта"
     @click="modalOpened = true"
@@ -33,7 +33,7 @@ const modalOpened = ref(false);
     header="Приоритеты спринта"
     dismissable-mask
     modal
-    :style="{ width: '1100px', maxWidth: '95vw' }"
+    :style="{ maxWidth: '95vw' }"
   >
     <SprintPriorities
       :session-id

@@ -1,14 +1,14 @@
 <script setup>
-import Accordion from 'primevue/accordion';
-import AccordionContent from 'primevue/accordioncontent';
-import AccordionHeader from 'primevue/accordionheader';
-import AccordionPanel from 'primevue/accordionpanel';
-import Galleria from 'primevue/galleria';
+import {Accordion, AccordionContent, AccordionHeader, AccordionPanel, Dialog, Toast} from 'primevue';
 import {onMounted, reactive, ref, toRaw, watch} from 'vue';
 
 import options, {optionTypes} from '../js/options.js';
 import OptionsTree from '../popup/components/OptionsTree.vue';
 import changelog from './changelog.js';
+import ScrumBanner from './components/ScrumBanner.vue';
+import ScrumGuide from './components/ScrumGuide.vue';
+import SetupBanner from './components/SetupBanner.vue';
+import SetupWizard from './components/SetupWizard.vue';
 
 const openVersion = changelog[0]?.version ?? null;
 
@@ -47,9 +47,33 @@ async function saveSettings() {
   await chrome.storage.local.set({options: toRaw(form)});
 }
 
+const setupVisible = ref(false);
+const scrumVisible = ref(false);
+
+function openSetup() {
+  setupVisible.value = true;
+}
+
+function onSetupComplete() {
+  setupVisible.value = false;
+}
+
 onMounted(async () => {
   await loadSettings();
   watch(form, saveSettings, {deep: true});
+
+  // Новый юзер (после install) и кнопка из попапа ведут сюда с ?setup=1 — сразу открываем быструю настройку.
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('setup') === '1') {
+    setupVisible.value = true;
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+
+  if (params.get('scrum') === '1') {
+    scrumVisible.value = true;
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+
 });
 
 function formatDate(dateStr) {
@@ -68,25 +92,12 @@ const badgeLabels = {
   upd: 'UPD',
 };
 
-const activeIndexMap = reactive({});
-const fullscreenVisible = ref(false);
-const fullscreenImages = ref([]);
-const fullscreenActiveIndex = ref(0);
-
-function openFullscreen(images, version, index = null) {
-  fullscreenImages.value = images;
-  fullscreenActiveIndex.value = index ?? activeIndexMap[version] ?? 0;
-  fullscreenVisible.value = true;
-}
-
 function resolvedOptions(item) {
   const keys = item.optionKeys ?? (item.optionKey ? [item.optionKey] : []);
   return keys.map(k => optionsByKey[k]).filter(Boolean);
 }
 
-function onFullscreenMaskClick(e) {
-  if (e.target === e.currentTarget) fullscreenVisible.value = false;
-}
+
 </script>
 
 <template>
@@ -126,105 +137,79 @@ function onFullscreenMaskClick(e) {
       >GitHub</a> — PR приветствуются!
     </p>
 
-    <Accordion :value="openVersion">
-      <AccordionPanel
-        v-for="entry in changelog"
-        :key="entry.version"
-        :value="entry.version"
-      >
-        <AccordionHeader>
-          <span class="font-semibold">v{{ entry.version }}</span>
-          <span class="ml-2.5 text-xs text-slate-400 font-normal">{{ formatDate(entry.date) }}</span>
-        </AccordionHeader>
-        <AccordionContent>
-          <div class="grid grid-cols-[3fr_2fr] gap-6 items-start">
-            <ul class="m-0 p-0 list-none flex flex-col gap-4">
-              <li
-                v-for="(item, i) in entry.items"
-                :key="i"
-                class="flex flex-col gap-1.5"
-              >
-                <div class="flex items-baseline gap-2 text-[14px] text-slate-700">
-                  <span
-                    class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none min-w-[34px] text-center"
-                    :class="badgeClasses[item.type]"
-                  >{{ badgeLabels[item.type] }}</span>
-                  {{ item.text }}
-                </div>
-                <div
-                  v-if="resolvedOptions(item).length"
-                  class="ml-[42px] rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2"
+    <div class="flex gap-8 items-start">
+      <div class="flex-1 min-w-0">
+        <Accordion :value="openVersion">
+          <AccordionPanel
+            v-for="entry in changelog"
+            :key="entry.version"
+            :value="entry.version"
+          >
+            <AccordionHeader>
+              <span class="font-semibold">v{{ entry.version }}</span>
+              <span class="ml-2.5 text-xs text-slate-400 font-normal">{{ formatDate(entry.date) }}</span>
+            </AccordionHeader>
+            <AccordionContent>
+              <ul class="m-0 p-0 list-none flex flex-col gap-4">
+                <li
+                  v-for="(item, i) in entry.items"
+                  :key="i"
+                  class="flex flex-col gap-1.5"
                 >
-                  <OptionsTree
-                    v-model="form"
-                    :options="resolvedOptions(item)"
-                  />
-                </div>
-              </li>
-            </ul>
-            <Galleria
-              v-if="entry.images?.length"
-              :value="entry.images"
-              :active-index="activeIndexMap[entry.version] ?? 0"
-              :num-visible="5"
-              show-item-navigators
-              circular
-              :show-thumbnails="entry.images.length > 1"
-              :show-thumbnail-navigators="false"
-              @update:active-index="activeIndexMap[entry.version] = $event"
-            >
-              <template #item="{ item }">
-                <div
-                  class="relative w-full aspect-video cursor-zoom-in"
-                  @click="openFullscreen(entry.images, entry.version)"
-                >
-                  <img
-                    :src="item"
-                    alt="Скриншот"
-                    class="absolute inset-0 w-full h-full object-contain rounded-lg"
+                  <div class="flex items-baseline gap-2 text-[14px] text-slate-700">
+                    <span
+                      class="shrink-0 rounded px-1 py-0.5 text-[10px] font-bold leading-none min-w-[34px] text-center"
+                      :class="badgeClasses[item.type]"
+                    >{{ badgeLabels[item.type] }}</span>
+                    {{ item.text }}
+                  </div>
+                  <div
+                    v-if="resolvedOptions(item).length"
+                    class="ml-[42px] rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2"
                   >
-                </div>
-              </template>
-              <template #thumbnail="{ item, index }">
-                <img
-                  :src="item"
-                  alt="Скриншот"
-                  class="w-16 h-10 object-cover rounded cursor-zoom-in"
-                  @click="openFullscreen(entry.images, entry.version, index)"
-                >
-              </template>
-            </Galleria>
-          </div>
-        </AccordionContent>
-      </AccordionPanel>
-    </Accordion>
+                    <OptionsTree
+                      v-model="form"
+                      :options="resolvedOptions(item)"
+                    />
+                  </div>
+                </li>
+              </ul>
+            </AccordionContent>
+          </AccordionPanel>
+        </Accordion>
+      </div>
+
+      <div class="w-52 shrink-0 sticky top-6 flex flex-col gap-3">
+        <SetupBanner @open="openSetup" />
+        <ScrumBanner @open="scrumVisible = true" />
+      </div>
+    </div>
   </div>
 
-  <Galleria
-    v-model:visible="fullscreenVisible"
-    v-model:active-index="fullscreenActiveIndex"
-    :value="fullscreenImages"
-    :num-visible="5"
-    full-screen
-    show-item-navigators
-    circular
-    :show-thumbnails="fullscreenImages.length > 1"
-    :show-thumbnail-navigators="false"
-    :pt="{ mask: { onClick: onFullscreenMaskClick } }"
+  <Dialog
+    v-model:visible="scrumVisible"
+    header="Scrum в Пиксель Тулс"
+    :draggable="false"
+    modal
+    :style="{ width: '900px' }"
+    :breakpoints="{ '900px': '95vw' }"
   >
-    <template #item="{ item }">
-      <img
-        :src="item"
-        alt="Скриншот"
-        class="max-h-[90vh] max-w-[90vw] object-contain"
-      >
-    </template>
-    <template #thumbnail="{ item }">
-      <img
-        :src="item"
-        alt="Скриншот"
-        class="w-16 h-10 object-cover rounded"
-      >
-    </template>
-  </Galleria>
+    <ScrumGuide v-model="form" />
+  </Dialog>
+
+  <Dialog
+    v-model:visible="setupVisible"
+    header="Быстрая настройка"
+    :draggable="false"
+    modal
+    :style="{ width: '800px' }"
+    :breakpoints="{ '800px': '95vw' }"
+  >
+    <SetupWizard
+      v-model="form"
+      @complete="onSetupComplete"
+    />
+  </Dialog>
+
+  <Toast position="bottom-right" />
 </template>

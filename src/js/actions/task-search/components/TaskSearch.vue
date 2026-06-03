@@ -505,6 +505,7 @@ function formatDate(dateStr) {
         >
           <template #body="{ data }">
             <a
+              class="pts-blur"
               :href="getTaskUrl(data.groupId, data.id)"
               target="_top"
             >

@@ -1,6 +1,6 @@
 <script setup>
 import { debounce } from 'lodash-es';
-import { Button, Dialog, IconField, InputIcon, InputText, SelectButton } from 'primevue';
+import { Button, Dialog, IconField, InputIcon, InputText, SelectButton, Toast } from 'primevue';
 import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue';
 
 import options, { groups, optionTypes } from '../js/options.js';
@@ -117,6 +117,14 @@ function openWhatsNew() {
   chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
 }
 
+function openSetup() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?setup=1') });
+}
+
+function openScrumGuide() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?scrum=1') });
+}
+
 onMounted(() => {
   loadSettings();
 });
@@ -169,7 +177,7 @@ onMounted(() => {
       </div>
 
       <div class="grow min-h-0 flex gap-3">
-        <div class="bg-surface-100">
+        <div class="bg-surface-100 flex flex-col">
           <SelectButton
             v-model="selectedGroup"
             :options="groupOptions"
@@ -184,6 +192,24 @@ onMounted(() => {
               <span v-tooltip.right="option.tooltip">{{ option.label }}</span>
             </template>
           </SelectButton>
+          <div class="mt-auto p-2 flex flex-col gap-1">
+            <Button
+              label="Помощь"
+              size="small"
+              severity="secondary"
+              outlined
+              fluid
+              @click="openSetup"
+            />
+            <Button
+              label="Scrum"
+              size="small"
+              severity="secondary"
+              outlined
+              fluid
+              @click="openScrumGuide"
+            />
+          </div>
         </div>
 
         <div class="grow flex flex-col gap-2 min-h-0 overflow-auto">
@@ -255,6 +281,9 @@ onMounted(() => {
         >Пиксель План 24</a>.
       </p>
       <p>
+        Расширение работает полностью в вашем браузере: оно не собирает, не хранит и никому не передаёт ваши данные — всё остаётся локально на вашем устройстве.
+      </p>
+      <p>
         Исходный код полностью открыт на GitHub - приветствуются предложения, issues и pull requests!
       </p>
       <p>
@@ -275,6 +304,13 @@ onMounted(() => {
           target="_blank"
         >CRX</a>, PrimeVue, Tailwind.
       </p>
+      <p>
+        Расширение развивается с поддержкой <a
+          class="underline"
+          href="https://claude.ai"
+          target="_blank"
+        >Claude</a> от Anthropic.
+      </p>
       <a
         class="mt-1"
         href="https://github.com/ak-alz/pts-plan"
@@ -284,6 +320,8 @@ onMounted(() => {
       </a>
     </div>
   </Dialog>
+
+  <Toast position="bottom-right" />
 </template>
 
 <style scoped>

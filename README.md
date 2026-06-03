@@ -43,6 +43,19 @@ npm run build
 * Не забывайте менять версию расширения в `package.json`
 * После каждого обновления автоматически открывается страница «Что нового». Перед релизом добавьте новый объект в начало массива в `src/whats-new/changelog.js` с полями `version`, `date`, `description`, `images`. Изображения кладите в `public/assets/whats-new/`.
 
+### Превью фич (WebM)
+
+Превью для подсказок опций и страницы настройки лежат в `src/assets/setup/`. Имя файла = ключ фичи из `options.js` (например, `taskSearch.webm`).
+
+Перед добавлением сжимай видео через ffmpeg — двухпроходное кодирование VP9, масштаб 300px, 20 fps:
+
+```bash
+ffmpeg -i input.mp4 -c:v libvpx-vp9 -crf 42 -b:v 0 -vf "fps=20,scale=300:-2:flags=lanczos" -an -pass 1 -f null /dev/null
+ffmpeg -i input.mp4 -c:v libvpx-vp9 -crf 42 -b:v 0 -vf "fps=20,scale=300:-2:flags=lanczos" -an -pass 2 output.webm
+```
+
+Параметры: `-crf 42` — качество (33–50, выше = меньше файл), `-an` — без звука, `scale=300:-2` — ширина 300px с автовысотой. Типичный результат — 40–400 КБ на 15–30 секунд.
+
 ### Линтеры
 
 > ⚠️ Включи в своём IDE

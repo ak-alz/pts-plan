@@ -204,6 +204,7 @@ export default class BitrixApi {
    * @param {string|number} taskId
    * @param {Record<string, any>} fields — объект с полями задачи, например { TITLE: 'Новое название' }
    */
+  // Только скалярные поля — для массивов нужен params.append(`fields[KEY][]`, v) как в addTask
   updateTask(taskId, fields) {
     const params = new URLSearchParams({
       sessid: this.sessionId,
@@ -390,6 +391,21 @@ export default class BitrixApi {
     return axios.postForm('https://plan.pixelplus.ru/rest/user.current.json', {
       sessid: this.sessionId,
     }).then(({data}) => data?.result ?? null);
+  }
+
+  /**
+   * Добавляет комментарий к задаче.
+   * @param {string|number} taskId
+   * @param {string} text
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  addComment(taskId, text) {
+    const params = new URLSearchParams({
+      sessid: this.sessionId,
+      TASKID: taskId,
+      'FIELDS[POST_MESSAGE]': text,
+    });
+    return axios.post('/rest/task.commentitem.add.json', params);
   }
 
   searchTasksByFulltext(query) {

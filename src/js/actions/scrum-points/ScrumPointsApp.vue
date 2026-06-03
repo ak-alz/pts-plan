@@ -70,6 +70,24 @@ const isInfoModalOpened = ref(false);
   <Toast
     group="scrum-points"
     position="bottom-right"
-  />
+  >
+    <template #message="{ message }">
+      <div class="flex flex-col gap-1 flex-1">
+        <span class="p-toast-summary">{{ message.summary }}</span>
+        <div
+          v-if="message.commentUrl || message.detail"
+          class="p-toast-detail"
+        >
+          <a
+            v-if="message.commentUrl"
+            :href="message.commentUrl"
+            target="_blank"
+            rel="noopener"
+          >Открыть комментарий</a>
+          <span v-else>{{ message.detail }}</span>
+        </div>
+      </div>
+    </template>
+  </Toast>
 </template>
 
