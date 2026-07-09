@@ -7,7 +7,7 @@ import {
   TAGALL_NAMED_RE,
   TAGALL_STATUS_RE,
 } from '../../patterns.js';
-import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, stringToPastelColor} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, stringToPastelColor, triggerScrollLoadMore} from '../../utils.js';
 import {NOTIF_TYPES} from './notifTypes.js';
 
 const SELECTORS = {
@@ -17,11 +17,72 @@ const SELECTORS = {
   taskLink: 'a[href*="/tasks/task/view/"]',
   titleContainer: '.bx-im-content-notification-item-header__title-container',
   contentText: '.bx-im-content-notification-item-content__content-text',
+  notifHeader: '.bx-im-content-notification__header',
+  headerButtonsContainer: '.bx-im-content-notification__header-buttons-container',
 };
 
 // Канонический токен, на который заменяется tagall-фраза (для детекции и для жирной метки в тексте)
 const TAGALL_TOKEN = 'TAGALL';
 const DEFAULT_STAGE_COLOR = '#888888';
+
+// Сколько подходящих под фильтр карточек стараемся догрузить, прежде чем остановиться
+const FILTER_LOAD_MORE_TARGET = 10;
+// Защита от бесконечной подгрузки, если у выбранной группы никогда не наберётся столько уведомлений
+const FILTER_LOAD_MORE_MAX_ATTEMPTS = 30;
+
+const FILTER_BAR_CSS = `
+  .pts-nd-filter-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+    padding: 0 8px;
+  }
+  .pts-nd-filter-select {
+    flex: 1 1 100px;
+    min-width: 0;
+    max-width: 150px;
+    height: 26px;
+    padding: 0 6px;
+    border: 1px solid #d5dade;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 12px;
+    color: #333;
+    cursor: pointer;
+  }
+  .pts-nd-filter-select:hover {
+    border-color: #adb4bc;
+  }
+  .pts-nd-filter-select:focus-visible {
+    outline: 2px solid #a7c7e7;
+    outline-offset: -1px;
+  }
+  .pts-nd-filter-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid #d5dade;
+    border-radius: 6px;
+    background: #fff;
+    color: #828b95;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pts-nd-filter-reset:hover {
+    border-color: #adb4bc;
+    color: #3a3d42;
+  }
+  .pts-nd-filter-reset[hidden] {
+    display: none;
+  }
+`;
 
 const BASE_CSS = `
   .bx-im-content-notification-item-header__title-container {
@@ -175,6 +236,7 @@ export function notificationDetails(sessionId, options = {}) {
   const bitrixApi = new BitrixApi(sessionId);
 
   const flags = {
+    filter: !!options.notificationDetailsFilter,
     dim: !!options.notificationDetailsDim,
     highlight: !!(options.notificationDetailsHighlight && options.userId),
     highlightCreator: !!(options.notificationDetailsHighlightCreator && options.userId),
@@ -183,6 +245,7 @@ export function notificationDetails(sessionId, options = {}) {
     highlightTagallStatus: !!options.notificationDetailsHighlightTagallStatus,
     compact: !!options.notificationDetailsCompact,
     transformText: !!options.notificationDetailsTransformText,
+    hideChips: !!options.notificationDetailsHideChips,
   };
 
   const userId = options.userId ? String(options.userId) : null;
@@ -208,7 +271,236 @@ export function notificationDetails(sessionId, options = {}) {
     stageGroups: new Set(), // groupId, для которых стадии уже загружены
   };
 
+  const FILTER_STYLE_ID = 'pts-nd-active-filters';
+  const FILTER_STATE_STORAGE_KEY = 'notification-details-filter';
+  let selectedGroupId = '';
+  let selectedHighlightAttribute = '';
+  let filterLoadMoreAttempts = 0;
+  let filterStateLoaded = false;
+
+  function createOption(value, label) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    return option;
+  }
+
+  // Загружается один раз за время жизни страницы, до первой отрисовки фильтр-бара — благодаря
+  // этому последний выбор пользователя (группа/тип) применяется сразу, как только для него
+  // появится подходящая опция в списке (см. groupSelect.value/highlightSelect.value ниже)
+  async function loadSavedFilterState() {
+    if (filterStateLoaded) return;
+    filterStateLoaded = true;
+
+    const stored = await chrome.storage.local.get([FILTER_STATE_STORAGE_KEY]);
+    const savedState = stored[FILTER_STATE_STORAGE_KEY];
+    if (!savedState) return;
+
+    selectedGroupId = savedState.groupId ?? '';
+    selectedHighlightAttribute = savedState.highlightAttribute ?? '';
+  }
+
+  function saveFilterState() {
+    chrome.storage.local.set({
+      [FILTER_STATE_STORAGE_KEY]: {
+        groupId: selectedGroupId,
+        highlightAttribute: selectedHighlightAttribute,
+      },
+    });
+  }
+
+  function injectFilterUI() {
+    if (!flags.filter) return;
+
+    const header = document.querySelector(SELECTORS.notifHeader);
+    if (!header || header.querySelector('.pts-nd-filter-bar')) return;
+
+    const buttonsContainer = header.querySelector(SELECTORS.headerButtonsContainer);
+    if (!buttonsContainer) return;
+
+    const filterBar = document.createElement('div');
+    filterBar.className = 'pts-nd-filter-bar';
+
+    const groupSelect = document.createElement('select');
+    groupSelect.className = 'pts-nd-filter-select pts-nd-group-select';
+    groupSelect.appendChild(createOption('', 'Все группы'));
+    groupSelect.addEventListener('change', (event) => {
+      selectedGroupId = event.target.value;
+      filterLoadMoreAttempts = 0;
+      applyFilters();
+      saveFilterState();
+      maybeTriggerFilterLoadMore(document.querySelector(SELECTORS.container));
+    });
+    filterBar.appendChild(groupSelect);
+
+    let highlightSelect = null;
+
+    // Селект типов имеет смысл, только если хотя бы одна подсветка включена в настройках —
+    // иначе он всегда останется пустым (data-атрибуты подсветки не расставляются вовсе, см. renderItem)
+    if (HIGHLIGHT_ICONS.some((item) => item.enabled)) {
+      highlightSelect = document.createElement('select');
+      highlightSelect.className = 'pts-nd-filter-select pts-nd-highlight-select';
+      highlightSelect.appendChild(createOption('', 'Все типы'));
+      highlightSelect.addEventListener('change', (event) => {
+        selectedHighlightAttribute = event.target.value;
+        filterLoadMoreAttempts = 0;
+        applyFilters();
+        saveFilterState();
+        maybeTriggerFilterLoadMore(document.querySelector(SELECTORS.container));
+      });
+      filterBar.appendChild(highlightSelect);
+    } else if (selectedHighlightAttribute) {
+      // Ни одна подсветка не включена — сам селект типов не создаётся, значит восстановленный
+      // выбор типа применить/показать нечем. Сбрасываем, иначе он "невидимо" отфильтрует всё
+      // подряд без возможности вернуть его обратно через UI
+      selectedHighlightAttribute = '';
+      saveFilterState();
+    }
+
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.className = 'pts-nd-filter-reset';
+    resetButton.title = 'Сбросить фильтры';
+    resetButton.innerHTML = '<i class="pi pi-filter-slash"></i>';
+    resetButton.addEventListener('click', () => {
+      selectedGroupId = '';
+      selectedHighlightAttribute = '';
+      filterLoadMoreAttempts = 0;
+      groupSelect.value = '';
+      if (highlightSelect) highlightSelect.value = '';
+      applyFilters();
+      saveFilterState();
+    });
+    filterBar.appendChild(resetButton);
+
+    header.insertBefore(filterBar, buttonsContainer);
+
+    // selectedGroupId/selectedHighlightAttribute не сбрасываем — к этому моменту в них уже может
+    // лежать восстановленный chrome.storage.local выбор (см. loadSavedFilterState в init()).
+    // Вызывается только после insertBefore — applyFilters() ищет resetButton через
+    // document.querySelector, а до вставки filterBar в документ он там не найдётся
+    applyFilters();
+  }
+
+  // Каждое условие — своя CSS-инструкция display:none, а не одна объединённая: карточка видна,
+  // только если не спряталась ни по одному из активных фильтров (эффективно работает как AND).
+  // Единая точка входа для любого изменения selectedGroupId/selectedHighlightAttribute — заодно
+  // держит видимость кнопки сброса в актуальном состоянии, без отдельных вызовов по всем местам
+  function applyFilters() {
+    const rules = [];
+    if (selectedGroupId) {
+      rules.push(`.bx-im-content-notification-item__container:not([data-pts-group="${selectedGroupId}"]) { display: none !important; }`);
+    }
+    if (selectedHighlightAttribute) {
+      rules.push(`.bx-im-content-notification-item__container:not([${selectedHighlightAttribute}]) { display: none !important; }`);
+    }
+
+    const resetButton = document.querySelector('.pts-nd-filter-reset');
+    if (resetButton) resetButton.hidden = !rules.length;
+
+    if (!rules.length) {
+      document.getElementById(FILTER_STYLE_ID)?.remove();
+      return;
+    }
+
+    let styleElement = document.getElementById(FILTER_STYLE_ID);
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = FILTER_STYLE_ID;
+      document.head.appendChild(styleElement);
+    }
+    styleElement.textContent = rules.join('\n');
+  }
+
+  // selectedGroupId/selectedHighlightAttribute — источник истины для того, что реально выбрано
+  // (могли быть восстановлены из chrome.storage.local ещё до того, как список вообще успел
+  // построиться в первый раз), поэтому синхронизация всегда идёт от них к <select>, а не наоборот.
+  // Счётчик — по реально отрендеренным карточкам в DOM (data-pts-group), а не по числу уникальных
+  // задач в cache.tasks: одна задача может дать несколько уведомлений (комментарий, реакция и
+  // т.д.), и при подсчёте по задачам счётчик группы переставал расти после дозагрузки новых
+  // уведомлений по уже виденным задачам — притом что реальный список продолжал пополняться
+  function updateGroupFilterOptions(container) {
+    const groupSelect = document.querySelector('.pts-nd-group-select');
+    if (!groupSelect) return;
+
+    const groupCounts = new Map();
+    container.querySelectorAll('[data-pts-details="done"][data-pts-group]').forEach((element) => {
+      const groupId = element.getAttribute('data-pts-group');
+      if (!groupId || groupId === '0') return;
+      groupCounts.set(groupId, (groupCounts.get(groupId) ?? 0) + 1);
+    });
+
+    // Текущий выбор остаётся в списке, даже если для него пока (или уже) нет ни одной карточки —
+    // иначе <select> не сможет отразить фактически активный фильтр и застрянет на "Все группы"
+    // визуально, при том что список по факту пуст, а вернуть выбор в "Все группы" будет нечем:
+    // повторный выбор уже видимого пункта не генерирует событие change
+    if (selectedGroupId && !groupCounts.has(selectedGroupId)) {
+      groupCounts.set(selectedGroupId, 0);
+    }
+
+    groupSelect.innerHTML = '';
+    groupSelect.appendChild(createOption('', 'Все группы'));
+
+    [...groupCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([groupId, count]) => {
+        const group = cache.groups.get(groupId);
+        const groupName = group?.NAME ?? `Группа #${groupId}`;
+        groupSelect.appendChild(createOption(groupId, `${groupName} (${count})`));
+      });
+
+    if (selectedGroupId) groupSelect.value = selectedGroupId;
+  }
+
+  // Типы, как и группы выше, считаются прямо по DOM — не накапливаются в отдельном кэше, а
+  // проставляются как data-атрибуты уже на отрендеренных карточках
+  function updateHighlightFilterOptions(container) {
+    const highlightSelect = document.querySelector('.pts-nd-highlight-select');
+    if (!highlightSelect) return;
+
+    highlightSelect.innerHTML = '';
+    highlightSelect.appendChild(createOption('', 'Все типы'));
+
+    HIGHLIGHT_ICONS.forEach((item) => {
+      const isSelected = item.attribute === selectedHighlightAttribute;
+      // Показываем только включённые в настройках подсветки — кроме уже выбранной (см. комментарий
+      // про selectedGroupId выше — та же причина: иначе выбор станет невозвратным через сам select)
+      if (!item.enabled && !isSelected) return;
+
+      const count = container.querySelectorAll(`[${item.attribute}]`).length;
+      if (!count && !isSelected) return;
+
+      highlightSelect.appendChild(createOption(item.attribute, `${item.label} (${count})`));
+    });
+
+    if (selectedHighlightAttribute) highlightSelect.value = selectedHighlightAttribute;
+  }
+
+  function countMatchingVisibleItems(container) {
+    const requiredAttributes = [
+      selectedGroupId && `[data-pts-group="${selectedGroupId}"]`,
+      selectedHighlightAttribute && `[${selectedHighlightAttribute}]`,
+    ].filter(Boolean).join('');
+
+    return container.querySelectorAll(`[data-pts-details="done"]${requiredAttributes}`).length;
+  }
+
+  // Пока по активным фильтрам видно меньше FILTER_LOAD_MORE_TARGET карточек — просим Bitrix
+  // догрузить ещё уведомлений (см. triggerScrollLoadMore в utils.js). Уже загруженные новые
+  // карточки проходят через обычный rehydrateOnChanges → init(), который вызовет эту функцию
+  // снова — отдельный цикл ожидания не нужен, он сам продолжится по мутациям DOM либо
+  // остановится, когда Bitrix перестанет присылать новые уведомления (реальный конец истории)
+  function maybeTriggerFilterLoadMore(container) {
+    if (!container || (!selectedGroupId && !selectedHighlightAttribute)) return;
+    if (filterLoadMoreAttempts >= FILTER_LOAD_MORE_MAX_ATTEMPTS) return;
+    if (countMatchingVisibleItems(container) >= FILTER_LOAD_MORE_TARGET) return;
+
+    filterLoadMoreAttempts += 1;
+    triggerScrollLoadMore(container);
+  }
+
   function injectStyles() {
+    if (flags.filter) insertCSS(FILTER_BAR_CSS);
     insertCSS(BASE_CSS);
 
     if (flags.compact) insertCSS(COMPACT_CSS);
@@ -263,13 +555,24 @@ export function notificationDetails(sessionId, options = {}) {
 
     const tasks = taskIds.map((id) => cache.tasks.get(id)).filter(Boolean);
 
-    const groupIds = [...new Set(tasks.map((task) => task.groupId).filter((id) => id && id !== '0'))];
-    const userIds = [...new Set(
-      tasks.flatMap((task) => [task.responsibleId, task.createdBy]).filter((id) => id && id !== '0'),
-    )];
+    // Группы/стадии/пользователи нужны только для чипов (плюс группы — ещё и для подписей
+    // в фильтре). Если чипы скрыты, эти batch-запросы пропускаем — они больше ни на что не влияют
+    const needsGroups = !flags.hideChips || flags.filter;
+    const needsStagesAndUsers = !flags.hideChips;
+
+    const groupIds = needsGroups
+      ? [...new Set(tasks.map((task) => task.groupId).filter((id) => id && id !== '0'))]
+      : [];
+    const userIds = needsStagesAndUsers
+      ? [...new Set(
+        tasks.flatMap((task) => [task.responsibleId, task.createdBy]).filter((id) => id && id !== '0'),
+      )]
+      : [];
 
     const uncachedGroupIds = groupIds.filter((id) => !cache.groups.has(id));
-    const uncachedStageGroupIds = groupIds.filter((id) => !cache.stageGroups.has(id));
+    const uncachedStageGroupIds = needsStagesAndUsers
+      ? groupIds.filter((id) => !cache.stageGroups.has(id))
+      : [];
     const uncachedUserIds = userIds.filter((id) => !cache.users.has(id));
 
     await Promise.all([
@@ -481,6 +784,8 @@ export function notificationDetails(sessionId, options = {}) {
     const task = cache.tasks.get(taskId);
     if (!task) return;
 
+    el.setAttribute('data-pts-group', task.groupId || '0');
+
     const {notifText, hasQuote, rawText} = extractNotifText(el);
     const isReaction = NOTIF_REACTION_RE.test(notifText);
     const isTagall = notifText.includes(TAGALL_TOKEN) && !isReaction;
@@ -509,7 +814,7 @@ export function notificationDetails(sessionId, options = {}) {
 
     const highlight = getHighlightMatch(el);
     renderHighlightIcon(el, highlight);
-    renderChips(el, task, matchedTypes, highlight);
+    if (!flags.hideChips) renderChips(el, task, matchedTypes, highlight);
 
     if (flags.transformText) applyTextTransform(el, options.userFirstName, options.userLastName);
   }
@@ -518,18 +823,28 @@ export function notificationDetails(sessionId, options = {}) {
     const container = document.querySelector(SELECTORS.container);
     if (!container) return;
 
-    const items = collectNewItems(container);
-    if (!items.length) return;
+    if (flags.filter) await loadSavedFilterState();
 
-    try {
-      await loadDetails(items.map((item) => item.taskId));
-      items.forEach(renderItem);
-    } catch {
-      items.forEach(({el, skeleton}) => {
-        skeleton.remove();
-        el.setAttribute('data-pts-details', 'error');
-      });
+    injectFilterUI();
+
+    const items = collectNewItems(container);
+    if (items.length) {
+      try {
+        await loadDetails(items.map((item) => item.taskId));
+        items.forEach(renderItem);
+        updateGroupFilterOptions(container);
+        updateHighlightFilterOptions(container);
+      } catch {
+        items.forEach(({el, skeleton}) => {
+          skeleton.remove();
+          el.setAttribute('data-pts-details', 'error');
+        });
+      }
     }
+
+    // Проверяем даже когда новых карточек не было — например, сразу после выбора фильтра
+    // или когда предыдущая попытка подгрузки ничего не добавила (см. maybeTriggerFilterLoadMore)
+    maybeTriggerFilterLoadMore(container);
   }
 
   injectStyles();

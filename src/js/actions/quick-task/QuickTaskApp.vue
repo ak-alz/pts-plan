@@ -1,7 +1,8 @@
 <script setup>
-import {Dialog, Toast} from 'primevue';
+import {Dialog} from 'primevue';
 import {onMounted, onUnmounted, ref} from 'vue';
 
+import PtsToast from '../../ui/PtsToast.vue';
 import QuickTask from './components/QuickTask.vue';
 
 defineProps({
@@ -38,25 +39,5 @@ onUnmounted(() => document.removeEventListener('pts:quick-task:open', handleOpen
     />
   </Dialog>
 
-  <Toast
-    group="quick-task"
-    position="bottom-right"
-  >
-    <template #message="{ message }">
-      <div class="flex flex-col gap-1 flex-1">
-        <span class="p-toast-summary">{{ message.summary }}</span>
-        <div
-          v-if="message.detail"
-          class="p-toast-detail"
-        >
-          <a
-            v-if="message.taskUrl"
-            :href="message.taskUrl"
-            target="_blank"
-            rel="noopener"
-          >{{ message.taskTitle }}</a>
-        </div>
-      </div>
-    </template>
-  </Toast>
+  <PtsToast group="quick-task" />
 </template>

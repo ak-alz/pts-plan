@@ -314,7 +314,7 @@ async function fetchTasksData() {
       group: 'sprint-priorities',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${error.message}`,
+      detail: error.message,
       life: 5000,
     });
   } finally {
@@ -408,7 +408,7 @@ async function fetchTeamPoints() {
       group: 'sprint-priorities',
       severity: 'error',
       summary: 'Ошибка загрузки баллов',
-      detail: `[pts-plan]: ${error.message}`,
+      detail: error.message,
       life: 5000,
     });
   } finally {
@@ -429,7 +429,7 @@ async function fetchSheetRows() {
       group: 'sprint-priorities',
       severity: 'error',
       summary: 'Ошибка загрузки таблицы',
-      detail: `[pts-plan]: ${error.message}`,
+      detail: error.message,
       life: 5000,
     });
   } finally {

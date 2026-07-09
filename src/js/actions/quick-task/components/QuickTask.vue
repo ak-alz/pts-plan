@@ -91,6 +91,10 @@ async function submit() {
     toast.add({group: 'quick-task', severity: 'warn', summary: 'Выберите стадию', life: 3000});
     return;
   }
+  if (!form.responsibleId) {
+    toast.add({group: 'quick-task', severity: 'warn', summary: 'Выберите исполнителя', life: 3000});
+    return;
+  }
   isSubmitting.value = true;
   try {
     const fields = {TITLE: title, GROUP_ID: props.groupId};
@@ -115,9 +119,7 @@ async function submit() {
       group: 'quick-task',
       severity: 'success',
       summary: 'Задача создана',
-      detail: true,
-      taskUrl,
-      taskTitle: title,
+      links: taskUrl ? [{ url: taskUrl, label: title }] : undefined,
       life: taskUrl ? 8000 : 3000,
     });
     emit('success');
@@ -171,7 +173,6 @@ async function submit() {
           :loading="isLoadingData"
           filter
           filter-placeholder="Поиск"
-          show-clear
           fluid
           placeholder="Выбрать"
         >
@@ -196,7 +197,6 @@ async function submit() {
           option-label="title"
           :options="stages"
           :loading="isLoadingData"
-          show-clear
           fluid
           placeholder="Выбрать"
         >

@@ -1,7 +1,8 @@
 <script setup>
-import { Button, Dialog, Toast } from 'primevue';
+import { Button, Dialog } from 'primevue';
 import { ref } from 'vue';
 
+import PtsToast from '../../ui/PtsToast.vue';
 import TaskAnalysis from './components/TaskAnalysis.vue';
 
 defineProps({
@@ -71,8 +72,5 @@ const isInfoModalOpened = ref(false);
     </div>
   </Dialog>
 
-  <Toast
-    group="task-analysis"
-    position="bottom-right"
-  />
+  <PtsToast group="task-analysis" />
 </template>

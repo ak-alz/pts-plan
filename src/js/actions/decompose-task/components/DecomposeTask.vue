@@ -2,9 +2,10 @@
 import { jsonrepair } from 'jsonrepair';
 import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, InputGroup, MultiSelect, Password, Select, SelectButton, Textarea } from 'primevue';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { useAiJob } from '../../../composables/useAiJob.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import { getCommitMessage, getTaskUrl } from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
@@ -71,12 +72,22 @@ async function onAiContextInput(e) {
   await chrome.storage.local.set({[aiContextStorageKey.value]: aiContext.value});
 }
 
-const aiLoading = ref(false);
-const aiProgress = ref(null);
-const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI декомпозиция (${aiProgress.value}%)` : 'AI декомпозиция');
-
 const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
+
+const aiJob = useAiJob(() => `decompose-task-ai-job-${props.taskId}`, {
+  group: 'decompose-task',
+  onAuthError: () => { isApiKeyModalOpened.value = true; },
+});
+const aiLoading = aiJob.loading;
+const aiProgress = aiJob.progress;
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI декомпозиция (${aiProgress.value}%)` : 'AI декомпозиция');
+const formElement = ref(null);
+
+async function scrollToRows() {
+  await nextTick();
+  formElement.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 async function saveApiKey() {
   const key = apiKeyInputValue.value.trim();
@@ -211,7 +222,7 @@ async function submit(overrideRows) {
     });
 
     const createdTasks = taskRows
-      .map((row, i) => createdIds[i] ? { id: createdIds[i], title: row.title, url: getTaskUrl(groupId.value, createdIds[i]) } : null)
+      .map((row, i) => createdIds[i] ? { id: createdIds[i], label: row.title, url: getTaskUrl(groupId.value, createdIds[i]) } : null)
       .filter(Boolean);
 
     const commitRowIndex = taskRows.findIndex((r) => r.copyCommit);
@@ -240,9 +251,9 @@ async function submit(overrideRows) {
       severity: failedCount > 0 ? 'warn' : 'success',
       summary: failedCount > 0 ? 'Частично' : 'Готово',
       detail: failedCount > 0
-        ? `[pts-plan]: Создано ${createdTasks.length} из ${total} подзадач (${failedCount} не удалось)`
-        : `[pts-plan]: Создано подзадач: ${total}`,
-      tasks: showTasks ? createdTasks : undefined,
+        ? `Создано ${createdTasks.length} из ${total} подзадач (${failedCount} не удалось)`
+        : `Создано подзадач: ${total}`,
+      links: showTasks ? createdTasks : undefined,
       life: showTasks ? 15000 : 5000,
     });
 
@@ -253,7 +264,7 @@ async function submit(overrideRows) {
       group: 'decompose-task',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {
@@ -316,7 +327,7 @@ async function fetchData() {
       group: 'decompose-task',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {
@@ -324,17 +335,41 @@ async function fetchData() {
   }
 }
 
+function applyAiDecomposeResult(rawResult) {
+  const parsed = JSON.parse(jsonrepair(rawResult));
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('AI вернул пустой список подзадач');
+
+  const auditorIds = defaultAuditors.value === 'all'
+    ? users.value.map((u) => u.id)
+    : defaultAuditors.value === 'inherit'
+      ? [...parentAuditorIds.value]
+      : [userId.value];
+  const responsibleId = !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit'
+    ? props.responsiveId
+    : userId.value;
+
+  rows.value = parsed.map((item) => ({
+    _id: rowIdCounter++,
+    _collapsed: false,
+    title: item.title ?? '',
+    description: settings.value.description ? (item.description ?? '') : '',
+    copyContent: false,
+    copyCommit: false,
+    responsibleId,
+    stageId: settings.value.defaultStageId ?? null,
+    auditorIds: [...auditorIds],
+  }));
+}
+
 async function aiDecompose() {
-  const { options: storedOptions } = await chrome.storage.local.get(['options']);
-  const apiKey = storedOptions?.pixelToolsApiKey;
+  const apiKey = await aiJob.getApiKey();
   if (!apiKey) {
     isApiKeyModalOpened.value = true;
     return;
   }
 
-  aiLoading.value = true;
-  aiProgress.value = null;
-  try {
+  const {onStart, onProgress} = aiJob.chatCallbacks();
+  await aiJob.runJob(async () => {
     const fields = settings.value.description ? ['TITLE', 'DESCRIPTION'] : ['TITLE'];
     const { data } = await bitrixApi.getTask(props.taskId, fields);
     const title = data?.result?.task?.title ?? props.taskTitle;
@@ -347,49 +382,43 @@ async function aiDecompose() {
       toast.add({ group: 'decompose-task', severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
-    const rawResult = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
-      aiProgress.value = p;
-    });
-
-    const parsed = JSON.parse(jsonrepair(rawResult));
-    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('AI вернул пустой список подзадач');
-
-    const auditorIds = defaultAuditors.value === 'all'
-      ? users.value.map((u) => u.id)
-      : defaultAuditors.value === 'inherit'
-        ? [...parentAuditorIds.value]
-        : [userId.value];
-    const responsibleId = !settings.value.defaultResponsible || settings.value.defaultResponsible === 'inherit'
-      ? props.responsiveId
-      : userId.value;
-
-    rows.value = parsed.map((item) => ({
-      _id: rowIdCounter++,
-      _collapsed: false,
-      title: item.title ?? '',
-      description: settings.value.description ? (item.description ?? '') : '',
-      copyContent: false,
-      copyCommit: false,
-      responsibleId,
-      stageId: settings.value.defaultStageId ?? null,
-      auditorIds: [...auditorIds],
-    }));
-  } catch (e) {
-    toast.add({ group: 'decompose-task', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
-    if (e.isAuthError) isApiKeyModalOpened.value = true;
-  } finally {
-    aiLoading.value = false;
-    aiProgress.value = null;
-  }
+    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+  }, async (rawResult) => {
+    applyAiDecomposeResult(rawResult);
+    await scrollToRows();
+  });
 }
 
-onMounted(() => {
-  fetchData();
+async function resumeAiDecompose(reportId, initialProgress) {
+  const apiKey = await aiJob.getApiKey();
+  if (!apiKey) {
+    // Без ключа продолжить опрос невозможно — забываем задачу, чтобы не пытаться бесконечно
+    await aiJob.forget();
+    return;
+  }
+
+  aiProgress.value = initialProgress ?? 1;
+
+  await aiJob.runJob(
+    () => new PixelToolsApi(apiKey).resumeChat(reportId, aiJob.resumeProgressCallback(reportId), initialProgress),
+    async (rawResult) => {
+      applyAiDecomposeResult(rawResult);
+      await scrollToRows();
+    },
+  );
+}
+
+onMounted(async () => {
+  await fetchData();
+
+  const job = await aiJob.getPendingJob();
+  if (job?.reportId) resumeAiDecompose(job.reportId, job.progress);
 });
 </script>
 
 <template>
   <form
+    ref="formElement"
     class="min-w-[800px]"
     @submit.prevent="() => submit()"
   >
@@ -437,6 +466,7 @@ onMounted(() => {
       <SelectButton
         v-model="viewMode"
         :options="viewModeOptions"
+        :allow-empty="false"
         size="small"
         class="ml-auto"
       >

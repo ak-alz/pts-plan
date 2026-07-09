@@ -1,7 +1,8 @@
 <script setup>
-import {Button, Dialog, Toast} from 'primevue';
+import {Button, Dialog} from 'primevue';
 import { ref } from 'vue';
 
+import PtsToast from '../../ui/PtsToast.vue';
 import ScrumSummary from './components/ScrumSummary.vue';
 
 defineProps({
@@ -65,40 +66,21 @@ const isInfoModalOpened = ref(false);
       <p>Все итоги спринтов должны размещаться в комментариях к одной и той же задаче.</p>
       <p>Для корректной работы виджета структура комментария с итогами спринта должна быть следующей:</p>
 
-      <blockquote>
-        <p>Итог 327 спринта</p>
+      <div class="bg-surface-100 border border-surface-200 rounded-lg p-3">
+        <p class="mt-0">
+          Итог 327 спринта
+        </p>
         <p>55 баллов</p>
-        <ul>
+        <ul class="mb-0 pl-5">
           <li><a href="/company/personal/user/1">Иван Иванов</a> — 21 балл</li>
           <li><a href="/company/personal/user/2">Петр Петров</a> — 34 балла</li>
         </ul>
-      </blockquote>
+      </div>
 
       <p>Если в вашей команде используется другой формат подведения итогов спринтов, создайте Pull Request и добавьте опцию переключения логики в настройках виджета.</p>
     </div>
   </Dialog>
 
-  <Toast
-    group="scrum-summary"
-    position="bottom-right"
-  >
-    <template #message="{ message }">
-      <div class="flex flex-col gap-1 flex-1">
-        <span class="p-toast-summary">{{ message.summary }}</span>
-        <div
-          v-if="message.taskUrl || message.detail"
-          class="p-toast-detail"
-        >
-          <a
-            v-if="message.taskUrl"
-            :href="message.taskUrl"
-            target="_blank"
-            rel="noopener"
-          >{{ message.taskTitle }}</a>
-          <span v-else>{{ message.detail }}</span>
-        </div>
-      </div>
-    </template>
-  </Toast>
+  <PtsToast group="scrum-summary" />
 </template>
 

@@ -275,7 +275,7 @@ const sortableColumns = computed(() => {
             <FormField
               id="settings_show_post_button"
               label="Опубликовать итоги"
-              tip="Для выбранных колонок появится кнопка, которая автоматически создаёт комментарий с итогами спринта в указанной задаче."
+              tip="Для выбранных колонок появится кнопка, которая автоматически создаёт комментарий с итогами спринта в указанной задаче. Обязательно укажите ID задачи далее — без него кнопка не появится."
             >
               <MultiSelect
                 v-model="form.showPostButton"
@@ -297,6 +297,7 @@ const sortableColumns = computed(() => {
             </FormField>
 
             <FormField
+              v-if="form.showPostButton?.length"
               id="settings_summary_task_id"
               label="ID задачи для итогов"
               tip="ID задачи, в которую будет публиковаться комментарий с итогами спринта."

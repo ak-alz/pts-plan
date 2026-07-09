@@ -16,7 +16,7 @@ import {computed, onMounted, reactive, ref} from 'vue';
 import BitrixApi from '../../../BitrixApi.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import {getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
+import {getDistinctLineStyleIndexes, getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 import TaskAnalysisTabs from './TaskAnalysisTabs.vue';
 
@@ -42,6 +42,10 @@ const groupFilterOptions = [
   {label: 'Текущая группа', value: 'current'},
   {label: 'Все задачи', value: 'all'},
 ];
+
+// Пары стилей линии «баллы»/«задачи» для графика «Динамика» — индекс подбирается по коллизии цвета (getDistinctLineStyleIndexes)
+const POINTS_LINE_DASHES = [[], [2, 2], [8, 4], [1, 4]];
+const TASKS_LINE_DASHES = [[5, 5], [8, 2, 2, 2], [2, 2], [8, 3]];
 
 
 const settingsStorageKey = `task-analysis-settings-${props.groupId}`;
@@ -228,9 +232,16 @@ const timelineChartData = computed(() => {
 
   const multiUser = displayUserTasksPerUser.value.length > 1;
 
-  const datasets = displayUserTasksPerUser.value.flatMap(({userId, tasks}) => {
+  // Индекс подбирается по коллизии цвета между пользователями (см. getDistinctLineStyleIndexes) —
+  // у большинства пользователей index=0 (баллы: сплошная, задачи: пунктирная — как раньше),
+  // конфликтующим по цвету парам достаётся другой индекс, т.е. другая пара стилей линии.
+  const userColors = displayUserTasksPerUser.value.map(({userId}) => stringToPastelColor(users.value.find((u) => u.id === userId)?.name ?? userId));
+  const lineStyleIndexes = getDistinctLineStyleIndexes(userColors);
+
+  const datasets = displayUserTasksPerUser.value.flatMap(({userId, tasks}, userIndex) => {
     const userName = users.value.find((u) => u.id === userId)?.name ?? userId;
-    const color = stringToPastelColor(userName);
+    const color = userColors[userIndex];
+    const styleIndex = lineStyleIndexes[userIndex];
 
     const pointsByBucket = Object.fromEntries(buckets.map((b) => [b, 0]));
     const countByBucket = Object.fromEntries(buckets.map((b) => [b, 0]));
@@ -252,6 +263,7 @@ const timelineChartData = computed(() => {
         borderWidth: 1,
         borderColor: color,
         backgroundColor: color,
+        borderDash: POINTS_LINE_DASHES[styleIndex],
         pointStyle: 'circle',
         pointRadius: 3,
       },
@@ -264,7 +276,7 @@ const timelineChartData = computed(() => {
         borderWidth: 1,
         borderColor: color,
         backgroundColor: color,
-        borderDash: [5, 5],
+        borderDash: TASKS_LINE_DASHES[styleIndex],
         pointStyle: 'rectRot',
         pointRadius: 4,
       },
@@ -421,7 +433,7 @@ async function fetchData() {
       group: 'task-analysis',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {

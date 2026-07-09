@@ -108,8 +108,7 @@ async function createTask() {
       group: 'scrum-summary',
       severity: 'success',
       summary: 'Задача создана',
-      taskUrl: getTaskUrl(props.groupId, taskId),
-      taskTitle: TASK_TITLE,
+      links: [{ url: getTaskUrl(props.groupId, taskId), label: TASK_TITLE }],
       life: 8000,
     });
 

@@ -1,5 +1,5 @@
 <script setup>
-import {Button} from 'primevue';
+import {SelectButton} from 'primevue';
 import Chart from 'primevue/chart';
 import {nextTick, ref, watch} from 'vue';
 
@@ -11,38 +11,27 @@ const props = defineProps({
 });
 
 const chartRef = ref(null);
-const showPoints = ref(true);
-const showTasks = ref(true);
+const visibleDatasets = ref(['points', 'tasks']);
+
+const datasetOptions = [
+  {label: 'Баллы', value: 'points'},
+  {label: 'Задачи', value: 'tasks'},
+];
 
 function applyVisibility() {
   const chart = chartRef.value?.chart;
   if (!chart) return;
-  chart.data.datasets.forEach((ds, i) => {
-    chart.setDatasetVisibility(i, ds.yAxisID === 'y' ? showPoints.value : showTasks.value);
+  chart.data.datasets.forEach((dataset, index) => {
+    const key = dataset.yAxisID === 'y' ? 'points' : 'tasks';
+    chart.setDatasetVisibility(index, visibleDatasets.value.includes(key));
   });
   chart.update();
 }
 
-function toggleAll() {
-  const allOn = showPoints.value && showTasks.value;
-  showPoints.value = !allOn;
-  showTasks.value = !allOn;
-  applyVisibility();
-}
-
-function togglePoints() {
-  showPoints.value = !showPoints.value;
-  applyVisibility();
-}
-
-function toggleTasks() {
-  showTasks.value = !showTasks.value;
-  applyVisibility();
-}
+watch(visibleDatasets, applyVisibility);
 
 watch(() => props.chartData, () => {
-  showPoints.value = true;
-  showTasks.value = true;
+  visibleDatasets.value = ['points', 'tasks'];
   nextTick(() => applyVisibility());
 });
 
@@ -62,6 +51,9 @@ const chartOptions = {
       labels: {usePointStyle: true},
     },
     tooltip: {
+      itemSort(a, b) {
+        return b.raw.y - a.raw.y;
+      },
       callbacks: {
         label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`,
       },
@@ -89,27 +81,14 @@ const chartOptions = {
 </script>
 
 <template>
-  <div class="flex gap-1 justify-end mb-2">
-    <Button
-      label="Все"
+  <div class="flex justify-end mb-2">
+    <SelectButton
+      v-model="visibleDatasets"
+      :options="datasetOptions"
+      option-label="label"
+      option-value="value"
+      multiple
       size="small"
-      severity="secondary"
-      :variant="showPoints && showTasks ? undefined : 'text'"
-      @click="toggleAll"
-    />
-    <Button
-      label="Баллы"
-      size="small"
-      severity="secondary"
-      :variant="showPoints ? undefined : 'text'"
-      @click="togglePoints"
-    />
-    <Button
-      label="Задачи"
-      size="small"
-      severity="secondary"
-      :variant="showTasks ? undefined : 'text'"
-      @click="toggleTasks"
     />
   </div>
   <Chart

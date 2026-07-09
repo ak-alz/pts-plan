@@ -144,6 +144,7 @@ async function fetchData() {
           dateUpdated: dayjs(task.activityDate).unix(),
           formattedDateUpdated: dayjs(task.activityDate).format('DD.MM.YYYY HH:mm:ss'),
           points,
+          taskControl: task.taskControl === 'Y',
         });
         usersMap[responsible.id].columns[stageId].totalPoints += points;
 
@@ -167,7 +168,7 @@ async function fetchData() {
       group: 'scrum-points',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {
@@ -263,7 +264,7 @@ async function copySummary(column) {
       group: 'scrum-points',
       severity: 'success',
       summary: 'Успешно',
-      detail: '[pts-plan]: Итоги скопированы в буфер обмена',
+      detail: 'Итоги скопированы в буфер обмена',
       life: 5000,
     });
   } catch (e) {
@@ -272,7 +273,7 @@ async function copySummary(column) {
       group: 'scrum-points',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   }
@@ -293,7 +294,7 @@ async function postSummary(column) {
       group: 'scrum-points',
       severity: 'success',
       summary: 'Итоги опубликованы',
-      commentUrl,
+      links: commentUrl ? [{ url: commentUrl, label: 'Открыть комментарий' }] : undefined,
       life: 8000,
     });
   } catch (e) {
@@ -302,7 +303,7 @@ async function postSummary(column) {
       group: 'scrum-points',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {
@@ -428,7 +429,7 @@ onMounted(() => {
     </Column>
 
     <ColumnGroup
-      v-if="settings.showCompleteTasksButton?.length || settings.showCopyButton?.length || settings.showPostButton?.length"
+      v-if="settings.showCompleteTasksButton?.length || settings.showCopyButton?.length || (settings.showPostButton?.length && settings.summaryTaskId)"
       type="footer"
     >
       <Row>
@@ -462,14 +463,14 @@ onMounted(() => {
                 @click="copySummary(column)"
               />
               <Button
-                v-if="settings.showPostButton?.includes(column.id)"
-                v-tooltip="settings.summaryTaskId ? `Опубликовать итоги для колонки «${column.name}»` : 'Укажите ID задачи в настройках'"
+                v-if="settings.showPostButton?.includes(column.id) && settings.summaryTaskId"
+                v-tooltip="`Опубликовать итоги для колонки «${column.name}»`"
                 icon="pi pi-send"
                 size="small"
                 rounded
                 variant="text"
                 severity="secondary"
-                :disabled="isLoading || isPosting || !settings.summaryTaskId"
+                :disabled="isLoading || isPosting"
                 @click="postSummary(column)"
               />
             </div>

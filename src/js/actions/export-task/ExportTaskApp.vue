@@ -1,7 +1,8 @@
 <script setup>
-import { Dialog, Toast } from 'primevue';
+import { Dialog } from 'primevue';
 import { ref } from 'vue';
 
+import PtsToast from '../../ui/PtsToast.vue';
 import ExportTask from './components/ExportTask.vue';
 
 defineProps({
@@ -40,8 +41,5 @@ const modalOpened = ref(false);
     />
   </Dialog>
 
-  <Toast
-    group="export-task"
-    position="bottom-right"
-  />
+  <PtsToast group="export-task" />
 </template>

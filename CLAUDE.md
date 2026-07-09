@@ -38,7 +38,9 @@ There are no test commands — no test framework is configured.
 
 Linting: ESLint with flat config (`eslint.config.js`). Rules: semicolons required, single quotes, trailing commas in multiline, sorted imports.
 
-**Do not run build or lint commands yourself** (`npm run dev`, `npm run build`, `npm run build-css`, `eslint`, etc.). The user runs these manually — just make code changes. The commands above are listed for reference only.
+**Do not run build commands yourself** (`npm run dev`, `npm run build`, `npm run build-css`, etc.). The user runs these manually — just make code changes. The commands above are listed for reference only.
+
+**Do run the linter after making changes:** run `npx eslint --fix` on the files you touched (or the whole project) before reporting the task as done, and fix anything it can't autofix.
 
 ## Architecture
 
@@ -93,6 +95,7 @@ Prefer these classes over arbitrary hex values where PrimeVue theme integration 
 - **Global CSS:** `src/css/content-styles.css` — for content scripts; `src/css/app.css` — for the popup and whats-new pages. Avoid `insertCSS` from `utils.js` for static styles — it's for dynamic/runtime cases only. For PrimeVue overrides that PT can't reach (e.g. pseudo-elements), add a class via `:pt="{ root: { class: '...' } }"` and target it in a `<style>` block (popup/whats-new) or in `content-styles.css` (content scripts).
 - **Tailwind CSS is compiled separately** (`build-css` script). New Tailwind utility classes won't hot-reload; run `npm run build-css` after adding new classes.
 - **Update version in `package.json`** before publishing (CRXJS reads it for `manifest.json`).
+- **Always `toRaw()` a `ref`/`reactive` value before passing it to `chrome.storage.local.set()`.** `ref([])`/`reactive({...})` wraps arrays and objects in a reactive `Proxy`. `chrome.storage` doesn't serialize a `Proxy`-wrapped array as a real array (Chrome's internal converter checks the native array type, which a `Proxy` doesn't have) — it comes back on the next load as a plain object (e.g. `{0: 'a', 1: 'b'}`), silently breaking `Array.isArray()` checks and any array method call downstream (symptom seen in practice: PrimeVue `MultiSelect`/`Listbox` throwing `(this.d_value || []).some is not a function` because the restored "array" isn't one). Wrap with `toRaw(...)` (or spread into a new plain array/object, e.g. `[...myRef.value]`) right before the `chrome.storage.local.set()` call — see the `toRaw` usage in most `SettingsForm.vue` files for the established pattern.
 - **Toast isolation (content scripts only): set `group` on `<Toast>` and in every `toast.add()` call.** PrimeVue's `ToastEventBus` is a module-level singleton shared by every Vue app mounted into the same document. On the Bitrix page multiple feature widgets each mount their own Vue app into one document, so without a `group` every `<Toast>` renders every notification. Each content-script app uses its own kebab-case feature name as the group (e.g. `group="quick-task"` on the component, `group: 'quick-task'` in `toast.add({...})`). Not all content-script apps have this applied yet — add it when touching an app's toast calls. **The popup and whats-new pages are each a single Vue app in their own document, so the group is unnecessary there** — a plain `<Toast />` with groupless `toast.add({...})` is fine.
 
 ### What's new page
@@ -183,3 +186,4 @@ Observers / text:
 
 - **`FormField.vue`** — form field wrapper: renders a `<label>` (or `<div>` when no `id` is passed), a tooltip icon (`pi-question-circle`) when `tip` is provided, and a slot for the control.
 - **`DateRangePicker.vue`** — date range selector. Text input with mask `DD.MM.YY – DD.MM.YY` + Popover with presets (current/previous period by weeks and months) and a 2-month inline calendar. Supports `minDate`, `maxDate`, and `eventDates` (dots on dates). `v-model` — `[Date, Date]` array.
+- **`PtsToast.vue`** — shared `<Toast>` wrapper for content-script widgets: severity icon, optional `message.links` list, and an animated auto-close timer bar that pauses on hover. Requires a `group` prop (must match the `group` used in the corresponding `toast.add()` calls — see the toast isolation rule above); use it instead of a bare PrimeVue `<Toast>` in content-script apps.

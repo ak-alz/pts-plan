@@ -190,7 +190,7 @@ async function fetchData() {
       group: 'sprint-history',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {
@@ -209,7 +209,7 @@ watch(groupByParent, async (val) => {
         group: 'sprint-history',
         severity: 'error',
         summary: 'Ошибка',
-        detail: `[pts-plan]: ${e.message}`,
+        detail: e.message,
         life: 5000,
       });
     } finally {

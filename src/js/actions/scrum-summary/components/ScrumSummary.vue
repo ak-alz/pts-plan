@@ -4,9 +4,10 @@ import { forEachRight, orderBy, sum } from 'lodash-es';
 import { marked } from 'marked';
 import { Button, ButtonGroup, Dialog, Password, Skeleton, Textarea, ToggleButton } from 'primevue';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { useAiJob } from '../../../composables/useAiJob.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import {stringToPastelColor} from '../../../utils.js';
@@ -208,7 +209,7 @@ async function fetchData() {
       group: 'scrum-summary',
       severity: 'error',
       summary: 'Ошибка',
-      detail: `[pts-plan]: ${e.message}`,
+      detail: e.message,
       life: 5000,
     });
   } finally {
@@ -257,14 +258,25 @@ async function onAiContextInput(e) {
   await chrome.storage.local.set({[aiContextStorageKey.value]: aiContext.value});
 }
 
-const aiLoading = ref(false);
-const aiProgress = ref(null);
 const aiResult = ref('');
-const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI анализ (${aiProgress.value}%)` : 'AI анализ');
 const aiResultHtml = computed(() => aiResult.value ? marked(aiResult.value) : '');
+const aiResultElement = ref(null);
 
 const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
+
+const aiJob = useAiJob(() => `scrum-summary-ai-job-${props.groupId}`, {
+  group: 'scrum-summary',
+  onAuthError: () => { isApiKeyModalOpened.value = true; },
+});
+const aiLoading = aiJob.loading;
+const aiProgress = aiJob.progress;
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI анализ (${aiProgress.value}%)` : 'AI анализ');
+
+async function scrollToAiResult() {
+  await nextTick();
+  aiResultElement.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 async function saveApiKey() {
   const key = apiKeyInputValue.value.trim();
@@ -276,18 +288,15 @@ async function saveApiKey() {
 }
 
 async function aiAnalyze() {
-  const {options} = await chrome.storage.local.get(['options']);
-  const apiKey = options?.pixelToolsApiKey;
+  const apiKey = await aiJob.getApiKey();
   if (!apiKey) {
     isApiKeyModalOpened.value = true;
     return;
   }
 
-  aiLoading.value = true;
-  aiProgress.value = null;
   aiResult.value = '';
-
-  try {
+  const {onStart, onProgress} = aiJob.chatCallbacks();
+  await aiJob.runJob(() => {
     const {aiData, ignorePoints} = buildAiData();
 
     const MAX_PROMPT_LENGTH = 20000;
@@ -297,16 +306,30 @@ async function aiAnalyze() {
       toast.add({ group: 'scrum-summary', severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
-    aiResult.value = await new PixelToolsApi(apiKey).chat(prompt, '', (p) => {
-      aiProgress.value = p;
-    });
-  } catch (e) {
-    toast.add({ group: 'scrum-summary', severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
-    if (e.isAuthError) isApiKeyModalOpened.value = true;
-  } finally {
-    aiLoading.value = false;
-    aiProgress.value = null;
+    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+  }, async (result) => {
+    aiResult.value = result;
+    await scrollToAiResult();
+  });
+}
+
+async function resumeAiAnalyze(reportId, initialProgress) {
+  const apiKey = await aiJob.getApiKey();
+  if (!apiKey) {
+    // Без ключа продолжить опрос невозможно — забываем задачу, чтобы не пытаться бесконечно
+    await aiJob.forget();
+    return;
   }
+
+  aiProgress.value = initialProgress ?? 1;
+
+  await aiJob.runJob(
+    () => new PixelToolsApi(apiKey).resumeChat(reportId, aiJob.resumeProgressCallback(reportId), initialProgress),
+    async (result) => {
+      aiResult.value = result;
+      await scrollToAiResult();
+    },
+  );
 }
 
 /* Настройки */
@@ -340,6 +363,9 @@ onMounted(async () => {
   const stored = await chrome.storage.local.get([aiContextStorageKey.value]);
   if (stored[aiContextStorageKey.value]) aiContext.value = stored[aiContextStorageKey.value];
   fetchData();
+
+  const job = await aiJob.getPendingJob();
+  if (job?.reportId) resumeAiAnalyze(job.reportId, job.progress);
 });
 </script>
 
@@ -441,6 +467,7 @@ onMounted(async () => {
 
     <div
       v-if="aiResult"
+      ref="aiResultElement"
       class="mt-4 max-w-[800px]"
     >
       <div class="flex items-center gap-1 mb-2 text-sm text-surface-400">
@@ -465,6 +492,7 @@ onMounted(async () => {
     />
     <Button
       class="mt-3"
+      fluid
       label="Создать шаблон задачи"
       size="small"
       severity="secondary"

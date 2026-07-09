@@ -128,7 +128,7 @@ export default class BitrixApi {
           start,
         });
         // Только нужные поля — исключаем description, auditorsData, accomplicesData и т.д.
-        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE'].forEach((field) => {
+        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL'].forEach((field) => {
           params.append('select[]', field);
         });
         cmd[key] = `tasks.task.list?${params.toString()}`;
@@ -163,6 +163,49 @@ export default class BitrixApi {
     }));
   }
 
+  /**
+   * Batch-подтверждение выполнения задач с включённым контролем («Принять работу») — tasks.task.approve.
+   * Переводит задачу из статуса «Ждёт контроля» (4) в статус «Завершена» (5). Вызывать только после completeTasksBatch —
+   * approve работает лишь для задач, уже переведённых исполнителем в статус ожидания контроля.
+   * Доступно только постановщику или наблюдателю задачи — для остальных задача попадёт в failedIds, не прерывая batch (halt: false).
+   * @param {Array<string|number>} taskIds
+   * @return {Promise<{approvedIds: Array<string|number>, failedIds: Array<string|number>}>}
+   */
+  approveTasksBatch(taskIds) {
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
+    }
+
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((id, i) => {
+        cmd[`t${i}`] = `tasks.task.approve?taskId=${id}`;
+      });
+
+      return axios.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      }).then(({data}) => {
+        const approvedIds = [];
+        const failedIds = [];
+        chunk.forEach((id, i) => {
+          if (data?.result?.result?.[`t${i}`]) {
+            approvedIds.push(id);
+          } else {
+            failedIds.push(id);
+          }
+        });
+        return {approvedIds, failedIds};
+      });
+    })).then((chunkResults) => ({
+      approvedIds: chunkResults.flatMap((chunkResult) => chunkResult.approvedIds),
+      failedIds: chunkResults.flatMap((chunkResult) => chunkResult.failedIds),
+    }));
+  }
+
   getComments(taskId) {
     return axios
       .postForm('/rest/task.commentitem.getlist.json', {
@@ -173,17 +216,77 @@ export default class BitrixApi {
       .then((response) => response.data?.result ?? []);
   }
 
+  /**
+   * Batch-запрос task.commentitem.getlist для нескольких задач (до 50 за раз) — избегает
+   * N отдельных запросов при массовой выгрузке комментариев сразу по многим задачам.
+   * @param {Array<string|number>} taskIds
+   * @return {Promise<Record<string, object[]>>} Карта taskId → массив комментариев
+   */
+  getCommentsBatch(taskIds) {
+    if (!taskIds.length) return Promise.resolve({});
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
+    }
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((taskId) => {
+        cmd[`c${taskId}`] = `task.commentitem.getlist?TASKID=${taskId}&ORDER[POST_DATE]=asc`;
+      });
+      return axios.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
+    })).then((responses) => {
+      const result = {};
+      responses.forEach((response) => {
+        Object.entries(response.data?.result?.result ?? {}).forEach(([key, comments]) => {
+          result[key.slice(1)] = comments ?? [];
+        });
+      });
+      return result;
+    });
+  }
+
   getAttachedObjectsBatch(attachmentIds) {
     if (!attachmentIds.length) return Promise.resolve([]);
-    const cmd = {};
-    attachmentIds.forEach((id, i) => {
-      cmd[`a${i}`] = `disk.attachedObject.get?id=${id}`;
-    });
-    return axios.postForm('/rest/batch.json', {
-      sessid: this.sessionId,
-      halt: false,
-      cmd,
-    }).then(({data}) => Object.values(data?.result?.result ?? {}).filter(Boolean));
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < attachmentIds.length; i += CHUNK_SIZE) {
+      chunks.push(attachmentIds.slice(i, i + CHUNK_SIZE));
+    }
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((id, i) => {
+        cmd[`a${i}`] = `disk.attachedObject.get?id=${id}`;
+      });
+      return axios.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
+    })).then((responses) => responses.flatMap(
+      ({data}) => Object.values(data?.result?.result ?? {}).filter(Boolean),
+    ));
+  }
+
+  /**
+   * Возвращает данные файлов Диска (имя, ссылка на скачивание) по их ID — в отличие от
+   * getAttachedObjectsBatch, работает по ID самого файла Диска, а не по ID связи-вложения.
+   * Нужен для картинок, вставленных прямо в текст описания/комментария (не через список вложений).
+   * @param {string[]} fileIds
+   * @return {Promise<any[]>}
+   */
+  getDiskFilesBatch(fileIds) {
+    if (!fileIds.length) return Promise.resolve([]);
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < fileIds.length; i += CHUNK_SIZE) {
+      chunks.push(fileIds.slice(i, i + CHUNK_SIZE));
+    }
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((id, i) => {
+        cmd[`f${i}`] = `disk.file.get?id=${id}`;
+      });
+      return axios.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
+    })).then((responses) => responses.flatMap(
+      ({data}) => Object.values(data?.result?.result ?? {}).filter(Boolean),
+    ));
   }
 
   getTask(taskId, select = []) {
@@ -248,6 +351,8 @@ export default class BitrixApi {
    * @param {string|null} params.changedDateTo - дата изменения до
    * @param {string|null} params.closedDateFrom - дата закрытия от ('YYYY-MM-DD HH:mm:ss')
    * @param {string|null} params.closedDateTo - дата закрытия до
+   * @param {{field: string, direction: 'ASC'|'DESC'}|null} params.order - сортировка результата на сервере (например {field: 'CREATED_DATE', direction: 'DESC'}); по умолчанию не задаётся
+   * @param {string[]} params.extraSelectFields - дополнительные поля `select[]` сверх базового набора (например ['DESCRIPTION']) — не добавляются в общий набор, чтобы не утяжелять остальных вызывающих
    * @return {Promise<any[]>}
    */
   async searchTasks({
@@ -268,6 +373,8 @@ export default class BitrixApi {
                       changedDateTo,
                       closedDateFrom,
                       closedDateTo,
+                      order = null,
+                      extraSelectFields = [],
                       limit = null,
                     }) {
     const PAGE_SIZE = 50;
@@ -314,7 +421,10 @@ export default class BitrixApi {
     if (closedDateFrom) filter['>=CLOSED_DATE'] = closedDateFrom;
     if (closedDateTo) filter['<=CLOSED_DATE'] = closedDateTo;
 
-    const selectFields = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE', 'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID'];
+    const selectFields = [
+      'ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE',
+      'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID', ...extraSelectFields,
+    ];
 
     const appendFilter = (params, keyPath, value) => {
       if (Array.isArray(value)) {
@@ -332,6 +442,7 @@ export default class BitrixApi {
         appendFilter(params, `filter[${key}]`, value);
       });
       selectFields.forEach((f) => params.append('select[]', f));
+      if (order?.field) params.set(`order[${order.field}]`, order.direction ?? 'ASC');
       return params;
     };
 

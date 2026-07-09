@@ -1,7 +1,8 @@
 <script setup>
-import { Dialog, Toast } from 'primevue';
+import { Dialog } from 'primevue';
 import { ref } from 'vue';
 
+import PtsToast from '../../ui/PtsToast.vue';
 import TaskSearchMain from './components/TaskSearch.vue';
 
 defineProps({
@@ -41,8 +42,5 @@ const modalOpened = ref(false);
     />
   </Dialog>
 
-  <Toast
-    group="task-search"
-    position="bottom-right"
-  />
+  <PtsToast group="task-search" />
 </template>

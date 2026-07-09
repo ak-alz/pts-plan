@@ -1,6 +1,17 @@
 import BitrixApi from '../../BitrixApi.js';
 import {NOTIF_CHANGE_RE, NOTIF_CLOSE_RE, NOTIF_NEW_TASK_RE, NOTIF_REACTION_RE} from '../../patterns.js';
-import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getTaskIdFromUrl, rehydrateOnChanges, triggerScrollLoadMore} from '../../utils.js';
+
+// Bitrix убирает удалённые уведомления из списка не сразу после ответа im.notify.delete (сам
+// REST-вызов идёт в обход штатного action у Bitrix, поэтому реактивно список обновляется только
+// когда до фронтенда долетит pull-событие) — несколько попыток с паузами вместо одной сразу после ответа
+async function nudgeLoadMoreAfterDeletion(container) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+     
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    triggerScrollLoadMore(container);
+  }
+}
 
 export function removeSystemNotifications(sessionId, options = {}) {
   const {
@@ -77,6 +88,9 @@ export function removeSystemNotifications(sessionId, options = {}) {
         this.setAttribute('disabled', '');
         try {
           await bitrixApi.removeNotifications(toDelete);
+
+          // Не дожидаемся — список подтягивается в фоне, кнопке это ждать незачем
+          nudgeLoadMoreAfterDeletion(notificationsContainer);
 
           this.textContent = 'Уведомления успешно удалены';
           this.classList.add('remove-notifications--success');

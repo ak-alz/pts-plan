@@ -3,6 +3,8 @@ import dayjs from 'dayjs';
 import Chart from 'primevue/chart';
 import {computed} from 'vue';
 
+import {getDistinctLineDashes} from '../../../utils.js';
+
 const props = defineProps({
   users: {
     type: Array,
@@ -17,8 +19,10 @@ const props = defineProps({
 });
 
 const chartData = computed(() => {
+  const lineDashes = getDistinctLineDashes(props.users.map((user) => user.color));
+
   return {
-    datasets: props.users.map((user) => ({
+    datasets: props.users.map((user, index) => ({
       label: user.name,
       data: props.trendMode ? (user.trendLine ?? user.visibleSprints) : user.visibleSprints,
       showLine: true,
@@ -26,6 +30,7 @@ const chartData = computed(() => {
       tension: props.trendMode ? 0 : 0.1,
       cubicInterpolationMode: props.trendMode ? undefined : 'monotone',
       borderColor: user.color,
+      borderDash: lineDashes[index],
       pointBackgroundColor: user.color,
     })),
   };

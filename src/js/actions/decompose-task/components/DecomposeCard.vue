@@ -33,7 +33,7 @@ function onCopyContentChange() {
         @click="row._collapsed = !row._collapsed"
       >
         <span class="text-sm text-surface-400 font-medium shrink-0">#{{ index + 1 }}</span>
-        <span class="text-sm font-medium truncate">{{ row.title || 'Без названия' }}</span>
+        <span class="text-sm font-medium truncate flex-1 min-w-0 max-w-[420px]">{{ row.title || 'Без названия' }}</span>
         <span
           v-if="responsibleUser"
           class="text-sm text-surface-400 truncate shrink-0"

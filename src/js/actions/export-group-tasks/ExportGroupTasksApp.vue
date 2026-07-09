@@ -3,7 +3,7 @@ import { Dialog } from 'primevue';
 import { ref } from 'vue';
 
 import PtsToast from '../../ui/PtsToast.vue';
-import SprintHistoryMain from './components/SprintHistory.vue';
+import ExportGroupTasks from './components/ExportGroupTasks.vue';
 
 defineProps({
   sessionId: {
@@ -21,25 +21,26 @@ const modalOpened = ref(false);
 
 <template>
   <button
-    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round --with-left-icon --with-collapsed-icon pts-btn-sprint-history"
+    class="ui-btn ui-btn-xs ui-btn-light-border ui-btn-no-caps ui-btn-themes ui-btn-round --with-left-icon --with-collapsed-icon pts-btn-export-group-tasks"
     type="button"
-    title="История спринтов"
+    title="Экспорт задач группы"
     @click="modalOpened = true"
   >
-    История
+    Экспорт
   </button>
 
   <Dialog
     v-model:visible="modalOpened"
-    header="История спринта"
+    header="Экспорт задач группы"
     dismissable-mask
     modal
+    style="width: 1100px; max-width: 95vw;"
   >
-    <SprintHistoryMain
+    <ExportGroupTasks
       :session-id
       :group-id
     />
   </Dialog>
 
-  <PtsToast group="sprint-history" />
+  <PtsToast group="export-group-tasks" />
 </template>

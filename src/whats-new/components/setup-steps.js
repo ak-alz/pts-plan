@@ -19,8 +19,8 @@ const steps = [
     features: ['decomposeTask', 'editTaskTitle', 'showComments', 'statusMarkers', 'invisibleMentions', 'fixLinks'],
     options: [
       { label: 'Разработчик', value: 'developer', description: 'Пишете код, работаете с git', features: ['commitButton', 'kanbanCommitButton', 'exportTask'] },
-      { label: 'Руководитель / аналитик', value: 'management', description: 'Ставите задачи, следите за спринтами и метриками команды', features: [] },
-      { label: 'И то, и другое', value: 'both', description: 'И разработка, и планирование с аналитикой', features: ['commitButton', 'kanbanCommitButton', 'exportTask'] },
+      { label: 'Руководитель / аналитик', value: 'management', description: 'Ставите задачи, следите за спринтами и метриками команды', features: ['exportGroupTasks'] },
+      { label: 'И то, и другое', value: 'both', description: 'И разработка, и планирование с аналитикой', features: ['commitButton', 'kanbanCommitButton', 'exportTask', 'exportGroupTasks'] },
       { label: 'Просто работаю с задачами', value: 'basic', description: 'Ведёте свои задачи: комментарии, статусы, подзадачи', features: [] },
     ],
   },

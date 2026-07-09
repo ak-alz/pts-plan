@@ -1,5 +1,29 @@
 import {throttle, toUpper} from 'lodash-es';
 
+import {
+  BBCODE_BOLD_RE,
+  BBCODE_CODE_RE,
+  BBCODE_EMAIL_LABELED_RE,
+  BBCODE_EMAIL_PLAIN_RE,
+  BBCODE_IMG_RE,
+  BBCODE_ITALIC_RE,
+  BBCODE_LIST_ITEM_RE,
+  BBCODE_LIST_RE,
+  BBCODE_QUOTE_RE,
+  BBCODE_SPOILER_RE,
+  BBCODE_STRIKE_RE,
+  BBCODE_STRIP_WRAPPER_RE,
+  BBCODE_TABLE_RE,
+  BBCODE_TD_RE,
+  BBCODE_TR_RE,
+  BBCODE_UNDERLINE_RE,
+  BBCODE_UNKNOWN_TAG_RE,
+  BBCODE_URL_LABELED_RE,
+  BBCODE_URL_PLAIN_RE,
+  BBCODE_USER_RE,
+  SYSTEM_COMMENT_PHRASES,
+} from './patterns.js';
+
 export function getTaskUrl(groupId, taskId) {
   return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/`;
 }
@@ -18,7 +42,7 @@ export function getTaskIdFromUrl(url) {
 }
 
 export function getGroupIdFromUrl(url) {
-  const pattern = /\/(\d+)\/tasks\/(?!task\/)(?:[?#]|$)/;
+  const pattern = /\/workgroups\/group\/(\d+)\/tasks\/(?!task\/)(?:[?#]|$)/;
   const match = url.match(pattern);
 
   if (match && match[1]) {
@@ -79,6 +103,12 @@ export function getTaskPointsFromName(taskName) {
   }
 }
 
+/**
+ * Детерминированный пастельный HEX-цвет по строке.
+ * Похожие по расстоянию цвета (например, два оттенка зелёного) можно различить стилем линии — см. getDistinctLineDashes.
+ * @param {string} str
+ * @returns {string} HEX-цвет
+ */
 export function stringToPastelColor(str) {
   // 1. Создаем стабильный хеш из строки
   let hash = 0;
@@ -108,6 +138,76 @@ function hslToHex(h, s, l) {
     return Math.round(255 * color).toString(16).padStart(2, '0');
   };
   return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function hexToRgb(hex) {
+  const normalized = hex.replace('#', '');
+  return [0, 2, 4].map((offset) => parseInt(normalized.substring(offset, offset + 2), 16));
+}
+
+/**
+ * Евклидово расстояние между двумя HEX-цветами в пространстве RGB (0–441 включительно).
+ * @param {string} colorA
+ * @param {string} colorB
+ * @returns {number}
+ */
+export function getColorDistance(colorA, colorB) {
+  const [redA, greenA, blueA] = hexToRgb(colorA);
+  const [redB, greenB, blueB] = hexToRgb(colorB);
+  return Math.sqrt((redA - redB) ** 2 + (greenA - greenB) ** 2 + (blueA - blueB) ** 2);
+}
+
+const CLOSE_COLOR_DISTANCE_THRESHOLD = 20;
+
+/**
+ * Стили линий Chart.js (`borderDash`) для различения линий похожего цвета: сплошная, пунктирная, точечная, штрих-пунктирная.
+ */
+export const LINE_DASH_STYLES = [
+  [],
+  [6, 4],
+  [2, 2],
+  [8, 3, 2, 3],
+];
+
+/**
+ * Для набора HEX-цветов (в порядке датасетов на графике) подбирает индекс стиля линии
+ * из LINE_DASH_STYLES так, чтобы похожие по расстоянию (RGB) цвета получали разные стили —
+ * для каждого цвета собирает стили всех похожих более ранних цветов и берёт наименьший
+ * свободный. Если похожих цветов больше, чем стилей, детерминированно переиспользует
+ * последний стиль (коллизия в этом случае неизбежна при фиксированном наборе стилей).
+ * @param {string[]} hexColors - Цвета линий в порядке датасетов графика.
+ * @param {number} [threshold] - Порог «похожести» цветов (расстояние в RGB).
+ * @returns {number[]} Индекс стиля (LINE_DASH_STYLES) для каждого цвета — тот же порядок.
+ */
+export function getDistinctLineStyleIndexes(hexColors, threshold = CLOSE_COLOR_DISTANCE_THRESHOLD) {
+  const styleIndexByPosition = [];
+
+  hexColors.forEach((color, index) => {
+    const usedStyleIndexes = new Set();
+    for (let previousIndex = 0; previousIndex < index; previousIndex++) {
+      if (getColorDistance(color, hexColors[previousIndex]) < threshold) {
+        usedStyleIndexes.add(styleIndexByPosition[previousIndex]);
+      }
+    }
+
+    let styleIndex = 0;
+    while (usedStyleIndexes.has(styleIndex) && styleIndex < LINE_DASH_STYLES.length - 1) {
+      styleIndex++;
+    }
+    styleIndexByPosition[index] = styleIndex;
+  });
+
+  return styleIndexByPosition;
+}
+
+/**
+ * Как getDistinctLineStyleIndexes, но сразу возвращает готовые массивы borderDash.
+ * @param {string[]} hexColors - Цвета линий в порядке датасетов графика.
+ * @param {number} [threshold] - Порог «похожести» цветов (расстояние в RGB).
+ * @returns {Array<number[]>} borderDash для каждого цвета — тот же порядок.
+ */
+export function getDistinctLineDashes(hexColors, threshold = CLOSE_COLOR_DISTANCE_THRESHOLD) {
+  return getDistinctLineStyleIndexes(hexColors, threshold).map((styleIndex) => LINE_DASH_STYLES[styleIndex]);
 }
 
 export function insertCSS(css, id = null) {
@@ -488,6 +588,21 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
 }
 
 /**
+ * Принудительно триггерит нативную бесконечную прокрутку контейнера: выставляет scrollTop
+ * в конец (если есть реальное переполнение) и рассылает синтетическое событие scroll.
+ * Нужно, когда контейнер визуально короткий (часть элементов скрыта через display:none или
+ * удалена из DOM) и пользователь физически не может проскроллить — обработчик подгрузки
+ * следующей страницы, реагирующий на событие scroll, в этом случае не срабатывает сам по себе.
+ * @param {HTMLElement} container - Элемент, на котором висит нативный обработчик scroll.
+ */
+export function triggerScrollLoadMore(container) {
+  if (container.scrollHeight > container.clientHeight) {
+    container.scrollTop = container.scrollHeight;
+  }
+  container.dispatchEvent(new Event('scroll'));
+}
+
+/**
  * Проверяет, упомянут ли пользователь в тексте уведомления.
  * Считается упоминанием: имя+фамилия (в любом порядке) или TAGALL.
  * @param {string} text
@@ -501,6 +616,17 @@ export function isUserMentioned(text, firstName, lastName) {
   if (text.includes(`${firstName} ${lastName}`)) return true;
   if (text.includes(`${lastName} ${firstName}`)) return true;
   return false;
+}
+
+/**
+ * Проверяет, является ли комментарий системным авто-сообщением Битрикса
+ * (смена исполнителя, статуса, крайнего срока и т.п.), а не текстом от пользователя.
+ * @param {Object} comment - Комментарий задачи (поле POST_MESSAGE)
+ * @returns {boolean}
+ */
+export function isSystemComment(comment) {
+  const text = (comment.POST_MESSAGE || '').toLowerCase();
+  return SYSTEM_COMMENT_PHRASES.some((phrase) => text.includes(phrase));
 }
 
 /**
@@ -542,4 +668,55 @@ export function minifyPrompt(str) {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+// [TABLE][TR][TD]...[/TD][/TR][/TABLE] → Markdown-таблица. Первая строка становится заголовком —
+// у BBCode-таблиц Bitrix нет отдельного тега для заголовка, а Markdown без него не обходится.
+function bbcodeTableToMarkdown(tableContent) {
+  const rows = [...tableContent.matchAll(BBCODE_TR_RE)].map(([, rowContent]) =>
+    [...rowContent.matchAll(BBCODE_TD_RE)].map(([, cellContent]) => cellContent.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()));
+  if (!rows.length) return '';
+
+  const columnCount = Math.max(...rows.map((row) => row.length));
+  const toLine = (row) => `| ${Array.from({length: columnCount}, (_, index) => row[index] ?? '').join(' | ')} |`;
+  const separatorLine = `| ${Array(columnCount).fill('---').join(' | ')} |`;
+
+  return [toLine(rows[0]), separatorLine, ...rows.slice(1).map(toLine)].join('\n');
+}
+
+/**
+ * Конвертирует BBCode-разметку задач/комментариев Bitrix ([B], [LIST], [URL=...] и т.п.) в Markdown.
+ * Однопроходная замена по тегам — не разбирает вложенность одинаковых тегов (например,
+ * [LIST] внутри [LIST]), но описания и комментарии задач Bitrix почти всегда плоские.
+ * @param {string} text
+ * @returns {string}
+ */
+export function bbcodeToMarkdown(text) {
+  if (!text) return '';
+
+  return text
+    .replace(BBCODE_CODE_RE, (match, content) => `\`\`\`\n${content.trim()}\n\`\`\``)
+    .replace(BBCODE_TABLE_RE, (match, content) => bbcodeTableToMarkdown(content))
+    .replace(BBCODE_QUOTE_RE, (match, content) => content.trim().split('\n').map((line) => `> ${line}`).join('\n'))
+    .replace(BBCODE_SPOILER_RE, (match, title, content) =>
+      `<details>\n<summary>${title?.trim() || 'Подробнее'}</summary>\n\n${content.trim()}\n\n</details>`)
+    .replace(BBCODE_LIST_RE, (match, isOrdered, content) =>
+      content
+        .split(BBCODE_LIST_ITEM_RE)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item, index) => (isOrdered ? `${index + 1}. ${item}` : `- ${item}`))
+        .join('\n'))
+    .replace(BBCODE_IMG_RE, (match, url) => `![](${url.trim()})`)
+    .replace(BBCODE_URL_LABELED_RE, (match, url, label) => `[${label}](${url.trim()})`)
+    .replace(BBCODE_URL_PLAIN_RE, (match, url) => `<${url.trim()}>`)
+    .replace(BBCODE_EMAIL_LABELED_RE, (match, address, label) => `[${label}](mailto:${address.trim()})`)
+    .replace(BBCODE_EMAIL_PLAIN_RE, (match, address) => `[${address.trim()}](mailto:${address.trim()})`)
+    .replace(BBCODE_USER_RE, (match, userId, label) => `[${label}](/company/personal/user/${userId}/)`)
+    .replace(BBCODE_STRIKE_RE, (match, content) => `~~${content}~~`)
+    .replace(BBCODE_BOLD_RE, (match, content) => `**${content}**`)
+    .replace(BBCODE_ITALIC_RE, (match, content) => `*${content}*`)
+    .replace(BBCODE_UNDERLINE_RE, (match, content) => content)
+    .replace(BBCODE_STRIP_WRAPPER_RE, (match, tag, content) => content)
+    .replace(BBCODE_UNKNOWN_TAG_RE, '');
 }
