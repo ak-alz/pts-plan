@@ -20,7 +20,7 @@ import {computed, onMounted, reactive, ref, watch} from 'vue';
 import BitrixApi from '../../../BitrixApi.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import {getTaskUrl, pluralize} from '../../../utils.js';
+import {getTaskUrl, isHotfixTask, pluralize} from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
@@ -48,6 +48,25 @@ const PARENT_TYPE_OPTIONS = [
 
 const SETTINGS_KEY = 'task-search-settings';
 
+// До v2.12 «Скрыть фильтры» хранилось отдельными булевыми полями (до v2.7.6 их не было вовсе) —
+// сохранённые у части пользователей настройки нужно перевести в новый формат hiddenFilters
+const LEGACY_HIDDEN_FILTER_KEYS = {
+  hideExcludeTitle: 'excludeTitle',
+  hideStatus: 'status',
+  hideParentType: 'parentType',
+  hideCreatedDate: 'createdDate',
+  hideChangedDate: 'changedDate',
+  hideExtendedSearch: 'extendedSearch',
+};
+
+function migrateHiddenFilters(storedSettings) {
+  if (Array.isArray(storedSettings.hiddenFilters)) return storedSettings.hiddenFilters;
+
+  return Object.entries(LEGACY_HIDDEN_FILTER_KEYS)
+    .filter(([legacyKey]) => storedSettings[legacyKey])
+    .map(([, hiddenFilterKey]) => hiddenFilterKey);
+}
+
 const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
@@ -57,7 +76,8 @@ const isSettingsModalOpened = ref(false);
 function getDefaults() {
   return {
     title: '',
-    excludeTitle: '',
+    excludeTitle: settings.value.defaultExcludeTitle ?? '',
+    excludeHotfixes: false,
     smartTitleSearch: settings.value.defaultSmartSearch !== false,
     extendedSearch: settings.value.defaultExtendedSearch ?? false,
     status: settings.value.defaultStatus !== undefined ? settings.value.defaultStatus : 'active',
@@ -81,6 +101,7 @@ const groupUsers = ref([]);
 const stages = ref([]);
 const hasSearched = ref(false);
 const filterFavorites = ref(false);
+const currentUserId = ref(null);
 
 const userOptions = computed(() => groupUsers.value.map((u) => ({
   id: Number(u.ID),
@@ -90,22 +111,33 @@ const userOptions = computed(() => groupUsers.value.map((u) => ({
 
 const stageMap = computed(() => Object.fromEntries(stages.value.map((s) => [String(s.id), s])));
 const isInitialLoading = computed(() => isUsersLoading.value || isStagesLoading.value);
+const isHiddenExcludeTitleActive = computed(
+  () => !!settings.value.hiddenFilters?.includes('excludeTitle') && !!settings.value.defaultExcludeTitle?.trim(),
+);
+const displayedTasks = computed(
+  () => form.excludeHotfixes ? tasks.value.filter((task) => !isHotfixTask(task.title)) : tasks.value,
+);
 
 onMounted(async () => {
   isUsersLoading.value = true;
   isStagesLoading.value = true;
   try {
-    const [groupUsersResult, stagesResponse, stored] = await Promise.all([
+    const [groupUsersResult, stagesResponse, stored, currentUser] = await Promise.all([
       bitrixApi.getGroupUsers(props.groupId),
       bitrixApi.getStages(props.groupId),
       chrome.storage.local.get(SETTINGS_KEY),
+      bitrixApi.getCurrentUser(),
     ]);
     groupUsers.value = groupUsersResult;
     stages.value = Object.values(stagesResponse.data?.result ?? {})
       .sort((a, b) => a.SORT - b.SORT)
       .map((s) => ({id: s.ID, title: s.TITLE, color: `#${s.COLOR}`}));
+    currentUserId.value = currentUser?.ID ? String(currentUser.ID) : null;
     if (stored[SETTINGS_KEY]) {
-      settings.value = stored[SETTINGS_KEY];
+      settings.value = {
+        ...stored[SETTINGS_KEY],
+        hiddenFilters: migrateHiddenFilters(stored[SETTINGS_KEY]),
+      };
       Object.assign(form, getDefaults());
     }
   } catch (e) {
@@ -245,7 +277,7 @@ function formatDate(dateStr) {
     </template>
 
     <template v-else>
-      <div class="mb-3">
+      <div class="mb-3 flex items-center gap-2">
         <Button
           icon="pi pi-cog"
           size="small"
@@ -254,9 +286,14 @@ function formatDate(dateStr) {
           label="Настройки"
           @click="isSettingsModalOpened = true"
         />
+        <i
+          v-if="isHiddenExcludeTitleActive"
+          v-tooltip.top="`Скрытый фильтр активен: из результатов исключены задачи с «${settings.defaultExcludeTitle}» в названии`"
+          class="pi pi-exclamation-triangle text-yellow-500"
+        />
       </div>
 
-      <div class="grid grid-cols-3 gap-3 mb-3">
+      <div class="grid grid-cols-4 gap-3 mb-3">
         <FormField label="Название">
           <InputText
             v-model="form.title"
@@ -267,9 +304,9 @@ function formatDate(dateStr) {
           />
         </FormField>
         <FormField
-          v-if="!settings.hideExcludeTitle"
-          v-tooltip.top="'Слова через пробел: задачи, содержащие хотя бы одно из них, будут исключены'"
+          v-if="!settings.hiddenFilters?.includes('excludeTitle')"
           label="Исключить из названия"
+          tip="Слова через пробел: задачи, содержащие хотя бы одно из них, будут исключены"
         >
           <InputText
             v-model="form.excludeTitle"
@@ -280,7 +317,7 @@ function formatDate(dateStr) {
           />
         </FormField>
         <FormField
-          v-if="!settings.hideStatus"
+          v-if="!settings.hiddenFilters?.includes('status')"
           label="Статус"
         >
           <Select
@@ -293,7 +330,7 @@ function formatDate(dateStr) {
           />
         </FormField>
         <FormField
-          v-if="!settings.hideParentType"
+          v-if="!settings.hiddenFilters?.includes('parentType')"
           label="Тип задачи"
         >
           <Select
@@ -356,8 +393,8 @@ function formatDate(dateStr) {
           </Select>
         </FormField>
         <FormField
-          v-if="form.useGroupFilter"
           label="Колонка канбана"
+          :tip="!form.useGroupFilter ? 'Доступно только при включённом фильтре «Только текущая группа»' : ''"
         >
           <MultiSelect
             v-model="form.stageIds"
@@ -369,6 +406,7 @@ function formatDate(dateStr) {
             filter-placeholder="Поиск"
             :max-selected-labels="3"
             :loading="isStagesLoading"
+            :disabled="!form.useGroupFilter"
             show-clear
             size="small"
             class="w-full"
@@ -382,7 +420,7 @@ function formatDate(dateStr) {
           </MultiSelect>
         </FormField>
         <FormField
-          v-if="!settings.hideCreatedDate"
+          v-if="!settings.hiddenFilters?.includes('createdDate')"
           label="Дата создания"
         >
           <DateRangePicker
@@ -391,7 +429,7 @@ function formatDate(dateStr) {
           />
         </FormField>
         <FormField
-          v-if="!settings.hideChangedDate"
+          v-if="!settings.hiddenFilters?.includes('changedDate')"
           label="Дата изменения"
         >
           <DateRangePicker
@@ -399,10 +437,7 @@ function formatDate(dateStr) {
             presets="current"
           />
         </FormField>
-      </div>
-
-      <div class="flex gap-4 items-center mb-4">
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
             v-model="form.useGroupFilter"
             input-id="group-filter-toggle"
@@ -415,7 +450,7 @@ function formatDate(dateStr) {
             Только текущая группа
           </label>
         </div>
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
             v-model="form.smartTitleSearch"
             input-id="smart-title-toggle"
@@ -430,8 +465,8 @@ function formatDate(dateStr) {
           </label>
         </div>
         <div
-          v-if="!settings.hideExtendedSearch"
-          class="flex gap-2 items-center"
+          v-if="!settings.hiddenFilters?.includes('extendedSearch')"
+          class="flex gap-2 items-center self-end"
         >
           <ToggleSwitch
             v-model="form.extendedSearch"
@@ -446,7 +481,24 @@ function formatDate(dateStr) {
             Искать в описании и комментариях
           </label>
         </div>
-        <div class="flex gap-2 items-center">
+        <div
+          v-if="!settings.hiddenFilters?.includes('excludeHotfixes')"
+          class="flex gap-2 items-center self-end"
+        >
+          <ToggleSwitch
+            v-model="form.excludeHotfixes"
+            input-id="exclude-hotfixes-toggle"
+            size="small"
+          />
+          <label
+            v-tooltip.top="'Скрывает задачи, название которых начинается с «Hotfix»'"
+            for="exclude-hotfixes-toggle"
+            class="text-sm cursor-pointer"
+          >
+            Исключить хотфиксы
+          </label>
+        </div>
+        <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
             v-model="filterFavorites"
             input-id="favorites-toggle"
@@ -460,23 +512,25 @@ function formatDate(dateStr) {
             Избранные
           </label>
         </div>
-        <Button
-          label="Найти"
-          icon="pi pi-search"
-          :loading="isLoading"
-          size="small"
-          @click="search"
-        />
-        <span
-          v-if="hasSearched && !isLoading"
-          class="text-sm text-muted-color"
-        >
-          {{ tasks.length }} {{ pluralize(tasks.length, ['задача', 'задачи', 'задач']) }}
-        </span>
+        <div class="flex gap-3 items-center self-end">
+          <Button
+            label="Найти"
+            icon="pi pi-search"
+            :loading="isLoading"
+            size="small"
+            @click="search"
+          />
+          <span
+            v-if="hasSearched && !isLoading"
+            class="text-sm text-muted-color"
+          >
+            {{ displayedTasks.length }} {{ pluralize(displayedTasks.length, ['задача', 'задачи', 'задач']) }}
+          </span>
+        </div>
       </div>
 
       <DataTable
-        :value="tasks"
+        :value="displayedTasks"
         :loading="isLoading"
         data-key="id"
         sort-field="changedDate"
@@ -506,7 +560,7 @@ function formatDate(dateStr) {
           <template #body="{ data }">
             <a
               class="pts-blur"
-              :href="getTaskUrl(data.groupId, data.id)"
+              :href="getTaskUrl(data.groupId, data.id, currentUserId)"
               target="_top"
             >
               {{ data.title }}

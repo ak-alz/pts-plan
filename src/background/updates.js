@@ -93,6 +93,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   const [curMajor, curMinor] = currentVersion.split('.');
 
   if (curMajor !== prevMajor || curMinor !== prevMinor) {
-    chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
+    const {disableAutoWhatsNew} = await chrome.storage.local.get(['disableAutoWhatsNew']);
+    if (!disableAutoWhatsNew) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html') });
+    }
   }
 });

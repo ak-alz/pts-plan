@@ -1,4 +1,4 @@
-import {getGroupIdFromUrl, getTaskIdFromUrl} from '../../utils.js';
+import {getGroupIdFromUrl, getTaskIdFromUrl, getUserIdFromUrl} from '../../utils.js';
 
 export function openInNewTab(options) {
   if (options.openInNewTabEdit ?? true) {
@@ -12,10 +12,17 @@ export function openInNewTab(options) {
     const createButton = document.querySelector('#tasks-buttonAdd .ui-btn-main');
     if (createButton) {
       createButton.addEventListener('click', (e) => {
-        e.stopImmediatePropagation();
         const groupId = getGroupIdFromUrl(window.location.href);
+        const userId = getUserIdFromUrl(window.location.href);
+
+        if (!groupId && !userId) return;
+
+        e.stopImmediatePropagation();
+
         if (groupId) {
           window.open(`/workgroups/group/${groupId}/tasks/task/edit/0/`, '_blank');
+        } else {
+          window.open(`/company/personal/user/${userId}/tasks/task/edit/0/`, '_blank');
         }
       }, true);
     }

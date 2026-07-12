@@ -22,10 +22,32 @@ import {
   BBCODE_URL_PLAIN_RE,
   BBCODE_USER_RE,
   SYSTEM_COMMENT_PHRASES,
+  TAGALL_LEADING_RE,
+  TAGALL_NAMED_RE,
+  TAGALL_TOKEN,
 } from './patterns.js';
 
-export function getTaskUrl(groupId, taskId) {
-  return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/`;
+/**
+ * Строит URL страницы просмотра задачи. Задачи без группы (personal, `groupId` пустой или `'0'`)
+ * не имеют `/workgroups/group/...` адреса — для них нужен `userId`. Важно: страница открывается
+ * только когда `userId` совпадает с текущим залогиненным пользователем (Bitrix проверяет доступ
+ * по сегменту `/company/personal/user/{userId}/` в URL) — ID исполнителя или другого произвольного
+ * пользователя задачи здесь не подойдёт, ссылка не откроется.
+ * @param {string|number} groupId
+ * @param {string|number} taskId
+ * @param {string|number} [userId] - ID текущего пользователя для ссылки на личную страницу, когда группы нет
+ * @returns {string|null} URL задачи, либо `null`, если группы нет и `userId` не передан
+ */
+export function getTaskUrl(groupId, taskId, userId) {
+  if (groupId && groupId !== '0') {
+    return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/`;
+  }
+
+  if (userId) {
+    return `/company/personal/user/${userId}/tasks/task/view/${taskId}/`;
+  }
+
+  return null;
 }
 
 export function getTaskIdFromUrl(url) {
@@ -86,6 +108,19 @@ export function getCommitMessage(title, taskId) {
     return trimmed.replace(regex, `| ${taskId}`);
   }
   return `${trimmed} | ${taskId}`;
+}
+
+/**
+ * Строит текст комментария вида «TAGALL, <suffix>». TAGALL всегда хардкодится заглавными буквами —
+ * настраивается только часть после него. Если пользователь уже начал `suffix` со своего TAGALL
+ * (в любом регистре) и/или запятой с пробелами, они срезаются и подставляются заново — чтобы не задваивать.
+ * @param {string} [suffix] - текст после «TAGALL, »; если пустой (или содержит только запятые/пробелы), подставляется «на проде»
+ * @returns {string}
+ */
+export function getTagallCommentText(suffix) {
+  const withoutLeadingTagall = (suffix ?? '').trim().replace(TAGALL_LEADING_RE, '');
+  const normalizedSuffix = withoutLeadingTagall.trim().replace(/^[,\s]+/, '') || 'на проде';
+  return `TAGALL, ${normalizedSuffix}`;
 }
 
 export function isHotfixTask(taskName) {
@@ -588,18 +623,54 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
 }
 
 /**
- * Принудительно триггерит нативную бесконечную прокрутку контейнера: выставляет scrollTop
- * в конец (если есть реальное переполнение) и рассылает синтетическое событие scroll.
- * Нужно, когда контейнер визуально короткий (часть элементов скрыта через display:none или
- * удалена из DOM) и пользователь физически не может проскроллить — обработчик подгрузки
- * следующей страницы, реагирующий на событие scroll, в этом случае не срабатывает сам по себе.
+ * Опрашивает DOM в ожидании появления элемента, которого может ещё не быть в момент запуска
+ * скрипта — например, поле формы, которое Bitrix подставляет асинхронно после начального рендера.
+ * @param {string} selector - CSS-селектор искомого элемента.
+ * @param {number} [retriesLeft=20] - Сколько раз повторить попытку, прежде чем сдаться.
+ * @param {number} [delayMs=500] - Пауза между попытками в миллисекундах.
+ * @returns {Promise<Element|null>} Найденный элемент, либо `null`, если не дождались.
+ */
+export function waitForElement(selector, retriesLeft = 20, delayMs = 500) {
+  return new Promise((resolve) => {
+    function attempt(remaining) {
+      const element = document.querySelector(selector);
+      if (element || remaining <= 0) {
+        resolve(element);
+        return;
+      }
+      setTimeout(() => attempt(remaining - 1), delayMs);
+    }
+    attempt(retriesLeft);
+  });
+}
+
+/**
+ * Триггерит нативную бесконечную прокрутку контейнера, только если видимого контента пока
+ * недостаточно, чтобы контейнер физически переполнился. Нужно, когда контейнер визуально короткий
+ * (часть элементов скрыта через display:none или удалена из DOM) и пользователь физически не может
+ * проскроллить — обработчик подгрузки следующей страницы, реагирующий на событие scroll, в этом
+ * случае не срабатывает сам по себе. Если контейнер уже переполнен, ничего не делает — значит,
+ * контента достаточно и штатная подгрузка по реальному скроллу пользователя сработает сама.
  * @param {HTMLElement} container - Элемент, на котором висит нативный обработчик scroll.
+ * @returns {boolean} true, если событие scroll было отправлено (есть смысл повторить попытку позже).
  */
 export function triggerScrollLoadMore(container) {
-  if (container.scrollHeight > container.clientHeight) {
-    container.scrollTop = container.scrollHeight;
-  }
+  if (container.scrollHeight > container.clientHeight) return false;
+
   container.dispatchEvent(new Event('scroll'));
+  return true;
+}
+
+/**
+ * Приводит HTML-фрагмент к каноническому тексту для детекции TAGALL-упоминаний: `<br>` заменяется
+ * на перенос строки, остальная разметка вырезается, а tagall-фраза (`TAGALL_NAMED_RE`, например
+ * "Иван Иванов и другие участники задачи") заменяется на токен `TAGALL_TOKEN` — так имя из фразы
+ * не считается личным упоминанием, а сам токен упрощает дальнейшую детекцию.
+ * @param {string} html - Исходный HTML-фрагмент (например, `element.innerHTML`).
+ * @returns {string} Канонический текст с `TAGALL_TOKEN` вместо tagall-фразы.
+ */
+export function canonicalizeTagallHtml(html) {
+  return html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(TAGALL_NAMED_RE, TAGALL_TOKEN);
 }
 
 /**
@@ -644,6 +715,32 @@ export function pluralize(n, titles) {
     ];
 }
 
+const RU_TO_EN_LAYOUT_MAP = {
+  'й': 'q', 'ц': 'w', 'у': 'e', 'к': 'r', 'е': 't', 'н': 'y', 'г': 'u', 'ш': 'i', 'щ': 'o', 'з': 'p', 'х': '[', 'ъ': ']',
+  'ф': 'a', 'ы': 's', 'в': 'd', 'а': 'f', 'п': 'g', 'р': 'h', 'о': 'j', 'л': 'k', 'д': 'l', 'ж': ';', 'э': '\'',
+  'я': 'z', 'ч': 'x', 'с': 'c', 'м': 'v', 'и': 'b', 'т': 'n', 'ь': 'm', 'б': ',', 'ю': '.', 'ё': '`',
+};
+const EN_TO_RU_LAYOUT_MAP = Object.fromEntries(Object.entries(RU_TO_EN_LAYOUT_MAP).map(([russianCharacter, englishCharacter]) => [englishCharacter, russianCharacter]));
+
+/**
+ * Конвертирует строку между раскладками клавиатуры RU⇄EN по соответствию физических клавиш
+ * (ЙЦУКЕН↔QWERTY), символ за символом. Направление определяется автоматически по каждому
+ * символу — русские буквы конвертируются в английские и наоборот, поэтому один вызов
+ * покрывает обе раскладки сразу (например, «yfpdfybt» → «название», «название» → «yfpdfybt»).
+ * Символы вне обеих раскладок (цифры, большинство знаков препинания) остаются без изменений.
+ * @param {string} text
+ * @returns {string}
+ */
+export function convertKeyboardLayout(text) {
+  if (!text) return '';
+  return [...text].map((character) => {
+    const lowerCaseCharacter = character.toLowerCase();
+    const convertedCharacter = RU_TO_EN_LAYOUT_MAP[lowerCaseCharacter] ?? EN_TO_RU_LAYOUT_MAP[lowerCaseCharacter];
+    if (convertedCharacter === undefined) return character;
+    return character !== lowerCaseCharacter ? convertedCharacter.toUpperCase() : convertedCharacter;
+  }).join('');
+}
+
 /**
  * Обновляет классы --first/--last у всех .pts-actions-bar-btn в панели Bitrix,
  * учитывая визуальный порядок (flex order). Вызывать после каждого монтирования.
@@ -668,6 +765,26 @@ export function minifyPrompt(str) {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+const CYRILLIC_CHARACTER_RE = /[а-яё]/gi;
+const CHARACTERS_PER_TOKEN_LATIN = 4;
+const CHARACTERS_PER_TOKEN_CYRILLIC = 2.3;
+
+/**
+ * Приблизительно оценивает число токенов в тексте эвристикой по символам, без словаря/библиотеки.
+ * Кириллица кодируется большинством BPE-токенайзеров менее эффективно, чем латиница/цифры/пунктуация —
+ * поэтому число символов на токен линейно интерполируется между этими двумя случаями по доле кириллицы
+ * в тексте. Формат текста (обычный/markdown/BBCode/JSON) отдельно не учитывается — оценка реагирует
+ * только на фактический состав символов.
+ * @param {string} text
+ * @returns {number} приблизительное число токенов
+ */
+export function estimateTokenCount(text) {
+  if (!text) return 0;
+  const cyrillicRatio = (text.match(CYRILLIC_CHARACTER_RE) || []).length / text.length;
+  const charactersPerToken = CHARACTERS_PER_TOKEN_LATIN - (CHARACTERS_PER_TOKEN_LATIN - CHARACTERS_PER_TOKEN_CYRILLIC) * cyrillicRatio;
+  return Math.ceil(text.length / charactersPerToken);
 }
 
 // [TABLE][TR][TD]...[/TD][/TR][/TABLE] → Markdown-таблица. Первая строка становится заголовком —

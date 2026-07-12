@@ -611,6 +611,22 @@ export default class BitrixApi {
   }
 
   /**
+   * Резервный способ достать название группы, когда sonet_group.get недоступен (нет доступа к
+   * группе): на странице просмотра задачи название группы отображается всегда, независимо от
+   * доступа к самой группе — доступ проверяется на уровне задачи, а не группы.
+   * @param {string} userId
+   * @param {string} taskId
+   * @return {Promise<string|null>}
+   */
+  getGroupNameFromTaskPage(userId, taskId) {
+    return axios.get(`/company/personal/user/${userId}/tasks/task/view/${taskId}/`).then(({data}) => {
+      const parser = new DOMParser();
+      const html = parser.parseFromString(data, 'text/html');
+      return html.querySelector(`#task-${taskId}-group-value`)?.textContent?.trim() || null;
+    });
+  }
+
+  /**
    * Batch-запрос im.user.get для нескольких пользователей.
    * Возвращает camelCase поля: id, name, first_name, last_name, avatar.
    * @param {string[]} userIds

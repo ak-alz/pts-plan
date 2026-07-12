@@ -7,7 +7,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import BitrixApi from '../../../BitrixApi.js';
 import { DISK_FILE_INLINE_RE } from '../../../patterns.js';
 import FormField from '../../../ui/FormField.vue';
-import { bbcodeToMarkdown, isSystemComment, minifyPrompt } from '../../../utils.js';
+import { bbcodeToMarkdown, estimateTokenCount, isSystemComment, minifyPrompt, pluralize } from '../../../utils.js';
 
 const props = defineProps({
   sessionId: {
@@ -274,6 +274,7 @@ function buildOutput(forZip = false) {
 
 const resultText = computed(() => buildOutput());
 const resultCharCount = computed(() => resultText.value.length);
+const resultTokenEstimate = computed(() => estimateTokenCount(resultText.value));
 const exportFileExtension = computed(() => {
   if (exportAsJson.value) return 'json';
   return textFormat.value === 'markdown' ? 'md' : 'txt';
@@ -601,8 +602,12 @@ async function downloadZip() {
         :disabled="loadingComments || !hasExportableContent"
         @click="downloadZip"
       />
-      <span class="ml-auto text-xs text-surface-400 whitespace-nowrap">
-        {{ resultCharCount.toLocaleString('ru') }} симв.
+      <span class="ml-auto flex items-center gap-1 text-xs text-surface-400 whitespace-nowrap">
+        {{ resultCharCount.toLocaleString('ru') }} {{ pluralize(resultCharCount, ['символ', 'символа', 'символов']) }} / ≈{{ resultTokenEstimate.toLocaleString('ru') }} {{ pluralize(resultTokenEstimate, ['токен', 'токена', 'токенов']) }}
+        <i
+          v-tooltip="'Приблизительная оценка без токенайзера: ~4 символа на токен для латиницы/цифр/JSON и ~2.3 символа на токен для кириллицы, пропорционально её доле в тексте — реальное число может отличаться'"
+          class="pi pi-question-circle"
+        />
       </span>
     </div>
   </div>

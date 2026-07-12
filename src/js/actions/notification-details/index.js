@@ -6,8 +6,16 @@ import {
   NOTIF_REACTION_RE,
   TAGALL_NAMED_RE,
   TAGALL_STATUS_RE,
+  TAGALL_TOKEN,
 } from '../../patterns.js';
-import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, stringToPastelColor, triggerScrollLoadMore} from '../../utils.js';
+import {
+  canonicalizeTagallHtml,
+  getTaskIdFromUrl,
+  insertCSS,
+  rehydrateOnChanges,
+  stringToPastelColor,
+  triggerScrollLoadMore,
+} from '../../utils.js';
 import {NOTIF_TYPES} from './notifTypes.js';
 
 const SELECTORS = {
@@ -21,13 +29,9 @@ const SELECTORS = {
   headerButtonsContainer: '.bx-im-content-notification__header-buttons-container',
 };
 
-// Канонический токен, на который заменяется tagall-фраза (для детекции и для жирной метки в тексте)
-const TAGALL_TOKEN = 'TAGALL';
 const DEFAULT_STAGE_COLOR = '#888888';
 
-// Сколько подходящих под фильтр карточек стараемся догрузить, прежде чем остановиться
-const FILTER_LOAD_MORE_TARGET = 10;
-// Защита от бесконечной подгрузки, если у выбранной группы никогда не наберётся столько уведомлений
+// Защита от бесконечной подгрузки, если у выбранной группы никогда не наберётся достаточно уведомлений
 const FILTER_LOAD_MORE_MAX_ATTEMPTS = 30;
 
 const FILTER_BAR_CSS = `
@@ -476,27 +480,16 @@ export function notificationDetails(sessionId, options = {}) {
     if (selectedHighlightAttribute) highlightSelect.value = selectedHighlightAttribute;
   }
 
-  function countMatchingVisibleItems(container) {
-    const requiredAttributes = [
-      selectedGroupId && `[data-pts-group="${selectedGroupId}"]`,
-      selectedHighlightAttribute && `[${selectedHighlightAttribute}]`,
-    ].filter(Boolean).join('');
-
-    return container.querySelectorAll(`[data-pts-details="done"]${requiredAttributes}`).length;
-  }
-
-  // Пока по активным фильтрам видно меньше FILTER_LOAD_MORE_TARGET карточек — просим Bitrix
-  // догрузить ещё уведомлений (см. triggerScrollLoadMore в utils.js). Уже загруженные новые
-  // карточки проходят через обычный rehydrateOnChanges → init(), который вызовет эту функцию
-  // снова — отдельный цикл ожидания не нужен, он сам продолжится по мутациям DOM либо
+  // Проверка overflow — внутри triggerScrollLoadMore (см. utils.js): скрытые фильтром элементы
+  // не входят в scrollHeight, поэтому это точный сигнал "видимого контента достаточно". Уже
+  // загруженные новые карточки проходят через обычный rehydrateOnChanges → init(), который вызовет
+  // эту функцию снова — отдельный цикл ожидания не нужен, он сам продолжится по мутациям DOM либо
   // остановится, когда Bitrix перестанет присылать новые уведомления (реальный конец истории)
   function maybeTriggerFilterLoadMore(container) {
     if (!container || (!selectedGroupId && !selectedHighlightAttribute)) return;
     if (filterLoadMoreAttempts >= FILTER_LOAD_MORE_MAX_ATTEMPTS) return;
-    if (countMatchingVisibleItems(container) >= FILTER_LOAD_MORE_TARGET) return;
 
-    filterLoadMoreAttempts += 1;
-    triggerScrollLoadMore(container);
+    if (triggerScrollLoadMore(container)) filterLoadMoreAttempts += 1;
   }
 
   function injectStyles() {
@@ -545,6 +538,22 @@ export function notificationDetails(sessionId, options = {}) {
     return items;
   }
 
+  // sonet_group.get не отдаёт группы, к которым у пользователя нет доступа (например, его
+  // вывели из состава), а название всё равно нужно для чипа и подписи в фильтре. Резерв — страница
+  // просмотра задачи, где название группы видно независимо от доступа к самой группе (см.
+  // getGroupNameFromTaskPage). По одному запросу на группу, а не на задачу
+  async function fillMissingGroupNames(missingGroupIds, tasks) {
+    if (!missingGroupIds.length || !userId) return;
+
+    await Promise.all(missingGroupIds.map(async (groupId) => {
+      const task = tasks.find((task) => task.groupId === groupId);
+      if (!task) return;
+
+      const groupName = await bitrixApi.getGroupNameFromTaskPage(userId, task.id).catch(() => null);
+      if (groupName) cache.groups.set(groupId, {ID: groupId, NAME: groupName});
+    }));
+  }
+
   // Двухфазная батч-загрузка: задачи, затем связанные группы, стадии и пользователи
   async function loadDetails(taskIds) {
     const uncachedTaskIds = taskIds.filter((id) => !cache.tasks.has(id));
@@ -577,8 +586,9 @@ export function notificationDetails(sessionId, options = {}) {
 
     await Promise.all([
       uncachedGroupIds.length
-        ? bitrixApi.getGroupsByIdsBatch(uncachedGroupIds).then((result) => {
+        ? bitrixApi.getGroupsByIdsBatch(uncachedGroupIds).then(async (result) => {
           uncachedGroupIds.forEach((id) => cache.groups.set(id, result[id] ?? null));
+          await fillMissingGroupNames(uncachedGroupIds.filter((id) => !cache.groups.get(id)), tasks);
         })
         : null,
 
@@ -602,9 +612,7 @@ export function notificationDetails(sessionId, options = {}) {
   // поглощается заменой и потому не принимается за личное упоминание
   function extractNotifText(el) {
     const textElement = el.querySelector(SELECTORS.contentText);
-    const rawText = textElement
-      ? textElement.innerHTML.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(TAGALL_NAMED_RE, TAGALL_TOKEN)
-      : '';
+    const rawText = textElement ? canonicalizeTagallHtml(textElement.innerHTML) : '';
     const hasQuote = NOTIF_QUOTE_RE.test(rawText);
     const notifText = hasQuote ? stripBitrixQuotes(rawText) : rawText;
     return {notifText, hasQuote, rawText};

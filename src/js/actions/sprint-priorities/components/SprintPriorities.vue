@@ -84,9 +84,17 @@ const stageOptions = computed(() => {
       stagesMap.set(row.stage.name, row.stage.color ?? null);
     }
   });
+
+  // Порядок колонок в канбане — по индексу в groupStages (уже отсортирован по SORT)
+  const stageOrder = groupStages.value.map((stage) => stage.name);
+  const stageOrderIndex = (name) => {
+    const index = stageOrder.indexOf(name);
+    return index === -1 ? stageOrder.length : index;
+  };
+
   return [...stagesMap.entries()]
     .map(([name, color]) => ({ name, color }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => stageOrderIndex(a.name) - stageOrderIndex(b.name));
 });
 
 const filteredRows = computed(() => {

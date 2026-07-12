@@ -43,7 +43,7 @@ function features(...keys) {
       <ul class="m-0 pl-5 list-disc flex flex-col gap-1.5">
         <li><strong>Backlog</strong> — общий пул задач команды.</li>
         <li><strong>Декомпозированные</strong> — крупные задачи, разбитые на подзадачи и находящиеся в работе. Задача в этой колонке — это долг: она будет тянуться из спринта в спринт, пока все подзадачи не будут закрыты.</li>
-        <li><strong>HotFix</strong> — срочные исправления, которые не могут ждать следующего спринта.</li>
+        <li><strong>HotFix</strong> — срочные исправления, которые не могут ждать следующего спринта. Берутся в работу вне очереди приоритетов спринта, а дальше идут по тому же пути, что и обычные задачи: «В работе» → «Тестирование» → «На выкат» → «Done», баллы учитываются в итогах спринта.</li>
         <li><strong>Спринт</strong> — задачи текущего спринта. Пополняется только в момент планирования.</li>
         <li><strong>В работе</strong> — то, над чем работаешь прямо сейчас. <strong>Только одна задача на человека</strong> — пока не закончил текущую, новую не берёшь.</li>
         <li><strong>Тестирование</strong> — задача выполнена и ждёт проверки.</li>
@@ -82,6 +82,18 @@ function features(...keys) {
       <p class="m-0">
         Если в процессе работы появились правки, не входившие в ТЗ, и они тянут более чем на 3 балла — заводите отдельную задачу в Backlog.
       </p>
+      <p class="m-0">
+        <strong>Хотфиксы</strong> называются по другому шаблону — вместо места пишется «Hotfix»:
+      </p>
+      <p class="m-0 font-mono text-slate-800">
+        «Hotfix | Название | Баллы»
+      </p>
+      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-slate-500 italic">
+        <li>Hotfix | Падает форма авторизации | 2</li>
+      </ul>
+      <p class="m-0">
+        Оценка — только <strong>1, 2 или 3 балла</strong>. Если по факту тянет больше — это уже не хотфикс: перенесите задачу в Backlog и уберите префикс «Hotfix |».
+      </p>
       <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
@@ -100,6 +112,7 @@ function features(...keys) {
       <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-slate-500 italic">
         <li>Landing | Вёрстка главного экрана | 8 → Landing | Вёрстка главного экрана | 12453</li>
         <li>API | B | Эндпоинт авторизации через OAuth | 13 → API | B | Эндпоинт авторизации через OAuth | 12480</li>
+        <li>Hotfix | Падает форма авторизации | 2 → Hotfix | Падает форма авторизации | 12490</li>
       </ul>
       <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
         <OptionsTree

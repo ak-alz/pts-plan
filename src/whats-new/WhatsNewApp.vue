@@ -1,5 +1,5 @@
 <script setup>
-import {Accordion, AccordionContent, AccordionHeader, AccordionPanel, Dialog, Toast} from 'primevue';
+import {Accordion, AccordionContent, AccordionHeader, AccordionPanel, Checkbox, Dialog, Toast} from 'primevue';
 import {onMounted, reactive, ref, toRaw, watch} from 'vue';
 
 import options, {optionTypes} from '../js/options.js';
@@ -49,6 +49,12 @@ async function saveSettings() {
 
 const setupVisible = ref(false);
 const scrumVisible = ref(false);
+const disableAutoWhatsNew = ref(false);
+
+async function loadDisableAutoWhatsNew() {
+  const {disableAutoWhatsNew: stored} = await chrome.storage.local.get(['disableAutoWhatsNew']);
+  disableAutoWhatsNew.value = stored ?? false;
+}
 
 function openSetup() {
   setupVisible.value = true;
@@ -59,8 +65,10 @@ function onSetupComplete() {
 }
 
 onMounted(async () => {
-  await loadSettings();
+  await Promise.all([loadSettings(), loadDisableAutoWhatsNew()]);
+
   watch(form, saveSettings, {deep: true});
+  watch(disableAutoWhatsNew, (value) => chrome.storage.local.set({disableAutoWhatsNew: value}));
 
   // Новый юзер (после install) и кнопка из попапа ведут сюда с ?setup=1 — сразу открываем быструю настройку.
   const params = new URLSearchParams(window.location.search);
@@ -108,7 +116,7 @@ function resolvedOptions(item) {
         alt="logo"
         class="w-9 h-9"
       >
-      <div>
+      <div class="flex-1">
         <h1 class="m-0 text-xl font-bold text-slate-800">
           Pixel Plan Injection
         </h1>
@@ -116,6 +124,14 @@ function resolvedOptions(item) {
           Что нового в расширении
         </p>
       </div>
+      <label class="flex items-center gap-2 text-[13px] text-slate-500 cursor-pointer select-none">
+        <Checkbox
+          v-model="disableAutoWhatsNew"
+          binary
+          input-id="disable-auto-whats-new"
+        />
+        Не открывать эту страницу автоматически при обновлениях
+      </label>
     </div>
 
     <p class="mb-6 text-sm text-slate-500">

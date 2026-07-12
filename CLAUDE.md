@@ -163,6 +163,7 @@ URL parsers:
 
 Task helpers:
 - `getCommitMessage(title, taskId)` — appends `taskId` to a task title in commit message format (`title | taskId`), replacing an existing trailing `| …` block if present.
+- `getTagallCommentText(suffix?)` — builds a `"TAGALL, <suffix>"` comment string. `TAGALL` is always hardcoded uppercase; a leading TAGALL (any case) and/or leading comma/whitespace already present in `suffix` are stripped and re-added, so user input isn't doubled or double-punctuated. Falls back to `"на проде"` when `suffix` is empty.
 - `isHotfixTask(taskName)` — returns `true` if the task name starts with `"hotfix"`.
 - `getTaskPointsFromName(taskName)` — extracts story points from a task name (number after `|`, `I`, `/`, or `\`); returns `0` if not found.
 - `simplifyColumnName(columnName)` — abbreviates a column name to initials (first letter of each word, uppercased); falls back to first 3 characters for single-word names.

@@ -21,9 +21,14 @@ export function tagAllColor(color) {
     if (!comments.length) return;
 
     comments.forEach((comment) => {
-      if (!comment.querySelector(`.${className}`) && TAGALL_WORD_RE.test(comment.textContent)) {
-        comment.innerHTML = comment.innerHTML.replace(TAGALL_WORD_RE, (match) => `<b class="${className}">${match}</b>`);
-      }
+      if (comment.querySelector(`.${className}`)) return;
+
+      // Проверяем и заменяем одну и ту же строку (innerHTML), а не очищенную от тегов копию —
+      // сам символ "<" любого тега после TAGALL уже даёт границу \b (в отличие от textContent,
+      // где <br> схлопывается без разделителя и "TAGALL4. Текст" не матчится как отдельное слово)
+      if (!TAGALL_WORD_RE.test(comment.innerHTML)) return;
+
+      comment.innerHTML = comment.innerHTML.replace(TAGALL_WORD_RE, (match) => `<b class="${className}">${match}</b>`);
     });
   }
 

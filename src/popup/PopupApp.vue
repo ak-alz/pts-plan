@@ -4,6 +4,7 @@ import { Button, Dialog, IconField, InputIcon, InputText, SelectButton, Toast } 
 import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue';
 
 import options, { groups, optionTypes } from '../js/options.js';
+import { convertKeyboardLayout } from '../js/utils.js';
 import ImportExportContent from './components/ImportExportContent.vue';
 import OptionsTree from './components/OptionsTree.vue';
 import ProfileSettings from './components/ProfileSettings.vue';
@@ -28,11 +29,13 @@ const groupOptions = [
 const groupOrder = Object.fromEntries(groups.map((g, i) => [g.key, i]));
 
 const filteredOptions = computed(() => {
+  const searchValue = search.value.toLowerCase();
+  const convertedSearchValue = convertKeyboardLayout(searchValue);
   return options
     .filter((option) => {
       if (profileKeys.has(option.key)) return false;
-      const matchesSearch = option.name.toLowerCase().includes(search.value.toLowerCase())
-        || option.tip?.toLowerCase()?.includes(search.value.toLowerCase());
+      const matchesSearch = [searchValue, convertedSearchValue].some((value) =>
+        option.name.toLowerCase().includes(value) || option.tip?.toLowerCase()?.includes(value));
       const matchesGroup = selectedGroup.value === 'all'
         || (selectedGroup.value === 'new' && option.new)
         || (selectedGroup.value === 'popular' && (option.popularity ?? 0) >= 80)

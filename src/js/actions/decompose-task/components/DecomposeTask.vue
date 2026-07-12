@@ -222,7 +222,7 @@ async function submit(overrideRows) {
     });
 
     const createdTasks = taskRows
-      .map((row, i) => createdIds[i] ? { id: createdIds[i], label: row.title, url: getTaskUrl(groupId.value, createdIds[i]) } : null)
+      .map((row, i) => createdIds[i] ? { id: createdIds[i], label: row.title, url: getTaskUrl(groupId.value, createdIds[i], userId.value) } : null)
       .filter(Boolean);
 
     const commitRowIndex = taskRows.findIndex((r) => r.copyCommit);

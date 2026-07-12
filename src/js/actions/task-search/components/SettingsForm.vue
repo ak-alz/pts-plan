@@ -1,5 +1,5 @@
 <script setup>
-import { Button, Checkbox, Select, ToggleSwitch } from 'primevue';
+import { Button, InputText, MultiSelect, Select, ToggleSwitch } from 'primevue';
 import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
@@ -34,6 +34,16 @@ const RESULT_LIMIT_OPTIONS = [
   { label: 'Без ограничения', value: null },
 ];
 
+const HIDDEN_FILTER_OPTIONS = [
+  { label: 'Исключить из названия', value: 'excludeTitle' },
+  { label: 'Статус', value: 'status' },
+  { label: 'Тип задачи', value: 'parentType' },
+  { label: 'Дата создания', value: 'createdDate' },
+  { label: 'Дата изменения', value: 'changedDate' },
+  { label: 'Искать в описании и комментариях', value: 'extendedSearch' },
+  { label: 'Исключить хотфиксы', value: 'excludeHotfixes' },
+];
+
 const toast = useToast();
 const isLoading = ref(false);
 
@@ -43,13 +53,9 @@ const form = reactive({
   defaultUseGroupFilter: props.initial.defaultUseGroupFilter !== false,
   defaultSmartSearch: props.initial.defaultSmartSearch !== false,
   defaultExtendedSearch: props.initial.defaultExtendedSearch ?? false,
+  defaultExcludeTitle: props.initial.defaultExcludeTitle ?? '',
   resultLimit: props.initial.resultLimit !== undefined ? props.initial.resultLimit : 100,
-  hideExcludeTitle: props.initial.hideExcludeTitle ?? false,
-  hideStatus: props.initial.hideStatus ?? false,
-  hideParentType: props.initial.hideParentType ?? false,
-  hideCreatedDate: props.initial.hideCreatedDate ?? false,
-  hideChangedDate: props.initial.hideChangedDate ?? false,
-  hideExtendedSearch: props.initial.hideExtendedSearch ?? false,
+  hiddenFilters: props.initial.hiddenFilters ?? [],
 });
 
 async function saveSettings() {
@@ -68,7 +74,7 @@ async function saveSettings() {
 
 <template>
   <form
-    class="flex flex-col gap-4 w-[480px]"
+    class="flex flex-col gap-4 w-[580px]"
     @submit.prevent="saveSettings"
   >
     <div>
@@ -93,7 +99,7 @@ async function saveSettings() {
             class="w-full"
           />
         </FormField>
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
             v-model="form.defaultUseGroupFilter"
             input-id="settings-use-group-filter"
@@ -104,7 +110,7 @@ async function saveSettings() {
             class="text-sm cursor-pointer"
           >Только текущая группа</label>
         </div>
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
             v-model="form.defaultSmartSearch"
             input-id="settings-smart-search"
@@ -115,7 +121,7 @@ async function saveSettings() {
             class="text-sm cursor-pointer"
           >Искать по каждому слову</label>
         </div>
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
             v-model="form.defaultExtendedSearch"
             input-id="settings-extended-search"
@@ -139,80 +145,31 @@ async function saveSettings() {
             class="w-full"
           />
         </FormField>
-      </div>
-    </div>
-
-    <div>
-      <p class="text-sm font-semibold mb-2">
-        Скрыть фильтры
-      </p>
-      <div class="flex flex-col gap-2">
-        <div class="flex gap-2 items-center">
-          <Checkbox
-            v-model="form.hideExcludeTitle"
-            binary
-            input-id="settings-hide-exclude-title"
+        <FormField
+          label="Исключить из названия по умолчанию"
+          tip="Предзаполняет фильтр «Исключить из названия» при открытии поиска, например «hotfix»"
+        >
+          <InputText
+            v-model="form.defaultExcludeTitle"
+            size="small"
+            placeholder="Например, hotfix"
+            class="w-full"
           />
-          <label
-            for="settings-hide-exclude-title"
-            class="text-sm cursor-pointer"
-          >Исключить из названия</label>
-        </div>
-        <div class="flex gap-2 items-center">
-          <Checkbox
-            v-model="form.hideStatus"
-            binary
-            input-id="settings-hide-status"
+        </FormField>
+        <FormField label="Скрыть фильтры">
+          <MultiSelect
+            v-model="form.hiddenFilters"
+            :options="HIDDEN_FILTER_OPTIONS"
+            option-label="label"
+            option-value="value"
+            placeholder="Ничего не скрыто"
+            filter
+            filter-placeholder="Поиск"
+            show-clear
+            size="small"
+            class="w-full"
           />
-          <label
-            for="settings-hide-status"
-            class="text-sm cursor-pointer"
-          >Статус</label>
-        </div>
-        <div class="flex gap-2 items-center">
-          <Checkbox
-            v-model="form.hideParentType"
-            binary
-            input-id="settings-hide-parent-type"
-          />
-          <label
-            for="settings-hide-parent-type"
-            class="text-sm cursor-pointer"
-          >Тип задачи</label>
-        </div>
-        <div class="flex gap-2 items-center">
-          <Checkbox
-            v-model="form.hideCreatedDate"
-            binary
-            input-id="settings-hide-created-date"
-          />
-          <label
-            for="settings-hide-created-date"
-            class="text-sm cursor-pointer"
-          >Дата создания</label>
-        </div>
-        <div class="flex gap-2 items-center">
-          <Checkbox
-            v-model="form.hideChangedDate"
-            binary
-            input-id="settings-hide-changed-date"
-          />
-          <label
-            for="settings-hide-changed-date"
-            class="text-sm cursor-pointer"
-          >Дата изменения</label>
-        </div>
-        <div class="flex gap-2 items-center">
-          <Checkbox
-            v-model="form.hideExtendedSearch"
-            binary
-            input-id="settings-hide-extended-search"
-          />
-          <label
-            for="settings-hide-extended-search"
-            class="text-sm cursor-pointer"
-          >Искать в описании и комментариях</label>
-        </div>
+        </FormField>
       </div>
     </div>
 
