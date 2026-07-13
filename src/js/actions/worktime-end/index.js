@@ -50,10 +50,13 @@ export function worktimeEnd(dayHours = 8, minBreakHours = 1) {
     const remainingMinBreakSeconds = Math.max(0, minBreakSeconds - pausedSeconds);
     const endDate = new Date(Date.now() + (remainingWorkSeconds + remainingMinBreakSeconds) * 1000);
 
-    const result = Object.assign(document.createElement('p'), {
-      className: 'pts-worktime-end mt-2 text-sm text-surface-500 flex items-center gap-1',
-      textContent: `Конец дня ≈ ${formatEndTime(endDate)}`,
+    const result = Object.assign(document.createElement('span'), {
+      className: 'pts-worktime-end ml-2 inline-flex items-center gap-1 whitespace-nowrap',
     });
+    result.append('Закончу ', Object.assign(document.createElement('b'), {
+      className: 'text-base',
+      textContent: formatEndTime(endDate),
+    }));
 
     if (isPaused) {
       result.appendChild(Object.assign(document.createElement('i'), {
@@ -62,7 +65,7 @@ export function worktimeEnd(dayHours = 8, minBreakHours = 1) {
       }));
     }
 
-    taskStatus.appendChild(result);
+    mainTimer.insertAdjacentElement('afterend', result);
   }
 
   render();
