@@ -3,7 +3,6 @@ import {rehydrateOnChanges} from '../../utils.js';
 const POPUP_SELECTOR = '.intranet-avatar-widget-base-popup';
 const TASK_STATUS_SELECTOR = '.intranet-avatar-widget-item__task-status';
 const MAIN_TIMER_SELECTOR = '.tm-control-panel__timer.tm-timer:not(.tm-control-panel__timer_pause)';
-const PAUSE_TIMER_SELECTOR = '.tm-control-panel__timer_pause.tm-timer';
 const RESULT_SELECTOR = '.pts-worktime-end';
 
 function getClockSeconds(timerElement) {
@@ -19,51 +18,61 @@ function formatEndTime(date) {
 
 /**
  * Показывает расчётное время окончания рабочего дня рядом с таймером «Начать/Закончить работу»
- * в попапе профиля Bitrix. Считается один раз при каждом структурном изменении попапа (открытие,
- * пауза/продолжение/завершение) — не тикает вместе с таймером каждую секунду. Пока идёт пауза,
- * рядом показывается предупреждающая иконка: если реальный перерыв затянется дольше настроенного
- * минимума, время окончания на самом деле сдвинется дальше, а показанный расчёт останется прежним
- * до перезагрузки страницы.
+ * в попапе профиля Bitrix: текущее время + оставшееся до конца рабочего дня (длительность дня минус
+ * уже отработанное). Считается один раз при каждом структурном изменении попапа (открытие,
+ * пауза/продолжение/завершение) — не тикает вместе с таймером каждую секунду.
  * @param {number} dayHours - Длительность рабочего дня в часах.
- * @param {number} minBreakHours - Минимальный засчитываемый перерыв в часах.
  */
-export function worktimeEnd(dayHours = 8, minBreakHours = 1) {
+export function worktimeEnd(dayHours = 8) {
   const dayDurationSeconds = dayHours * 3600;
-  const minBreakSeconds = minBreakHours * 3600;
 
   function render() {
     const taskStatus = document.querySelector(`${POPUP_SELECTOR} ${TASK_STATUS_SELECTOR}`);
     if (!taskStatus) return;
 
-    taskStatus.querySelector(RESULT_SELECTOR)?.remove();
-
+    const existing = taskStatus.querySelector(RESULT_SELECTOR);
     const mainTimer = taskStatus.querySelector(MAIN_TIMER_SELECTOR);
-    const title = mainTimer?.querySelector('.tm-timer__title')?.textContent.trim();
-    if (!mainTimer || title === 'Не работаю') return;
+    const titleElement = mainTimer?.querySelector('.tm-timer__title');
+    if (!mainTimer || titleElement?.textContent.trim() === 'Не работаю') {
+      existing?.remove();
+      return;
+    }
 
     const workedSeconds = getClockSeconds(mainTimer);
-    const pauseTimer = taskStatus.querySelector(PAUSE_TIMER_SELECTOR);
-    const pausedSeconds = pauseTimer ? getClockSeconds(pauseTimer) : 0;
-    const isPaused = mainTimer.classList.contains('tm-timer_paused');
-
     const remainingWorkSeconds = Math.max(0, dayDurationSeconds - workedSeconds);
-    const remainingMinBreakSeconds = Math.max(0, minBreakSeconds - pausedSeconds);
-    const endDate = new Date(Date.now() + (remainingWorkSeconds + remainingMinBreakSeconds) * 1000);
+    const endText = formatEndTime(new Date(Date.now() + remainingWorkSeconds * 1000));
+
+    // Обновляем текст на месте, чтобы hover не мигал при пересоздании узла на каждый тик таймера.
+    if (existing) {
+      existing.querySelector('b').textContent = endText;
+      return;
+    }
+
+    const timeBold = Object.assign(document.createElement('b'), {
+      className: 'text-base',
+      textContent: endText,
+    });
+    const copyIcon = Object.assign(document.createElement('i'), {
+      className: 'pi pi-copy text-gray-400',
+    });
+
+    // px-1.5 (6px) — тот же зазор «Работаю → время», что у таймера в шапке.
+    const timeButton = Object.assign(document.createElement('span'), {
+      className: 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors hover:bg-black/5',
+      title: 'Скопировать время окончания',
+    });
+    timeButton.append(timeBold, copyIcon);
+
+    timeButton.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(timeBold.textContent);
+      copyIcon.classList.replace('pi-copy', 'pi-check');
+      setTimeout(() => copyIcon.classList.replace('pi-check', 'pi-copy'), 1500);
+    });
 
     const result = Object.assign(document.createElement('span'), {
-      className: 'pts-worktime-end ml-2 inline-flex items-center gap-1 whitespace-nowrap',
+      className: 'pts-worktime-end ml-2 inline-flex items-center whitespace-nowrap',
     });
-    result.append('Закончу ', Object.assign(document.createElement('b'), {
-      className: 'text-base',
-      textContent: formatEndTime(endDate),
-    }));
-
-    if (isPaused) {
-      result.appendChild(Object.assign(document.createElement('i'), {
-        className: 'pi pi-exclamation-triangle text-yellow-500',
-        title: 'Показано на момент паузы — перезагрузите страницу, чтобы пересчитать время после её окончания.',
-      }));
-    }
+    result.append('Закончу', timeButton);
 
     mainTimer.insertAdjacentElement('afterend', result);
   }
