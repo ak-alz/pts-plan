@@ -1,9 +1,42 @@
+import PrimeVue from 'primevue/config';
+import ToastService from 'primevue/toastservice';
+import {useToast} from 'primevue/usetoast';
+import {createApp, h} from 'vue';
+
+import primeVueOptions from '../../primeVueOptions.js';
+import PtsToast from '../../ui/PtsToast.vue';
 import {rehydrateOnChanges} from '../../utils.js';
 
 const POPUP_SELECTOR = '.intranet-avatar-widget-base-popup';
 const TASK_STATUS_SELECTOR = '.intranet-avatar-widget-item__task-status';
 const MAIN_TIMER_SELECTOR = '.tm-control-panel__timer.tm-timer:not(.tm-control-panel__timer_pause)';
 const RESULT_SELECTOR = '.pts-worktime-end';
+const TOAST_GROUP = 'worktime-end';
+
+// Ленивый одиночный Vue-хост только под тост: фича — чистый DOM, полноценное приложение не нужно.
+let showToast;
+function getToast() {
+  if (showToast) return showToast;
+
+  let toast;
+  const host = document.body.appendChild(document.createElement('div'));
+  const app = createApp({
+    setup() {
+      toast = useToast();
+      return () => h(PtsToast, {group: TOAST_GROUP});
+    },
+  });
+  app.use(PrimeVue, primeVueOptions);
+  app.use(ToastService);
+  app.mount(host);
+
+  showToast = (options) => {
+    // Только один тост за раз: убираем предыдущий из группы перед показом нового.
+    toast.removeGroup(TOAST_GROUP);
+    toast.add({group: TOAST_GROUP, ...options});
+  };
+  return showToast;
+}
 
 function getClockSeconds(timerElement) {
   const hours = parseInt(timerElement.querySelector('.bui-clock__value_hours')?.textContent, 10) || 0;
@@ -16,10 +49,26 @@ function formatEndTime(date) {
   return date.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
 }
 
+function formatDuration(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return `${hours}:${String(minutes).padStart(2, '0')}`;
+}
+
+function applyContent(root, endText, overtimeText) {
+  const bold = root.querySelector('b');
+  if (bold.textContent !== endText) bold.textContent = endText;
+
+  const overtime = root.querySelector('.pts-worktime-overtime');
+  if (overtime.textContent !== overtimeText) overtime.textContent = overtimeText;
+  overtime.classList.toggle('hidden', !overtimeText);
+}
+
 /**
  * Показывает расчётное время окончания рабочего дня рядом с таймером «Начать/Закончить работу»
  * в попапе профиля Bitrix: текущее время + оставшееся до конца рабочего дня (длительность дня минус
- * уже отработанное). Считается один раз при каждом структурном изменении попапа (открытие,
+ * уже отработанное). При переработке показывает момент выработки нормы и величину переработки.
+ * Считается один раз при каждом структурном изменении попапа (открытие,
  * пауза/продолжение/завершение) — не тикает вместе с таймером каждую секунду.
  * @param {number} dayHours - Длительность рабочего дня в часах.
  */
@@ -39,42 +88,45 @@ export function worktimeEnd(dayHours = 8) {
     }
 
     const workedSeconds = getClockSeconds(mainTimer);
-    const remainingWorkSeconds = Math.max(0, dayDurationSeconds - workedSeconds);
+    // Без Math.max: при переработке остаток отрицательный, поэтому время окончания уходит в прошлое —
+    // это момент, когда норма дня была выработана. Модуль отрицательного остатка — величина переработки.
+    const remainingWorkSeconds = dayDurationSeconds - workedSeconds;
     const endText = formatEndTime(new Date(Date.now() + remainingWorkSeconds * 1000));
+    const overtimeText = remainingWorkSeconds < 0 ? `переработка ${formatDuration(-remainingWorkSeconds)}` : '';
 
     // Обновляем текст на месте, чтобы hover не мигал при пересоздании узла на каждый тик таймера.
     if (existing) {
-      existing.querySelector('b').textContent = endText;
+      applyContent(existing, endText, overtimeText);
       return;
     }
 
     const timeBold = Object.assign(document.createElement('b'), {
-      className: 'text-base',
-      textContent: endText,
+      className: 'text-base transition-colors hover:text-blue-600',
     });
-    const copyIcon = Object.assign(document.createElement('i'), {
-      className: 'pi pi-copy text-gray-400',
-    });
-
     // px-1.5 (6px) — тот же зазор «Работаю → время», что у таймера в шапке.
     const timeButton = Object.assign(document.createElement('span'), {
-      className: 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors hover:bg-black/5',
+      className: 'inline-flex items-center px-1.5 py-0.5 rounded-md cursor-pointer',
       title: 'Скопировать время окончания',
     });
-    timeButton.append(timeBold, copyIcon);
+    timeButton.append(timeBold);
 
     timeButton.addEventListener('click', async () => {
       await navigator.clipboard.writeText(timeBold.textContent);
-      copyIcon.classList.replace('pi-copy', 'pi-check');
-      setTimeout(() => copyIcon.classList.replace('pi-check', 'pi-copy'), 1500);
+      getToast()({severity: 'success', summary: 'Время окончания скопировано', life: 2000});
+    });
+
+    const overtimeSpan = Object.assign(document.createElement('span'), {
+      className: 'pts-worktime-overtime ml-0.5 mr-2 text-orange-500 whitespace-nowrap',
     });
 
     const result = Object.assign(document.createElement('span'), {
-      className: 'pts-worktime-end ml-2 inline-flex items-center whitespace-nowrap',
+      className: 'pts-worktime-end -mr-1.5 inline-flex items-center whitespace-nowrap',
     });
-    result.append('Закончу', timeButton);
+    result.append('до', timeButton, overtimeSpan);
+    applyContent(result, endText, overtimeText);
 
-    mainTimer.insertAdjacentElement('afterend', result);
+    const clock = mainTimer.querySelector('.bui-clock');
+    clock.insertAdjacentElement('afterend', result);
   }
 
   render();
