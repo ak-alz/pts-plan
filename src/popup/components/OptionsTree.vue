@@ -1,6 +1,6 @@
 <script setup>
 import {Button, Checkbox, InputGroup, InputNumber, InputText, MultiSelect, RadioButton, Select} from 'primevue';
-import {computed, ref, watch} from 'vue';
+import {computed, inject, ref, watch} from 'vue';
 
 import allOptions, {optionTypes} from '../../js/options.js';
 import {useAutoFill} from '../useAutoFill.js';
@@ -36,6 +36,12 @@ const style = computed(() => {
   return 'padding-left: calc(20px + var(--spacing));';
 });
 
+// Уменьшенный вертикальный паддинг для size="small" полей и кнопок — токен sm.paddingY общий
+// для InputText/Select/MultiSelect/Button. InputNumber рендерит InputText внутри себя и не
+// пробрасывает dt дальше, поэтому для него тот же паддинг задаём через pt.pcInputText
+const COMPACT_FIELD_DT = {root: {sm: {paddingY: '0.1875rem'}}};
+const COMPACT_INPUT_NUMBER_PT = {pcInputText: {root: {style: {paddingTop: '0.1875rem', paddingBottom: '0.1875rem'}}}};
+
 function flattenOptions(opts) {
   const map = {};
   for (const opt of opts) {
@@ -46,6 +52,20 @@ function flattenOptions(opts) {
 }
 
 const optionMap = flattenOptions(allOptions);
+
+// На странице настроек (whats-new) диалог настроек можно открыть прямо здесь — этот обработчик
+// предоставляет WhatsNewApp через provide. В попапе его нет, поэтому открываем в новой вкладке
+const openSettingsInPlace = inject('openSettingsInPlace', null);
+
+function openSettings(url) {
+  const target = new URL(chrome.runtime.getURL(url));
+  // Уже на нужной странице — не плодим новую одинаковую вкладку, открываем настройки на месте
+  if (openSettingsInPlace && window.location.pathname === target.pathname) {
+    openSettingsInPlace(target.search);
+    return;
+  }
+  chrome.tabs.create({url: chrome.runtime.getURL(url)});
+}
 
 function missingNeeds(option) {
   if (!option.needs) return [];
@@ -123,18 +143,22 @@ watch(
           :id="`option_${option.key}`"
           v-model="model[option.key]"
           :style="{ width: option.width ?? '180px' }"
+          :dt="COMPACT_FIELD_DT"
           size="small"
           :disabled="option.needs?.some(k => !model[k])"
+          :placeholder="option.placeholder"
         />
         <InputNumber
           v-else-if="option.type === optionTypes.NUMBER"
           v-model="model[option.key]"
           :input-style="{ width: option.width ?? '180px' }"
           :input-id="`option_${option.key}`"
+          :pt="COMPACT_INPUT_NUMBER_PT"
           size="small"
           :use-grouping="false"
           :max-fraction-digits="0"
           :disabled="option.needs?.some(k => !model[k])"
+          :placeholder="option.placeholder"
         />
         <Button
           v-if="profileKeys.has(option.key)"
@@ -177,6 +201,7 @@ watch(
         :options="option.choices"
         option-label="label"
         option-value="value"
+        :dt="COMPACT_FIELD_DT"
         size="small"
         fluid
         :style="{ width: option.width ?? '180px' }"
@@ -187,6 +212,7 @@ watch(
         :options="option.choices"
         option-label="label"
         option-value="value"
+        :dt="COMPACT_FIELD_DT"
         size="small"
         :show-toggle-all="false"
         placeholder="Не выбрано"
@@ -206,12 +232,28 @@ watch(
       >{{ option.name }}</label>
       <span
         v-if="option.new"
-        class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-surface-500"
+        class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-surface-500 dark:text-surface-400"
       >new</span>
       <OptionHint
         v-if="option.tip"
         :tip="option.tip"
         :option-key="option.key"
+        :author="option.author"
+      />
+    </div>
+    <div
+      v-if="option.settingsUrl && model[option.key]"
+      class="flex gap-1 items-center"
+      style="padding-left: calc(20px + var(--spacing));"
+    >
+      <Button
+        label="Настроить"
+        icon="pi pi-cog"
+        :dt="COMPACT_FIELD_DT"
+        size="small"
+        severity="secondary"
+        outlined
+        @click="openSettings(option.settingsUrl)"
       />
     </div>
     <OptionsTree

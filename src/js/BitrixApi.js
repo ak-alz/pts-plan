@@ -128,7 +128,7 @@ export default class BitrixApi {
           start,
         });
         // Только нужные поля — исключаем description, auditorsData, accomplicesData и т.д.
-        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL'].forEach((field) => {
+        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL', 'PARENT_ID'].forEach((field) => {
           params.append('select[]', field);
         });
         cmd[key] = `tasks.task.list?${params.toString()}`;
@@ -341,6 +341,7 @@ export default class BitrixApi {
    * @param {boolean} params.smartTitleSearch - разбивать title по пробелам и искать каждое слово через AND
    * @param {'active'|'closed'|null} params.status - 'active' = не завершённые, 'closed' = завершённые, null = все
    * @param {'all'|'root'|'subtask'} params.parentType - 'root' = только корневые задачи, 'subtask' = только подзадачи, 'all' = все
+   * @param {Array<string|number>|null} params.parentIds - прямые дети конкретных задач (для обхода дерева подзадач по уровням); не сочетается с parentType
    * @param {string|null} params.groupId - ID группы (null = глобальный поиск)
    * @param {string|number|null} params.createdBy - ID постановщика
    * @param {string|number|null} params.responsibleId - ID исполнителя
@@ -363,6 +364,7 @@ export default class BitrixApi {
                       excludeTitle,
                       status,
                       parentType,
+                      parentIds,
                       groupId,
                       createdBy,
                       responsibleId,
@@ -410,6 +412,7 @@ export default class BitrixApi {
     if (status === 'closed') filter['STATUS'] = 5;
     if (parentType === 'root') filter['PARENT_ID'] = 0;
     if (parentType === 'subtask') filter['!PARENT_ID'] = 0;
+    if (parentIds?.length) filter['PARENT_ID'] = parentIds;
     if (groupId) filter['GROUP_ID'] = groupId;
     if (createdBy) filter['CREATED_BY'] = createdBy;
     if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;

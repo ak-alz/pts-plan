@@ -1,5 +1,5 @@
 import {TAGALL_NAMED_RE} from '../../patterns.js';
-import {isUserMentioned, rehydrateOnChanges} from '../../utils.js';
+import {isUserMentioned, rehydrateOnChanges, waitForStableText} from '../../utils.js';
 
 const TAGALL_TOKEN = 'TAGALL';
 
@@ -26,15 +26,18 @@ export function closeNotifications(firstName, lastName, options = {}) {
       notification.classList.add('js-notification-processed');
     }
 
-    // Ждём макротаск — Bitrix рендерит текст асинхронно после добавления элемента в DOM
-    await new Promise((r) => setTimeout(r, 0));
-
     for (const notification of notifications) {
       const textElement = notification.querySelector('.ui-notification-manager-browser-text');
       if (!textElement) continue;
 
+      // Ждём, пока Bitrix закончит асинхронно дорисовывать текст (см. waitForStableText) — иначе
+      // длинные уведомления (например, с большим списком соисполнителей) читаются недорисованными,
+      // и isUserMentioned не находит имя, которое физически ещё не успело попасть в DOM
+      const rawText = await waitForStableText(textElement);
+      if (!rawText) continue;
+
       // Канонизируем tagall-фразу в токен TAGALL, чтобы имя из неё не считалось личным упоминанием
-      const canonicalText = textElement.textContent.trim().replace(TAGALL_NAMED_RE, TAGALL_TOKEN);
+      const canonicalText = rawText.replace(TAGALL_NAMED_RE, TAGALL_TOKEN);
       if (isUserMentioned(canonicalText, firstName, lastName)) {
         if (transformText) applyTextTransform(textElement, firstName, lastName);
         continue;

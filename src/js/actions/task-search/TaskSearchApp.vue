@@ -2,7 +2,6 @@
 import { Dialog } from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import TaskSearchMain from './components/TaskSearch.vue';
 
 defineProps({
@@ -41,6 +40,4 @@ const modalOpened = ref(false);
       :group-id
     />
   </Dialog>
-
-  <PtsToast group="task-search" />
 </template>

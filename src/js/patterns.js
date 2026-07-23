@@ -122,6 +122,13 @@ export const BBCODE_STRIP_WRAPPER_RE = /\[(COLOR|SIZE|LEFT|CENTER|RIGHT)[^\]]*\]
 // заглавной латиницей, чтобы не задеть кириллические плейсхолдеры типа "[Вложения: ...]".
 export const BBCODE_UNKNOWN_TAG_RE = /\[\/?[A-Z][A-Z0-9]*(?:=[^\]]*)?\]/g;
 
+// decompose-task: готовая декомпозиция, которую внешний AI-инструмент оценки задач (pts-ai, не эта
+// фича) вставляет в сырое описание задачи. Маркер [AI_DECOMPOSITIONS] содержит "_", поэтому не
+// совпадает с BBCODE_UNKNOWN_TAG_RE и не вырезается. Список подзадач — обычные строки
+// "- {title} — {points} points" внутри [QUOTE] (не BBCode [LIST]).
+export const AI_DECOMPOSITIONS_BLOCK_RE = /\[AI_DECOMPOSITIONS\][\s\S]*?\[QUOTE[^\]]*\]([\s\S]*?)\[\/QUOTE\]/i;
+export const AI_DECOMPOSITIONS_ITEM_RE = /^-\s*(.+?)(?:\s*—\s*(\d+)\s*points?)?\s*$/;
+
 // Типы уведомлений (для чипа в notification-details)
 export const NOTIF_NEW_TASK_RE = /добавил[а]? новую задачу|добавлена новая задача/i;
 export const NOTIF_COMMENT_RE = /добавил[а]? комментарий|добавлен комментарий/i;

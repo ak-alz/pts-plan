@@ -16,7 +16,7 @@ const steps = [
     type: 'single',
     default: 'basic',
     // Базовые улучшения работы с задачами — полезны всем, не зависят от роли и раздела.
-    features: ['decomposeTask', 'editTaskTitle', 'showComments', 'statusMarkers', 'invisibleMentions', 'fixLinks', 'worktimeEnd'],
+    features: ['decomposeTask', 'editTaskTitle', 'showComments', 'statusMarkers', 'invisibleMentions', 'fixLinks', 'worktimeEnd', 'callNotifications'],
     options: [
       { label: 'Разработчик', value: 'developer', description: 'Пишете код, работаете с git', features: ['commitButton', 'kanbanCommitButton', 'tagallButton', 'exportTask'] },
       { label: 'Руководитель / аналитик', value: 'management', description: 'Ставите задачи, следите за спринтами и метриками команды', features: ['exportGroupTasks'] },
@@ -32,8 +32,8 @@ const steps = [
     default: ['notifications'],
     options: [
       { label: 'Канбан-доска', value: 'kanban', description: 'Доска задач с колонками по стадиям', features: ['taskSearch', 'quickTask', 'kanbanCommitButton', 'tagallButton'] },
-      { label: 'Панель уведомлений', value: 'notifications', description: 'Колокольчик и всплывающие оповещения Битрикса', features: ['notificationDetails', 'removeSystemNotifications', 'closeNotifications', 'removeNotifications', 'osNotifications'] },
-      { label: 'Работа с задачами и комментариями', value: 'automation', description: 'Автовыбор при упоминании через «+», наблюдатели по умолчанию при создании задачи, автоподстановка названия подзадачи, редирект на просмотр после создания задачи, действия в новой вкладке, название группы во вкладке браузера', features: ['autoChoiceUser', 'autoAuditor', 'autoTaskTitle', 'redirectAfterTaskCreate', 'openInNewTab', 'groupTitle'] },
+      { label: 'Панель уведомлений', value: 'notifications', description: 'Колокольчик и всплывающие оповещения Битрикса', features: ['notificationDetails', 'removeSystemNotifications', 'closeNotifications', 'removeNotifications', 'browserNotifications'] },
+      { label: 'Работа с задачами и комментариями', value: 'automation', description: 'Автовыбор при упоминании через «+», наблюдатели по умолчанию при создании задачи, автоподстановка названия подзадачи, исправление багов Bitrix, действия в новой вкладке, название группы во вкладке браузера', features: ['autoChoiceUser', 'autoAuditor', 'autoTaskTitle', 'bitrixBugfixes', 'openInNewTab', 'groupTitle'] },
     ],
   },
   {

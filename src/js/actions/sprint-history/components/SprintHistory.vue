@@ -1,10 +1,10 @@
 <script setup>
 import dayjs from 'dayjs';
 import { Avatar, Button, Checkbox, Select, ToggleSwitch } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import { getTaskPointsFromName, isHotfixTask } from '../../../utils.js';
@@ -22,7 +22,6 @@ const props = defineProps({
   },
 });
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 function getPrevWeekRange() {
@@ -186,8 +185,7 @@ async function fetchData() {
     }
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'sprint-history',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -205,8 +203,7 @@ watch(groupByParent, async (val) => {
       await fetchGroupedData();
     } catch (e) {
       console.warn(e);
-      toast.add({
-        group: 'sprint-history',
+      showToast({
         severity: 'error',
         summary: 'Ошибка',
         detail: e.message,

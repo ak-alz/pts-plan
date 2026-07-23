@@ -123,6 +123,21 @@ export function getTagallCommentText(suffix) {
   return `TAGALL, ${normalizedSuffix}`;
 }
 
+/**
+ * Числовые коды поля STATUS (общие для tasks.task.list/get) — по документации Bitrix24
+ * (REST v3, tasks/rest-v3/fields.html: `2` ждет выполнения … `6` отложена) плюс общеизвестный
+ * код `7` отклонена, единой числовой таблицы для классического API в документации нет.
+ */
+export const TASK_STATUS_LABELS = {
+  1: 'Новая',
+  2: 'Ждёт выполнения',
+  3: 'Выполняется',
+  4: 'Ждёт контроля',
+  5: 'Завершена',
+  6: 'Отложена',
+  7: 'Отклонена',
+};
+
 export function isHotfixTask(taskName) {
   return typeof taskName === 'string' && taskName.trim().toLowerCase().startsWith('hotfix');
 }
@@ -641,6 +656,32 @@ export function waitForElement(selector, retriesLeft = 20, delayMs = 500) {
       setTimeout(() => attempt(remaining - 1), delayMs);
     }
     attempt(retriesLeft);
+  });
+}
+
+/**
+ * Опрашивает `textContent` элемента, пока он не перестанет меняться между двумя последовательными
+ * попытками — Bitrix заполняет текст всплывающего тост-уведомления асинхронно и может делать это
+ * в несколько заходов (например, длинный текст с большим списком соисполнителей дорисовывается не
+ * за один тик), поэтому проверки "непустой текст" недостаточно — нужно дождаться именно стабилизации.
+ * @param {Element|null} element - Элемент, чей текст нужно дождаться, либо `null`, если не найден.
+ * @param {number} [retriesLeft=6] - Сколько повторных попыток сделать, прежде чем сдаться.
+ * @param {number} [delayMs=50] - Пауза между попытками в миллисекундах.
+ * @returns {Promise<string>} Стабилизировавшийся (trim()-нутый) текст, либо последнее прочитанное значение, если так и не дождались.
+ */
+export function waitForStableText(element, retriesLeft = 6, delayMs = 50) {
+  if (!element) return Promise.resolve('');
+
+  return new Promise((resolve) => {
+    function attempt(remaining, previousText) {
+      const text = element.textContent.trim();
+      if ((text && text === previousText) || remaining <= 0) {
+        resolve(text);
+        return;
+      }
+      setTimeout(() => attempt(remaining - 1, text), delayMs);
+    }
+    attempt(retriesLeft, null);
   });
 }
 

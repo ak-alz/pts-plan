@@ -29,6 +29,10 @@ const props = defineProps({
 });
 
 const totalPoints = computed(() => props.tasks.reduce((sum, t) => sum + t.points, 0));
+
+function isRootTask(task) {
+  return String(task.parentId ?? 0) === '0';
+}
 </script>
 
 <template>
@@ -40,6 +44,7 @@ const totalPoints = computed(() => props.tasks.reduce((sum, t) => sum + t.points
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    striped-rows
     :paginator="tasks.length > 25"
     :rows="25"
     :rows-per-page-options="[10, 25, 50, 100]"
@@ -60,6 +65,11 @@ const totalPoints = computed(() => props.tasks.reduce((sum, t) => sum + t.points
     </Column>
     <Column header="Задача">
       <template #body="{ data }">
+        <i
+          v-if="isRootTask(data)"
+          v-tooltip.top="'Корневая задача'"
+          class="pi pi-sitemap text-surface-400 mr-1"
+        />
         <a
           :href="getTaskUrl(groupId, data.id)"
           target="_top"

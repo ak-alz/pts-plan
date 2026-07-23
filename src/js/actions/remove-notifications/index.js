@@ -1,4 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
+import {showToast} from '../../toastHost/showToast.js';
 import {getTaskIdFromUrl} from '../../utils.js';
 
 export function removeNotifications(sessionId) {
@@ -22,6 +23,7 @@ export function removeNotifications(sessionId) {
       let notifications = await BitrixApi.getUserNotifications(ids.taskId);
       if (!notifications.length) {
         this.removeAttribute('disabled');
+        showToast({severity: 'info', summary: 'Уведомлений нет', detail: 'Удалять нечего.', life: 3000});
 
         return;
       }
@@ -33,6 +35,7 @@ export function removeNotifications(sessionId) {
       await bitrixApi.removeNotifications(notifications);
       this.textContent = 'Уведомления успешно удалены';
       this.classList.add('remove-notifications--success');
+      showToast({severity: 'success', summary: 'Уведомления удалены', detail: `Удалено: ${notifications.length}`, life: 3000});
 
       setTimeout(() => {
         this.removeAttribute('disabled');

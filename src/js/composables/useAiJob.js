@@ -1,5 +1,6 @@
-import {useToast} from 'primevue/usetoast';
 import {onUnmounted, ref, watch} from 'vue';
+
+import {showToast} from '../toastHost/showToast.js';
 
 // Опрос конкретной AI-задачи (report_id) не привязан к жизненному циклу Vue-компонента — если виджет
 // закрыть до получения ответа, промис из startJob() продолжает выполняться. Реестр не даёт второму
@@ -13,7 +14,7 @@ const activePolls = new Map();
  * получения ответа) и единообразную обработку ошибок с тостом. Не знает, как строить промпт и что делать
  * с результатом — это остаётся на стороне вызывающего компонента.
  * @param {() => string} getStorageKey - возвращает ключ хранения задачи (обычно зависит от groupId/taskId).
- * @param {{group: string, onAuthError?: () => void}} config - группа тостов компонента и коллбек, вызываемый при невалидном/отсутствующем API-ключе.
+ * @param {{onAuthError?: () => void}} config - коллбек, вызываемый при невалидном/отсутствующем API-ключе.
  * @returns {{
  *   loading: import('vue').Ref<boolean>,
  *   progress: import('vue').Ref<number|null>,
@@ -25,8 +26,7 @@ const activePolls = new Map();
  *   runJob: (startJob: () => Promise<string>, onSuccess?: (result: string) => (void|Promise<void>)) => Promise<void>,
  * }} API для запуска, восстановления и отслеживания AI-задачи.
  */
-export function useAiJob(getStorageKey, {group, onAuthError} = {}) {
-  const toast = useToast();
+export function useAiJob(getStorageKey, {onAuthError} = {}) {
   const loading = ref(false);
   const progress = ref(null);
   let unmounted = false;
@@ -85,7 +85,7 @@ export function useAiJob(getStorageKey, {group, onAuthError} = {}) {
         if (onSuccess) await onSuccess(result);
       } catch (e) {
         if (!unmounted) {
-          toast.add({ group, severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+          showToast({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
           if (e.isAuthError && onAuthError) onAuthError();
         }
       } finally {
@@ -113,7 +113,7 @@ export function useAiJob(getStorageKey, {group, onAuthError} = {}) {
       // Задача завершилась ошибкой (или устарела) — продолжать её опрос при следующем открытии виджета нет смысла
       await forget();
       if (!unmounted) {
-        toast.add({ group, severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+        showToast({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
         if (e.isAuthError && onAuthError) onAuthError();
       }
     } finally {

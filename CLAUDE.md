@@ -89,6 +89,20 @@ Prefer these classes over arbitrary hex values where PrimeVue theme integration 
 
 **No inline `style` attributes.** Style with Tailwind utility classes, preferring `tailwindcss-primeui` theme tokens (`text-primary`, `bg-surface-100`, …) over raw palette classes (`text-amber-500`). Inline `style` is a last resort — only for genuinely dynamic values that can't be a static class (e.g. a color string coming from data: `:style="{ backgroundColor: column.color }"`). Never use inline `style` for static styling that a utility class can express. Remember new utility classes need `npm run build-css`.
 
+### Dark theme (popup and `whats-new` only)
+
+The popup and `whats-new` pages follow the OS/browser dark theme (`prefers-color-scheme`); content-script feature widgets stay forced light always, since they render on top of the always-light Bitrix page. This is wired via `src/js/primeVueOptions.js`'s `createPrimeVueOptions({darkModeSelector})` — the default export (used by every `src/js/actions/**/index.js`) keeps `darkModeSelector: false`; `popup/index.js` and `whats-new/index.js` pass `{darkModeSelector: 'system'}`. Don't change the default export's behavior — content scripts must not follow the OS theme.
+
+**Gotcha: raw `surface-N` Tailwind classes do NOT auto-invert between themes.** `bg-surface-500`, `text-surface-700`, etc. map straight to PrimeVue's raw palette (slate for light, zinc for dark per the Aura preset) — same relative lightness in both, no inversion. Real light/dark inversion only happens through PrimeVue's own semantic tokens (`content.background`, `text.color`, …), which aren't exposed as Tailwind utilities. So any new `bg-surface-*`/`text-surface-*`/`border-surface-*` class added to popup or `whats-new` markup needs an explicit `dark:` pair, or it'll silently look identical (or unreadable) in both themes. Established mapping (mirrors PrimeVue's own Aura semantic scheme, keep new code consistent with it):
+
+- Page/content background: `surface-0` → `dark:surface-900`
+- Subtle box background (cards, highlight panels): `surface-50`/`surface-100` → `dark:surface-800`
+- Border: `surface-200` → `dark:surface-700`
+- Heading/body text: `surface-800`/`surface-700` → `dark:surface-0`
+- Muted text tiers, one step fainter per 100: `surface-600`→`dark:surface-300`, `surface-500`→`dark:surface-400`, `surface-400`→`dark:surface-500`, `surface-300`→`dark:surface-600`
+
+Also: give every "card"-like container its own explicit background class — don't rely on a parent (e.g. a `Dialog`) to show through. A card with only a `border-*` class and no `bg-*` looked fine in light mode (white Dialog behind it) but stayed white in dark mode too, since nothing was there to invert.
+
 ### Critical constraints
 
 - **Do not use `<style>` blocks in Vue components used inside content scripts.** The CRXJS build pipeline injects these into `document.head`, which breaks content script isolation. Use Tailwind utility classes or `src/css/content-styles.css` instead. `<style>` blocks work fine in popup and whats-new components.

@@ -51,7 +51,7 @@ function onSubmit() {
       />
       <span
         v-if="taskCountHint"
-        class="text-xs text-surface-400"
+        class="text-xs text-surface-400 dark:text-surface-500"
       >{{ taskCountHint }}</span>
     </div>
 

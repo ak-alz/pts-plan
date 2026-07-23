@@ -2,7 +2,6 @@
 import {Dialog} from 'primevue';
 import {ref} from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import DecomposeTask from './components/DecomposeTask.vue';
 
 defineProps({
@@ -50,6 +49,4 @@ const modalOpened = ref(false);
       @success="modalOpened = false"
     />
   </Dialog>
-
-  <PtsToast group="decompose-task" />
 </template>

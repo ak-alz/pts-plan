@@ -1,6 +1,5 @@
 import PrimeVue from 'primevue/config';
 import Ripple from 'primevue/ripple';
-import ToastService from 'primevue/toastservice';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
@@ -33,7 +32,6 @@ export async function exportTask(sessionId) {
     taskId: ids.taskId,
   });
   app.use(PrimeVue, primeVueOptions);
-  app.use(ToastService);
   app.directive('tooltip', Tooltip);
   app.directive('ripple', Ripple);
   app.mount(appContainer);

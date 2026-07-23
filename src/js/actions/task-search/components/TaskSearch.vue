@@ -14,10 +14,10 @@ import {
   Skeleton,
   ToggleSwitch,
 } from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getTaskUrl, isHotfixTask, pluralize} from '../../../utils.js';
@@ -67,7 +67,6 @@ function migrateHiddenFilters(storedSettings) {
     .map(([, hiddenFilterKey]) => hiddenFilterKey);
 }
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const settings = ref({});
@@ -248,8 +247,7 @@ async function search() {
     }
   } catch (e) {
     console.warn('[task-search]', e);
-    toast.add({
-      group: 'task-search',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -539,6 +537,7 @@ function formatDate(dateStr) {
         :rows="25"
         :rows-per-page-options="[25, 50, 100]"
         size="small"
+        striped-rows
         style="min-width: 600px;"
       >
         <Column style="width: 36px; min-width: 36px;">
@@ -558,6 +557,11 @@ function formatDate(dateStr) {
           style="min-width: 280px;"
         >
           <template #body="{ data }">
+            <i
+              v-if="String(data.parentId ?? 0) === '0'"
+              v-tooltip.top="'Корневая задача'"
+              class="pi pi-sitemap text-surface-400 mr-1"
+            />
             <a
               class="pts-blur"
               :href="getTaskUrl(data.groupId, data.id, currentUserId)"

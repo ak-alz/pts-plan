@@ -1,42 +1,12 @@
-import PrimeVue from 'primevue/config';
-import ToastService from 'primevue/toastservice';
-import {useToast} from 'primevue/usetoast';
-import {createApp, h} from 'vue';
+import dayjs from 'dayjs';
 
-import primeVueOptions from '../../primeVueOptions.js';
-import PtsToast from '../../ui/PtsToast.vue';
+import {showToast} from '../../toastHost/showToast.js';
 import {rehydrateOnChanges} from '../../utils.js';
 
 const POPUP_SELECTOR = '.intranet-avatar-widget-base-popup';
 const TASK_STATUS_SELECTOR = '.intranet-avatar-widget-item__task-status';
 const MAIN_TIMER_SELECTOR = '.tm-control-panel__timer.tm-timer:not(.tm-control-panel__timer_pause)';
 const RESULT_SELECTOR = '.pts-worktime-end';
-const TOAST_GROUP = 'worktime-end';
-
-// Ленивый одиночный Vue-хост только под тост: фича — чистый DOM, полноценное приложение не нужно.
-let showToast;
-function getToast() {
-  if (showToast) return showToast;
-
-  let toast;
-  const host = document.body.appendChild(document.createElement('div'));
-  const app = createApp({
-    setup() {
-      toast = useToast();
-      return () => h(PtsToast, {group: TOAST_GROUP});
-    },
-  });
-  app.use(PrimeVue, primeVueOptions);
-  app.use(ToastService);
-  app.mount(host);
-
-  showToast = (options) => {
-    // Только один тост за раз: убираем предыдущий из группы перед показом нового.
-    toast.removeGroup(TOAST_GROUP);
-    toast.add({group: TOAST_GROUP, ...options});
-  };
-  return showToast;
-}
 
 function getClockSeconds(timerElement) {
   const hours = parseInt(timerElement.querySelector('.bui-clock__value_hours')?.textContent, 10) || 0;
@@ -45,8 +15,8 @@ function getClockSeconds(timerElement) {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-function formatEndTime(date) {
-  return date.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+function formatEndTime(moment) {
+  return moment.format('HH:mm');
 }
 
 function formatDuration(totalSeconds) {
@@ -91,7 +61,7 @@ export function worktimeEnd(dayHours = 8) {
     // Без Math.max: при переработке остаток отрицательный, поэтому время окончания уходит в прошлое —
     // это момент, когда норма дня была выработана. Модуль отрицательного остатка — величина переработки.
     const remainingWorkSeconds = dayDurationSeconds - workedSeconds;
-    const endText = formatEndTime(new Date(Date.now() + remainingWorkSeconds * 1000));
+    const endText = formatEndTime(dayjs().add(remainingWorkSeconds, 'second'));
     const overtimeText = remainingWorkSeconds < 0 ? `переработка ${formatDuration(-remainingWorkSeconds)}` : '';
 
     // Обновляем текст на месте, чтобы hover не мигал при пересоздании узла на каждый тик таймера.
@@ -112,7 +82,7 @@ export function worktimeEnd(dayHours = 8) {
 
     timeButton.addEventListener('click', async () => {
       await navigator.clipboard.writeText(timeBold.textContent);
-      getToast()({severity: 'success', summary: 'Время окончания скопировано', life: 2000});
+      showToast({severity: 'success', summary: 'Время окончания скопировано', life: 2000});
     });
 
     const overtimeSpan = Object.assign(document.createElement('span'), {

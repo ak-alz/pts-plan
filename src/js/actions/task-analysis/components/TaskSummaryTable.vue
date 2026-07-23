@@ -1,11 +1,12 @@
 <script setup>
 import {marked} from 'marked';
 import {Button, Column, DataTable, Dialog, InputGroup, Password, Textarea} from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {computed, nextTick, onMounted, ref} from 'vue';
 
 import {useAiJob} from '../../../composables/useAiJob.js';
+import {useContentTheme} from '../../../composables/useContentTheme.js';
 import {PixelToolsApi} from '../../../PixelToolsApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import {colors} from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 
@@ -36,7 +37,14 @@ const props = defineProps({
   },
 });
 
-const indigoShades = Object.values(colors.indigo);
+const {isDark} = useContentTheme();
+
+const indigoShades = computed(() => {
+  const shades = Object.values(colors.indigo);
+  // На тёмном фоне таблицы бледные оттенки (50-300) теряются — в тёмной теме отбрасываем их,
+  // но направление сохраняем: чем больше баллов, тем темнее оттенок, как и в светлой теме
+  return isDark.value ? shades.slice(4) : shades;
+});
 
 const pointColorMap = computed(() => {
   const allPoints = [...new Set(
@@ -45,7 +53,7 @@ const pointColorMap = computed(() => {
       ...(row.prevPointDistribution ?? []).map((s) => s.points),
     ]),
   )].sort((a, b) => a - b);
-  return new Map(allPoints.map((p, i) => [p, indigoShades[i % indigoShades.length]]));
+  return new Map(allPoints.map((p, i) => [p, indigoShades.value[i % indigoShades.value.length]]));
 });
 
 function getPointColor(points) {
@@ -96,8 +104,6 @@ function buildRows() {
   return {headers, dataRows};
 }
 
-const toast = useToast();
-
 const AI_CONTEXT_MAX_LENGTH = 1000;
 const aiContextStorageKey = computed(() => `task-analysis-ai-context-${props.groupId}`);
 const aiContext = ref('');
@@ -146,7 +152,6 @@ const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
 
 const aiJob = useAiJob(() => `task-analysis-ai-job-${props.groupId}`, {
-  group: 'task-analysis',
   onAuthError: () => { isApiKeyModalOpened.value = true; },
 });
 const aiLoading = aiJob.loading;
@@ -189,7 +194,7 @@ async function aiAnalyze() {
     let prompt = buildSystemPrompt(buildAiData(), props.dateRange, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ group: 'task-analysis', severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
@@ -298,6 +303,7 @@ function exportCsv() {
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    striped-rows
   >
     <Column
       v-if="multiUser"

@@ -1,13 +1,13 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Button, SelectButton, Skeleton, Textarea, ToggleSwitch } from 'primevue';
-import { useToast } from 'primevue/usetoast';
+import { Button, Message, SelectButton, Skeleton, Textarea, ToggleSwitch } from 'primevue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { DISK_FILE_INLINE_RE } from '../../../patterns.js';
+import { showToast } from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
-import { bbcodeToMarkdown, estimateTokenCount, isSystemComment, minifyPrompt, pluralize } from '../../../utils.js';
+import { bbcodeToMarkdown, estimateTokenCount, isSystemComment, minifyPrompt, pluralize, TASK_STATUS_LABELS } from '../../../utils.js';
 
 const props = defineProps({
   sessionId: {
@@ -20,15 +20,19 @@ const props = defineProps({
   },
 });
 
-const toast = useToast();
 const api = new BitrixApi(props.sessionId);
 
 const loading = ref(true);
 const loadingComments = ref(false);
 const commentsLoaded = ref(false);
+const loadingSubtasks = ref(false);
+const subtasksLoaded = ref(false);
+const subtasksTree = ref([]); // дерево прямых подзадач taskId: [{ id, title, status, files: [{name, url}], children: [...] }]
 const taskTitle = ref('');
 const taskDescription = ref('');
 const taskCreatedDate = ref('');
+const taskStatus = ref('');
+const taskStageName = ref('');
 const taskAuthorId = ref('');
 const taskAuthorName = ref('');
 const taskFileObjects = ref([]);
@@ -40,6 +44,7 @@ const extraContext = ref('');
 const includeTitle = ref(true);
 const includeDescription = ref(true);
 const includeComments = ref(true);
+const includeSubtasks = ref(false);
 const textFormat = ref('bbcode'); // формат самого текста (описание/комментарии) — независим от exportAsJson
 const exportAsJson = ref(false); // оборачивает результат в JSON-структуру вместо плоского текста
 const downloadingZip = ref(false);
@@ -57,13 +62,14 @@ const extraContextStorageKey = computed(() => `export-task-context-${groupId.val
 let isInitializing = true;
 let authorLoaded = false;
 
-watch([includeTitle, includeDescription, includeComments, textFormat, exportAsJson], () => {
+watch([includeTitle, includeDescription, includeComments, includeSubtasks, textFormat, exportAsJson], () => {
   if (isInitializing) return;
   chrome.storage.local.set({
     [SETTINGS_STORAGE_KEY]: {
       includeTitle: includeTitle.value,
       includeDescription: includeDescription.value,
       includeComments: includeComments.value,
+      includeSubtasks: includeSubtasks.value,
       textFormat: textFormat.value,
       exportAsJson: exportAsJson.value,
     },
@@ -74,6 +80,13 @@ watch(includeComments, async (newValue) => {
   if (isInitializing) return;
   if (newValue && !commentsLoaded.value) {
     await loadComments();
+  }
+});
+
+watch(includeSubtasks, async (newValue) => {
+  if (isInitializing) return;
+  if (newValue && !subtasksLoaded.value) {
+    await loadSubtasks();
   }
 });
 
@@ -105,6 +118,12 @@ const userComments = computed(() =>
 );
 
 const selectedComments = computed(() => includeComments.value ? userComments.value : []);
+
+function countSubtasks(nodes) {
+  return nodes.reduce((total, node) => total + 1 + countSubtasks(node.children), 0);
+}
+
+const subtasksCount = computed(() => countSubtasks(subtasksTree.value));
 
 function attachmentFileName(attachmentId, originalName) {
   const extension = originalName?.split('.').pop()?.toLowerCase() || 'bin';
@@ -178,6 +197,29 @@ function formatAttachmentsBlock(names, label, forZip) {
   return `\n[${label}: ${names.map((name) => formatFileLink(name, name, forZip)).join(', ')}]`;
 }
 
+const taskStatusLabel = computed(() => TASK_STATUS_LABELS[taskStatus.value] ?? '');
+
+// «Дата создания» вместе с точным числом прошедших дней — по просьбе пользователя, чтобы не
+// пересчитывать вручную давность задачи.
+function formatCreatedDateLine() {
+  const daysSinceCreation = dayjs().diff(dayjs(taskCreatedDate.value), 'day');
+  return `${dayjs(taskCreatedDate.value).format('DD.MM.YYYY')} (${daysSinceCreation} ${pluralize(daysSinceCreation, ['день', 'дня', 'дней'])} назад)`;
+}
+
+function buildTaskMetaLines(isMarkdown) {
+  const lines = [];
+  if (taskCreatedDate.value) {
+    lines.push(isMarkdown ? `**Дата создания:** ${formatCreatedDateLine()}` : `Дата создания: ${formatCreatedDateLine()}`);
+  }
+  if (taskStatusLabel.value) {
+    lines.push(isMarkdown ? `**Статус:** ${taskStatusLabel.value}` : `Статус: ${taskStatusLabel.value}`);
+  }
+  if (taskStageName.value) {
+    lines.push(isMarkdown ? `**Стадия:** ${taskStageName.value}` : `Стадия: ${taskStageName.value}`);
+  }
+  return lines;
+}
+
 function formatComment(comment, index, forZip) {
   const author = [comment.AUTHOR_NAME, comment.AUTHOR_LAST_NAME].filter(Boolean).join(' ') || '?';
   const date = comment.POST_DATE ? dayjs(comment.POST_DATE).format('DD.MM.YY') : '';
@@ -197,6 +239,28 @@ function formatComment(comment, index, forZip) {
   return `[${index + 1}] ${author}${date ? ` (${date})` : ''}:\n${text}${attachmentsBlock}`;
 }
 
+// Ссылки-ссылки на подзадачи в плоском тексте — иерархическая нумерация (1, 1.1, 1.2, 2...),
+// depth выводится отступом в 2 пробела на уровень, чтобы дерево подзадач читалось и без разметки.
+function formatSubtaskLines(nodes, forZip, parentRef = '') {
+  const lines = [];
+  nodes.forEach((node, index) => {
+    const ref = parentRef ? `${parentRef}.${index + 1}` : `${index + 1}`;
+    const depth = ref.split('.').length - 1;
+    const indent = '  '.repeat(depth);
+    const statusLabel = TASK_STATUS_LABELS[node.status] ?? '';
+    const filesSuffix = node.files.length
+      ? ` (Вложения: ${node.files.map((file) => formatFileLink(file.name, file.name, forZip)).join(', ')})`
+      : '';
+
+    const line = textFormat.value === 'markdown'
+      ? `${indent}- **[${ref}]** ${node.title}${statusLabel ? ` — _${statusLabel}_` : ''}${filesSuffix}`
+      : `${indent}[${ref}] ${node.title}${statusLabel ? ` — ${statusLabel}` : ''}${filesSuffix}`;
+
+    lines.push(line, ...formatSubtaskLines(node.children, forZip, ref));
+  });
+  return lines;
+}
+
 function buildText(forZip) {
   const isMarkdown = textFormat.value === 'markdown';
   const parts = [];
@@ -208,6 +272,11 @@ function buildText(forZip) {
 
   if (includeTitle.value && taskTitle.value) {
     parts.push(isMarkdown ? `# ${taskTitle.value}` : taskTitle.value);
+  }
+
+  if (includeTitle.value || includeDescription.value) {
+    const metaLines = buildTaskMetaLines(isMarkdown);
+    if (metaLines.length) parts.push(metaLines.join('\n'));
   }
 
   if (includeDescription.value) {
@@ -230,6 +299,11 @@ function buildText(forZip) {
     parts.push(`${isMarkdown ? '## Комментарии\n\n' : 'КОММЕНТАРИИ:\n'}${block}`);
   }
 
+  if (includeSubtasks.value && subtasksTree.value.length) {
+    const block = formatSubtaskLines(subtasksTree.value, forZip).join('\n');
+    parts.push(`${isMarkdown ? '## Подзадачи\n\n' : 'ПОДЗАДАЧИ:\n'}${block}`);
+  }
+
   return parts.join('\n\n');
 }
 
@@ -247,6 +321,9 @@ function buildJson(forZip) {
   if ((includeTitle.value && taskTitle.value) || includeDescription.value) {
     result.task = {
       date: taskCreatedDate.value || null,
+      daysSinceCreation: taskCreatedDate.value ? dayjs().diff(dayjs(taskCreatedDate.value), 'day') : null,
+      status: taskStatusLabel.value || null,
+      stage: taskStageName.value || null,
       author: taskAuthorName.value || null,
       ...(includeTitle.value && taskTitle.value && { title: taskTitle.value }),
       ...(includeDescription.value && {
@@ -265,7 +342,21 @@ function buildJson(forZip) {
     }));
   }
 
+  if (includeSubtasks.value && subtasksTree.value.length) {
+    result.subtasks = subtasksTree.value.map((node) => subtaskToJson(node, forZip));
+  }
+
   return JSON.stringify(result, null, 2);
+}
+
+function subtaskToJson(node, forZip) {
+  return {
+    id: node.id,
+    title: node.title,
+    status: TASK_STATUS_LABELS[node.status] ?? null,
+    attachments: node.files.map((file) => jsonAttachment(file, forZip)),
+    subtasks: node.children.map((child) => subtaskToJson(child, forZip)),
+  };
 }
 
 function buildOutput(forZip = false) {
@@ -282,7 +373,8 @@ const exportFileExtension = computed(() => {
 
 const hasExportableContent = computed(() =>
   (includeDescription.value && (!!taskDescription.value || taskFileObjects.value.length > 0))
-  || (includeComments.value && selectedComments.value.length > 0),
+  || (includeComments.value && selectedComments.value.length > 0)
+  || (includeSubtasks.value && subtasksTree.value.length > 0),
 );
 
 // Все файлы задачи (формальные вложения + инлайн-картинки в описании) — независимо от того,
@@ -318,6 +410,11 @@ function collectCommentAttachmentFiles(comment) {
   return [...filesByName.values()];
 }
 
+// Файлы всех подзадач дерева (рекурсивно, включая вложенные подзадачи подзадач).
+function collectSubtaskAttachmentFiles(nodes) {
+  return nodes.flatMap((node) => [...node.files, ...collectSubtaskAttachmentFiles(node.children)]);
+}
+
 function collectAttachmentFiles() {
   // Map по имени файла — один и тот же файл Диска может быть и вложением, и инлайн-картинкой
   // в тексте одновременно (например, вставленное в комментарий изображение), имя у него одно.
@@ -331,6 +428,10 @@ function collectAttachmentFiles() {
   }
 
   collectTaskAttachmentFiles().forEach(addFile);
+
+  if (includeSubtasks.value) {
+    collectSubtaskAttachmentFiles(subtasksTree.value).forEach(addFile);
+  }
 
   return [...filesByName.values()];
 }
@@ -359,9 +460,64 @@ async function loadComments() {
 
     commentsLoaded.value = true;
   } catch {
-    toast.add({ group: 'export-task', severity: 'error', summary: 'Ошибка загрузки комментариев', life: 3000 });
+    showToast({ severity: 'error', summary: 'Ошибка загрузки комментариев', life: 3000 });
   } finally {
     loadingComments.value = false;
+  }
+}
+
+// Обходит дерево подзадач уровень за уровнем (BFS): на каждом уровне один запрос searchTasks
+// по всем ID-родителям этого уровня сразу, вместо запроса на каждую подзадачу по отдельности.
+// Уровень пуст → дерево закончилось, цикл останавливается сам.
+async function loadSubtasks() {
+  loadingSubtasks.value = true;
+  try {
+    const childrenByParentId = new Map();
+    let currentLevelIds = [props.taskId];
+
+    while (currentLevelIds.length) {
+      const levelTasks = await api.searchTasks({
+        parentIds: currentLevelIds,
+        extraSelectFields: ['STATUS', 'UF_TASK_WEBDAV_FILES'],
+      });
+
+      levelTasks.forEach((task) => {
+        const parentKey = String(task.parentId);
+        if (!childrenByParentId.has(parentKey)) childrenByParentId.set(parentKey, []);
+        childrenByParentId.get(parentKey).push(task);
+      });
+
+      currentLevelIds = levelTasks.map((task) => String(task.id));
+    }
+
+    const subtaskAttachmentIds = [];
+    childrenByParentId.forEach((tasks) => {
+      tasks.forEach((task) => {
+        (task.ufTaskWebdavFiles ?? []).forEach((attachmentId) => subtaskAttachmentIds.push(String(attachmentId)));
+      });
+    });
+
+    if (subtaskAttachmentIds.length) {
+      const subtaskAttachedObjects = await api.getAttachedObjectsBatch(subtaskAttachmentIds).catch(() => []);
+      registerDiskIds(subtaskAttachedObjects);
+    }
+
+    const buildNodes = (parentId) => (childrenByParentId.get(String(parentId)) ?? []).map((task) => ({
+      id: String(task.id),
+      title: task.title,
+      status: task.status,
+      files: (task.ufTaskWebdavFiles ?? [])
+        .map((attachmentId) => diskFileByObjectId.value.get(attachmentDiskIdMap.value.get(String(attachmentId))))
+        .filter(Boolean),
+      children: buildNodes(task.id),
+    }));
+
+    subtasksTree.value = buildNodes(props.taskId);
+    subtasksLoaded.value = true;
+  } catch {
+    showToast({ severity: 'error', summary: 'Ошибка загрузки подзадач', life: 3000 });
+  } finally {
+    loadingSubtasks.value = false;
   }
 }
 
@@ -373,23 +529,33 @@ onMounted(async () => {
       includeTitle.value = settings.includeTitle ?? true;
       includeDescription.value = settings.includeDescription ?? true;
       includeComments.value = settings.includeComments ?? true;
+      includeSubtasks.value = settings.includeSubtasks ?? false;
       textFormat.value = settings.textFormat ?? 'bbcode';
       exportAsJson.value = settings.exportAsJson ?? false;
     }
 
     const [taskResponse] = await Promise.all([
-      api.getTask(props.taskId, ['TITLE', 'DESCRIPTION', 'UF_TASK_WEBDAV_FILES', 'GROUP_ID', 'CREATED_DATE', 'CREATED_BY']),
+      api.getTask(props.taskId, ['TITLE', 'DESCRIPTION', 'UF_TASK_WEBDAV_FILES', 'GROUP_ID', 'CREATED_DATE', 'CREATED_BY', 'STATUS', 'STAGE_ID']),
       includeComments.value ? loadComments() : Promise.resolve(),
+      includeSubtasks.value ? loadSubtasks() : Promise.resolve(),
     ]);
 
     const task = taskResponse.data?.result?.task ?? {};
     taskTitle.value = task.title ?? '';
     taskDescription.value = task.description ?? '';
     taskCreatedDate.value = task.createdDate ?? '';
+    taskStatus.value = task.status ?? '';
     taskAuthorId.value = String(task.createdBy ?? '');
     groupId.value = String(task.groupId ?? '');
 
     if (exportAsJson.value) await loadTaskAuthor();
+
+    if (groupId.value && task.stageId) {
+      api.getStages(groupId.value).then(({ data }) => {
+        const stage = Object.values(data?.result ?? {}).find((candidate) => String(candidate.ID) === String(task.stageId));
+        taskStageName.value = stage?.TITLE ?? '';
+      }).catch(() => {});
+    }
 
     const storedContext = await chrome.storage.local.get([extraContextStorageKey.value]);
     if (storedContext[extraContextStorageKey.value]) {
@@ -412,7 +578,7 @@ onMounted(async () => {
 
     await resolveInlineDiskFiles(extractInlineDiskFileIds(taskDescription.value));
   } catch {
-    toast.add({ group: 'export-task', severity: 'error', summary: 'Ошибка загрузки данных задачи', life: 3000 });
+    showToast({ severity: 'error', summary: 'Ошибка загрузки данных задачи', life: 3000 });
   } finally {
     isInitializing = false;
     loading.value = false;
@@ -422,9 +588,9 @@ onMounted(async () => {
 async function copyToClipboard() {
   try {
     await navigator.clipboard.writeText(buildOutput());
-    toast.add({ group: 'export-task', severity: 'success', summary: 'Скопировано!', life: 2000 });
+    showToast({ severity: 'success', summary: 'Скопировано!', life: 2000 });
   } catch {
-    toast.add({ group: 'export-task', severity: 'error', summary: 'Ошибка копирования', life: 3000 });
+    showToast({ severity: 'error', summary: 'Ошибка копирования', life: 3000 });
   }
 }
 
@@ -459,10 +625,10 @@ async function downloadZip() {
     Object.assign(document.createElement('a'), { href: blobUrl, download: `task-${props.taskId}.zip` }).click();
     URL.revokeObjectURL(blobUrl);
 
-    toast.add({ group: 'export-task', severity: 'success', summary: 'Архив скачан!', life: 2000 });
+    showToast({ severity: 'success', summary: 'Архив скачан!', life: 2000 });
   } catch (error) {
     console.error(error);
-    toast.add({ group: 'export-task', severity: 'error', summary: 'Ошибка создания архива', life: 3000 });
+    showToast({ severity: 'error', summary: 'Ошибка создания архива', life: 3000 });
   } finally {
     downloadingZip.value = false;
   }
@@ -560,12 +726,10 @@ async function downloadZip() {
       <ToggleSwitch
         v-model="includeComments"
         input-id="toggle-comments"
-        :disabled="commentsLoaded && !userComments.length"
       />
       <label
         for="toggle-comments"
-        class="text-sm font-medium"
-        :class="commentsLoaded && !userComments.length ? 'text-surface-400 cursor-default' : 'cursor-pointer'"
+        class="text-sm font-medium cursor-pointer"
       >
         Комментарии
         <span
@@ -577,12 +741,39 @@ async function downloadZip() {
       </label>
     </div>
 
+    <div class="flex items-center gap-2 select-none">
+      <ToggleSwitch
+        v-model="includeSubtasks"
+        input-id="toggle-subtasks"
+      />
+      <label
+        for="toggle-subtasks"
+        class="text-sm font-medium cursor-pointer"
+      >
+        Подзадачи
+        <span
+          v-if="subtasksLoaded"
+          class="text-xs font-normal text-surface-400"
+        >
+          {{ subtasksCount }}
+        </span>
+      </label>
+    </div>
+
+    <Message
+      severity="info"
+      size="small"
+      variant="simple"
+    >
+      Макеты из Figma автоматически не экспортируются — выгрузите PDF вручную из Figma и приложите его в папку задачи на Диске.
+    </Message>
+
     <div class="flex gap-2 flex-wrap pt-1 border-t border-surface-200 items-center">
       <Button
         label="Скопировать"
         icon="pi pi-copy"
         size="small"
-        :disabled="loadingComments || !hasExportableContent"
+        :disabled="loadingComments || loadingSubtasks || !hasExportableContent"
         @click="copyToClipboard"
       />
       <Button
@@ -590,7 +781,7 @@ async function downloadZip() {
         icon="pi pi-file"
         severity="secondary"
         size="small"
-        :disabled="loadingComments || !hasExportableContent"
+        :disabled="loadingComments || loadingSubtasks || !hasExportableContent"
         @click="downloadTxt"
       />
       <Button
@@ -599,7 +790,7 @@ async function downloadZip() {
         severity="secondary"
         size="small"
         :loading="downloadingZip"
-        :disabled="loadingComments || !hasExportableContent"
+        :disabled="loadingComments || loadingSubtasks || !hasExportableContent"
         @click="downloadZip"
       />
       <span class="ml-auto flex items-center gap-1 text-xs text-surface-400 whitespace-nowrap">

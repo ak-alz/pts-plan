@@ -3,12 +3,12 @@ import dayjs from 'dayjs';
 import { forEachRight, orderBy, sum } from 'lodash-es';
 import { marked } from 'marked';
 import { Button, ButtonGroup, Dialog, Password, Skeleton, Textarea, ToggleButton } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { useAiJob } from '../../../composables/useAiJob.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import {stringToPastelColor} from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
@@ -28,8 +28,6 @@ const props = defineProps({
     required: true,
   },
 });
-
-const toast = useToast();
 
 const bitrixApi = new BitrixApi(props.sessionId);
 
@@ -205,8 +203,7 @@ async function fetchData() {
     dateUpdated.value = `Последнее обновление: ${dayjs().format('HH:mm:ss')}`;
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-summary',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -266,7 +263,6 @@ const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
 
 const aiJob = useAiJob(() => `scrum-summary-ai-job-${props.groupId}`, {
-  group: 'scrum-summary',
   onAuthError: () => { isApiKeyModalOpened.value = true; },
 });
 const aiLoading = aiJob.loading;
@@ -303,7 +299,7 @@ async function aiAnalyze() {
     let prompt = buildSystemPrompt(aiData, ignorePoints, form.dateRange, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ group: 'scrum-summary', severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);

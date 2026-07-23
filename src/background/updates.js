@@ -79,6 +79,22 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await chrome.storage.local.remove('taskSearchFavorites');
   }
 
+  if (compareVersions(previousVersion, '2.12.0') < 0) {
+    const stored = await chrome.storage.local.get(['notification-details-filter']);
+    const savedFilter = stored['notification-details-filter'];
+
+    // Старый формат — одиночный выбор (groupId/highlightAttribute — строка). Оборачиваем в
+    // массивы (новый формат — мультивыбор) и полностью заменяем значение, без старых полей
+    if (savedFilter && !Array.isArray(savedFilter.groupIds)) {
+      await chrome.storage.local.set({
+        'notification-details-filter': {
+          groupIds: savedFilter.groupId ? [savedFilter.groupId] : [],
+          highlightAttributes: savedFilter.highlightAttribute ? [savedFilter.highlightAttribute] : [],
+        },
+      });
+    }
+  }
+
   if (notificationMessage) {
     await chrome.notifications.create({
       type: 'basic',

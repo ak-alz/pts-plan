@@ -1,8 +1,8 @@
 <script setup>
 import { Button, Checkbox, Column, DataTable } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, inject, onMounted, ref, watch } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import { pluralize } from '../../../utils.js';
 
 const props = defineProps({
@@ -21,7 +21,6 @@ const emit = defineEmits(['success']);
 const SLOW_CLOSE_TASK_COUNT_THRESHOLD = 5;
 const SECONDS_PER_TASK = 1;
 
-const toast = useToast();
 const bitrixApi = inject('bitrixApi');
 
 const tasks = computed(() => {
@@ -63,8 +62,7 @@ async function completeSelectedTasks() {
 
   if (selectedTasks.value.length > SLOW_CLOSE_TASK_COUNT_THRESHOLD) {
     const estimatedMinutes = Math.ceil(selectedTasks.value.length * SECONDS_PER_TASK / 60);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'info',
       summary: 'Задач много',
       detail: `Закрытие может занять до ${estimatedMinutes} ${pluralize(estimatedMinutes, ['минуты', 'минут', 'минут'])} — дождитесь завершения, не закрывайте окно.`,
@@ -87,8 +85,7 @@ async function completeSelectedTasks() {
       }
     }
 
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: failedApproveCount ? 'warn' : 'success',
       summary: 'Сохранено',
       detail: failedApproveCount
@@ -100,8 +97,7 @@ async function completeSelectedTasks() {
     emit('success');
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -127,6 +123,7 @@ async function completeSelectedTasks() {
     :rows-per-page-options="[15, 30, 50, 100]"
     :always-show-paginator="false"
     :loading="isLoading"
+    striped-rows
   >
     <template #header>
       <div class="flex items-center gap-3">
@@ -159,6 +156,11 @@ async function completeSelectedTasks() {
       header="Задача"
     >
       <template #body="{data}">
+        <i
+          v-if="data.isRootTask"
+          v-tooltip.top="'Корневая задача'"
+          class="pi pi-sitemap text-surface-400 mr-1"
+        />
         <i
           v-if="data.taskControl"
           v-tooltip.top="'Требует подтверждения выполнения («Принять работу»)'"

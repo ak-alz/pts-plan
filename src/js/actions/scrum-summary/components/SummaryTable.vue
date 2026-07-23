@@ -20,6 +20,7 @@ defineProps({
     :value="users"
     data-key="id"
     size="small"
+    striped-rows
     sort-field="median"
     :sort-order="-1"
     :default-sort-order="-1"

@@ -11,9 +11,9 @@ import {
   MultiSelect,
   Select,
 } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, reactive, ref, toRaw } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 import { defaultSortColumn } from '../variables.js';
 
@@ -50,8 +50,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
-
 const isLoading = ref(false);
 
 const form = reactive({
@@ -73,8 +71,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
 
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

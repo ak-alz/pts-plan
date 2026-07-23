@@ -1,9 +1,9 @@
 <script setup>
 import { Avatar, Badge, Button, MultiSelect, Select, Skeleton } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { onMounted, reactive, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 import { getTaskUrl } from '../../../utils.js';
 import { buildSprintComment, buildTaskDescription, TASK_TITLE } from '../taskTemplate.js';
@@ -25,7 +25,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const isLoading = ref(true);
@@ -62,8 +61,7 @@ onMounted(async () => {
       : [{ id: Number(user.ID), title: [user.NAME, user.LAST_NAME].filter(Boolean).join(' ') }];
     sprintComment.value = buildSprintComment(commentUsers);
   } catch (e) {
-    toast.add({
-      group: 'scrum-summary',
+    showToast({
       severity: 'error',
       summary: 'Ошибка загрузки',
       detail: e.message,
@@ -104,8 +102,7 @@ async function createTask() {
       [scrumPointsKey]: { ...existingScrumPoints, summaryTaskId: Number(taskId) },
     });
 
-    toast.add({
-      group: 'scrum-summary',
+    showToast({
       severity: 'success',
       summary: 'Задача создана',
       links: [{ url: getTaskUrl(props.groupId, taskId), label: TASK_TITLE }],
@@ -114,8 +111,7 @@ async function createTask() {
 
     emit('success');
   } catch (e) {
-    toast.add({
-      group: 'scrum-summary',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,

@@ -22,6 +22,7 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    striped-rows
   >
     <Column
       v-if="multiUser"
@@ -39,6 +40,11 @@ const totalPoints = computed(() => props.tasks.reduce((s, t) => s + t.points, 0)
     </Column>
     <Column header="Задача">
       <template #body="{ data }">
+        <i
+          v-if="data.isRootTask"
+          v-tooltip.top="'Корневая задача'"
+          class="pi pi-sitemap text-surface-400 mr-1"
+        />
         <a
           class="pts-blur"
           :href="data.url"

@@ -4,8 +4,13 @@ import {Toast} from 'primevue';
 /**
  * Единый тост для контент-скриптовых виджетов: иконка по severity, ссылки (`message.links`)
  * и анимированная линия таймера автозакрытия, которая приостанавливается при наведении курсора.
+ * Пробрасывает `close`/`life-end` от внутреннего `Toast` — удобно, если нужно узнать, когда
+ * конкретное сообщение закрылось (вручную или по истечении `life`), например для синхронизации
+ * между вкладками.
  * @param {string} group - группа тоста, должна совпадать со значением `group` в вызовах `toast.add()`.
  * @param {string} [position] - позиция на экране (проп `position` у PrimeVue `Toast`).
+ * @param {number} [baseZIndex] - базовый z-index (проп `baseZIndex` у PrimeVue `Toast`) — приподнят
+ * над `zIndex.modal` из `primeVueOptions.js`, чтобы тост не терялся под полноэкранными панелями Bitrix.
  */
 defineProps({
   group: {
@@ -16,7 +21,13 @@ defineProps({
     type: String,
     default: 'bottom-right',
   },
+  baseZIndex: {
+    type: Number,
+    default: 9000,
+  },
 });
+
+defineEmits(['close', 'life-end']);
 
 const SEVERITY_ICONS = {
   info: 'pi-info-circle',
@@ -40,8 +51,11 @@ function keepAliveOnHover() {}
   <Toast
     :group
     :position
+    :base-z-index="baseZIndex"
     :on-mouse-enter="keepAliveOnHover"
     :on-mouse-leave="keepAliveOnHover"
+    @close="$emit('close', $event)"
+    @life-end="$emit('life-end', $event)"
   >
     <template #message="{ message }">
       <div class="flex flex-col gap-2 flex-1 min-w-0">

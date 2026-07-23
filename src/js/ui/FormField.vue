@@ -21,13 +21,13 @@ defineProps({
       :is="id ? 'label' : 'div'"
       v-if="label"
       :for="id ? id : null"
-      class="flex gap-2 mb-1 text-surface-500 text-sm font-semibold"
+      class="flex gap-2 mb-1 text-surface-500 dark:text-surface-400 text-sm font-semibold"
     >
       {{ label }}
       <i
         v-if="tip"
         v-tooltip="tip"
-        class="pi pi-question-circle text-surface-500"
+        class="pi pi-question-circle text-surface-500 dark:text-surface-400"
       />
     </component>
     <div>

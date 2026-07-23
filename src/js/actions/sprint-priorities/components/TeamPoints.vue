@@ -29,6 +29,7 @@ defineEmits(['cell-click']);
     :loading="loading"
     data-key="id"
     size="small"
+    striped-rows
     sort-field="totalPoints"
     :sort-order="-1"
     removable-sort

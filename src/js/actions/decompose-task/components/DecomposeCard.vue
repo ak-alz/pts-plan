@@ -25,18 +25,18 @@ function onCopyContentChange() {
 </script>
 
 <template>
-  <div class="border border-surface-200 rounded-lg p-3 flex flex-col gap-2">
+  <div class="border border-surface-200 dark:border-surface-700 rounded-lg p-3 flex flex-col gap-2">
     <div class="flex items-center gap-2">
       <button
         type="button"
         class="flex-1 flex items-center gap-2 min-w-0 text-left cursor-pointer border-0 bg-transparent p-0"
         @click="row._collapsed = !row._collapsed"
       >
-        <span class="text-sm text-surface-400 font-medium shrink-0">#{{ index + 1 }}</span>
+        <span class="text-sm text-surface-400 dark:text-surface-500 font-medium shrink-0">#{{ index + 1 }}</span>
         <span class="text-sm font-medium truncate flex-1 min-w-0 max-w-[420px]">{{ row.title || 'Без названия' }}</span>
         <span
           v-if="responsibleUser"
-          class="text-sm text-surface-400 truncate shrink-0"
+          class="text-sm text-surface-400 dark:text-surface-500 truncate shrink-0"
         >{{ responsibleUser.title }}</span>
       </button>
       <Button

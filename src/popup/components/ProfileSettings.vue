@@ -74,7 +74,7 @@ const { autoFill, isFetching } = useAutoFill(model);
         toggle-mask
         placeholder="Введите API ключ"
       />
-      <p class="text-xs text-surface-400 mt-1">
+      <p class="text-xs text-surface-400 dark:text-surface-500 mt-1">
         <a
           href="https://tools.pixelplus.ru/"
           target="_blank"

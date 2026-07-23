@@ -1,14 +1,15 @@
 <script setup>
 import { jsonrepair } from 'jsonrepair';
 import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, InputGroup, MultiSelect, Password, Select, SelectButton, Textarea } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { useAiJob } from '../../../composables/useAiJob.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import { getCommitMessage, getTaskUrl } from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import {parseAiDecompositions} from '../parseAiDecompositions.js';
 import DecomposeCard from './DecomposeCard.vue';
 import DecomposeQuickMode from './DecomposeQuickMode.vue';
 import SettingsForm from './SettingsForm.vue';
@@ -45,7 +46,6 @@ async function resolveGroupId(url, sessionId, taskId) {
   return id && id !== '0' ? id : null;
 }
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const groupId = ref('');
@@ -76,13 +76,13 @@ const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
 
 const aiJob = useAiJob(() => `decompose-task-ai-job-${props.taskId}`, {
-  group: 'decompose-task',
   onAuthError: () => { isApiKeyModalOpened.value = true; },
 });
 const aiLoading = aiJob.loading;
 const aiProgress = aiJob.progress;
 const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI декомпозиция (${aiProgress.value}%)` : 'AI декомпозиция');
 const formElement = ref(null);
+const importDecompositionLoading = ref(false);
 
 async function scrollToRows() {
   await nextTick();
@@ -232,8 +232,7 @@ async function submit(overrideRows) {
       const commitMessage = getCommitMessage(commitRow.title, commitId);
       try {
         await navigator.clipboard.writeText(commitMessage);
-        toast.add({
-          group: 'decompose-task',
+        showToast({
           severity: 'info',
           summary: 'Текст коммита скопирован',
           detail: commitMessage,
@@ -246,8 +245,7 @@ async function submit(overrideRows) {
 
     const failedCount = total - createdTasks.length;
     const showTasks = settings.value.showCreatedTasks && createdTasks.length > 0;
-    toast.add({
-      group: 'decompose-task',
+    showToast({
       severity: failedCount > 0 ? 'warn' : 'success',
       summary: failedCount > 0 ? 'Частично' : 'Готово',
       detail: failedCount > 0
@@ -260,8 +258,7 @@ async function submit(overrideRows) {
     emit('success');
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'decompose-task',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -323,8 +320,7 @@ async function fetchData() {
     };
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'decompose-task',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -335,9 +331,11 @@ async function fetchData() {
   }
 }
 
-function applyAiDecomposeResult(rawResult) {
-  const parsed = JSON.parse(jsonrepair(rawResult));
-  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('AI вернул пустой список подзадач');
+function applyDecomposeItems(items) {
+  if (viewMode.value === 'quick') {
+    quickForm.value.titlesText = items.map((item) => item.title).join('\n');
+    return;
+  }
 
   const auditorIds = defaultAuditors.value === 'all'
     ? users.value.map((u) => u.id)
@@ -348,17 +346,68 @@ function applyAiDecomposeResult(rawResult) {
     ? props.responsiveId
     : userId.value;
 
-  rows.value = parsed.map((item) => ({
+  rows.value = items.map((item) => ({
     _id: rowIdCounter++,
     _collapsed: false,
-    title: item.title ?? '',
-    description: settings.value.description ? (item.description ?? '') : '',
+    title: item.title,
+    description: item.description ?? '',
     copyContent: false,
     copyCommit: false,
     responsibleId,
     stageId: settings.value.defaultStageId ?? null,
     auditorIds: [...auditorIds],
   }));
+}
+
+function applyAiDecomposeResult(rawResult) {
+  const parsed = JSON.parse(jsonrepair(rawResult));
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('AI вернул пустой список подзадач');
+
+  applyDecomposeItems(parsed.map((item) => ({
+    title: item.title ?? '',
+    description: settings.value.description ? (item.description ?? '') : '',
+  })));
+}
+
+async function importReadyDecomposition() {
+  importDecompositionLoading.value = true;
+  try {
+    const { data } = await bitrixApi.getTask(props.taskId, ['DESCRIPTION']);
+    const description = data?.result?.task?.description ?? '';
+    const items = parseAiDecompositions(description);
+
+    if (!items) {
+      showToast({
+        severity: 'warn',
+        summary: 'Готовая декомпозиция',
+        detail: 'В описании задачи не найден блок [AI_DECOMPOSITIONS]',
+        life: 5000,
+      });
+      return;
+    }
+
+    applyDecomposeItems(items.map((item) => ({
+      title: item.points != null ? `${item.title} | ${item.points}` : item.title,
+    })));
+    await scrollToRows();
+
+    showToast({
+      severity: 'success',
+      summary: 'Готовая декомпозиция',
+      detail: `Импортировано подзадач: ${items.length}`,
+      life: 5000,
+    });
+  } catch (e) {
+    console.warn(e);
+    showToast({
+      severity: 'error',
+      summary: 'Ошибка',
+      detail: e.message,
+      life: 5000,
+    });
+  } finally {
+    importDecompositionLoading.value = false;
+  }
 }
 
 async function aiDecompose() {
@@ -379,7 +428,7 @@ async function aiDecompose() {
     let prompt = buildSystemPrompt(title, description, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ group: 'decompose-task', severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      showToast({ severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
@@ -463,6 +512,18 @@ onMounted(async () => {
           @click="isPromptPreviewModalOpened = true"
         />
       </InputGroup>
+      <Button
+        v-if="!isLoading"
+        v-tooltip="'Найти в описании задачи блок [AI_DECOMPOSITIONS] (готовая декомпозиция от AI-оценки) и подставить подзадачи из него'"
+        icon="pi pi-file-import"
+        label="Готовая декомпозиция"
+        size="small"
+        outlined
+        severity="secondary"
+        :loading="importDecompositionLoading"
+        :disabled="aiLoading"
+        @click="importReadyDecomposition"
+      />
       <SelectButton
         v-model="viewMode"
         :options="viewModeOptions"
@@ -666,7 +727,7 @@ onMounted(async () => {
     >
       <div
         v-if="isLoading || aiLoading"
-        class="flex items-center justify-center p-8 text-surface-500"
+        class="flex items-center justify-center p-8 text-surface-500 dark:text-surface-400"
       >
         Загрузка...
       </div>
@@ -723,7 +784,7 @@ onMounted(async () => {
     >
       <div
         v-if="isLoading"
-        class="flex items-center justify-center p-8 text-surface-500"
+        class="flex items-center justify-center p-8 text-surface-500 dark:text-surface-400"
       >
         Загрузка...
       </div>
@@ -770,7 +831,7 @@ onMounted(async () => {
         placeholder="Введите API ключ"
         :input-props="{autocomplete: 'new-password'}"
       />
-      <p class="text-xs text-surface-400 mt-1 mb-3">
+      <p class="text-xs text-surface-400 dark:text-surface-500 mt-1 mb-3">
         <a
           href="https://tools.pixelplus.ru/"
           target="_blank"
@@ -794,7 +855,7 @@ onMounted(async () => {
     modal
     :style="{width: '480px'}"
   >
-    <p class="text-sm text-surface-500 mb-3">
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-3">
       Дополнительная информация для AI: стек, ограничения, пожелания по декомпозиции.
     </p>
     <div class="relative">
@@ -806,7 +867,7 @@ onMounted(async () => {
         placeholder="Например: бэкенд на Laravel, фронт на Vue 3, разбить максимум на 3 подзадачи..."
         @input="onAiContextInput"
       />
-      <span class="absolute bottom-2 right-2 text-xs text-surface-400 pointer-events-none">
+      <span class="absolute bottom-2 right-2 text-xs text-surface-400 dark:text-surface-500 pointer-events-none">
         {{ aiContext.length }} / {{ AI_CONTEXT_MAX_LENGTH }}
       </span>
     </div>
@@ -823,7 +884,7 @@ onMounted(async () => {
       class="text-xs font-mono whitespace-pre-wrap break-words max-h-[60vh] overflow-y-auto overflow-x-hidden"
       v-html="promptPreview"
     />
-    <div class="text-right text-xs text-surface-400 mt-2">
+    <div class="text-right text-xs text-surface-400 dark:text-surface-500 mt-2">
       {{ promptPreview.length }} символов
     </div>
   </Dialog>

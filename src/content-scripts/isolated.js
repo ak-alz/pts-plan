@@ -1,4 +1,5 @@
 import options from '../js/options.js';
+import {initToastHost} from '../js/toastHost/index.js';
 
 (() => {
   document.body.classList.add('pts-plan');
@@ -23,8 +24,6 @@ import options from '../js/options.js';
     const { options } = await chrome.storage.local.get(['options']);
 
     if (!options) return;
-
-    // console.log(options);
 
     Object.keys(options)
       .filter((optionKey) => {
@@ -78,6 +77,25 @@ import options from '../js/options.js';
   }
 
   injectStyles();
+
+  initToastHost();
+
+  function applyContentTheme(mode) {
+    document.documentElement.classList.toggle('pts-dark', mode === 'dark');
+  }
+
+  async function initTheme() {
+    const { themeMode } = await chrome.storage.local.get(['themeMode']);
+    applyContentTheme(themeMode);
+  }
+
+  initTheme();
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.themeMode) {
+      applyContentTheme(changes.themeMode.newValue);
+    }
+  });
 
   const easterEggImages = [
     `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@

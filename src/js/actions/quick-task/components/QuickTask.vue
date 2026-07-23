@@ -1,9 +1,9 @@
 <script setup>
 import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select, Textarea} from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {onMounted, reactive, ref} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 import {getCommitMessage, getTaskUrl} from '../../../utils.js';
 import QuickTaskSettings from './QuickTaskSettings.vue';
@@ -17,7 +17,6 @@ const props = defineProps({
 const emit = defineEmits(['success']);
 
 const api = new BitrixApi(props.sessionId);
-const toast = useToast();
 const settingsStorageKey = `quick-task-settings-${props.groupId}`;
 
 const isSettingsOpen = ref(false);
@@ -78,7 +77,7 @@ onMounted(async () => {
 
     applyDefaults();
   } catch {
-    toast.add({group: 'quick-task', severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
+    showToast({severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
   } finally {
     isLoadingData.value = false;
   }
@@ -88,11 +87,11 @@ async function submit() {
   const title = form.title.trim();
   if (!title) return;
   if (!form.stageId) {
-    toast.add({group: 'quick-task', severity: 'warn', summary: 'Выберите стадию', life: 3000});
+    showToast({severity: 'warn', summary: 'Выберите стадию', life: 3000});
     return;
   }
   if (!form.responsibleId) {
-    toast.add({group: 'quick-task', severity: 'warn', summary: 'Выберите исполнителя', life: 3000});
+    showToast({severity: 'warn', summary: 'Выберите исполнителя', life: 3000});
     return;
   }
   isSubmitting.value = true;
@@ -110,13 +109,12 @@ async function submit() {
       const commitMsg = getCommitMessage(title, taskId);
       try {
         await navigator.clipboard.writeText(commitMsg);
-        toast.add({group: 'quick-task', severity: 'info', summary: 'Текст коммита скопирован', detail: commitMsg, life: 5000});
+        showToast({severity: 'info', summary: 'Текст коммита скопирован', detail: commitMsg, life: 5000});
       } catch { /* ignore */ }
     }
 
     const taskUrl = taskId && settings.value.showCreatedTask ? getTaskUrl(props.groupId, taskId) : null;
-    toast.add({
-      group: 'quick-task',
+    showToast({
       severity: 'success',
       summary: 'Задача создана',
       links: taskUrl ? [{ url: taskUrl, label: title }] : undefined,
@@ -124,7 +122,7 @@ async function submit() {
     });
     emit('success');
   } catch {
-    toast.add({group: 'quick-task', severity: 'error', summary: 'Ошибка создания задачи', life: 3000});
+    showToast({severity: 'error', summary: 'Ошибка создания задачи', life: 3000});
   } finally {
     isSubmitting.value = false;
   }

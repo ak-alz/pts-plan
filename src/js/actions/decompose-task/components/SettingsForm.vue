@@ -1,8 +1,8 @@
 <script setup>
 import { Badge, Button, Checkbox, Select } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
 const props = defineProps({
@@ -26,7 +26,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
 const isLoading = ref(false);
 
 const form = reactive({
@@ -49,8 +48,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
 
-    toast.add({
-      group: 'decompose-task',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

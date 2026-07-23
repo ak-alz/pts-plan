@@ -2,10 +2,10 @@
 import dayjs from 'dayjs';
 import {orderBy, sumBy} from 'lodash-es';
 import { Avatar, Badge, Button, Column, ColumnGroup, DataTable, Dialog, Row } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, provide, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import {getTaskPointsFromName, getTaskUrl, pluralize, simplifyColumnName} from '../../../utils.js';
 import { defaultSortColumn } from '../variables.js';
 import ColumnTable from './ColumnTable.vue';
@@ -23,8 +23,6 @@ const props = defineProps({
     required: true,
   },
 });
-
-const toast = useToast();
 
 const bitrixApi = new BitrixApi(props.sessionId);
 provide('groupId', props.groupId);
@@ -145,6 +143,7 @@ async function fetchData() {
           formattedDateUpdated: dayjs(task.activityDate).format('DD.MM.YYYY HH:mm:ss'),
           points,
           taskControl: task.taskControl === 'Y',
+          isRootTask: String(task.parentId ?? 0) === '0',
         });
         usersMap[responsible.id].columns[stageId].totalPoints += points;
 
@@ -164,8 +163,7 @@ async function fetchData() {
     dateUpdated.value = `Последнее обновление: ${dayjs().format('HH:mm:ss')}`;
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -260,8 +258,7 @@ ${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPoi
 async function copySummary(column) {
   try {
     await window.navigator.clipboard.writeText(buildSummaryText(column));
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'success',
       summary: 'Успешно',
       detail: 'Итоги скопированы в буфер обмена',
@@ -269,8 +266,7 @@ async function copySummary(column) {
     });
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -290,8 +286,7 @@ async function postSummary(column) {
     const commentUrl = commentId
       ? `/workgroups/group/${props.groupId}/tasks/task/view/${settings.value.summaryTaskId}/?MID=${commentId}#com${commentId}`
       : null;
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'success',
       summary: 'Итоги опубликованы',
       links: commentUrl ? [{ url: commentUrl, label: 'Открыть комментарий' }] : undefined,
@@ -299,8 +294,7 @@ async function postSummary(column) {
     });
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -324,6 +318,7 @@ onMounted(() => {
     :sort-field="settings.sortColumn || defaultSortColumn"
     :sort-order="-1"
     :default-sort-order="-1"
+    striped-rows
   >
     <template #header>
       <div class="flex gap-2">

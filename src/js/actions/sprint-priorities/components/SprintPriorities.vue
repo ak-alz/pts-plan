@@ -1,10 +1,10 @@
 <script setup>
 import dayjs from 'dayjs';
 import { Avatar, Button, Column, DataTable, Dialog, InputText, MultiSelect, SplitButton } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { showToast } from '../../../toastHost/showToast.js';
 import { getTaskIdFromUrl, getTaskPointsFromName, getTaskUrl, simplifyColumnName } from '../../../utils.js';
 
 const props = defineProps({
@@ -37,7 +37,6 @@ const ALL_COLUMNS = [
 const CONFIGURABLE_COLUMNS = ALL_COLUMNS.filter((c) => !LOCKED_COLUMN_KEYS.includes(c.key));
 const DEFAULT_HIDDEN_COLUMNS = ['changedDate', 'createdBy'];
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const settingsStorageKey = computed(() => `sprint-priorities-settings-${props.groupId}`);
@@ -132,6 +131,7 @@ const selectedUserStageTasks = computed(() => {
       title: task.title,
       url: getTaskUrl(props.groupId, task.id),
       points: getTaskPointsFromName(task.title),
+      isRootTask: String(task.parentId ?? 0) === '0',
     }))
     .sort((a, b) => b.points - a.points);
 });
@@ -264,7 +264,7 @@ async function fetchTasksData() {
 
   // Запрашиваем только поля для видимых колонок
   const visibleKeys = visibleColumnKeys.value;
-  const selectFields = ['ID', 'TITLE', 'GROUP_ID', 'STAGE_ID'];
+  const selectFields = ['ID', 'TITLE', 'GROUP_ID', 'STAGE_ID', 'PARENT_ID'];
   if (visibleKeys.includes('responsible')) selectFields.push('RESPONSIBLE_ID');
   if (visibleKeys.includes('createdBy')) selectFields.push('CREATED_BY');
   if (visibleKeys.includes('createdDate')) selectFields.push('CREATED_DATE');
@@ -303,6 +303,7 @@ async function fetchTasksData() {
         taskId,
         taskUrl: getTaskUrl(task.groupId, taskId),
         title: task.title,
+        isRootTask: String(task.parentId ?? 0) === '0',
         stage: stage ? { name: stage.TITLE, color: stage.COLOR ? `#${stage.COLOR}` : null } : null,
         stageName: stage?.TITLE ?? null,
         responsible: responsible ? { name: responsible.name, url: `/company/personal/user/${responsible.id}/`, photo: responsible.avatar || null } : null,
@@ -318,8 +319,7 @@ async function fetchTasksData() {
     dateUpdated.value = `Обновлено: ${dayjs().format('HH:mm:ss')}`;
   } catch (error) {
     console.warn(error);
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: error.message,
@@ -412,8 +412,7 @@ async function fetchTeamPoints() {
     teamRows.value = Object.values(usersMap).sort((a, b) => b.totalPoints - a.totalPoints);
   } catch (error) {
     console.warn(error);
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'error',
       summary: 'Ошибка загрузки баллов',
       detail: error.message,
@@ -433,8 +432,7 @@ async function fetchSheetRows() {
     await fetchTasksData();
   } catch (error) {
     console.warn(error);
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'error',
       summary: 'Ошибка загрузки таблицы',
       detail: error.message,
@@ -589,6 +587,8 @@ onMounted(async () => {
       :loading="isLoading"
       data-key="taskId"
       size="small"
+      row-hover
+      striped-rows
       removable-sort
       sort-field="priority"
       :sort-order="1"
@@ -632,12 +632,18 @@ onMounted(async () => {
         sortable
       >
         <template #body="{ data }">
-          <a
-            v-if="data.taskUrl"
-            class="pts-blur"
-            :href="data.taskUrl"
-            target="_top"
-          >{{ data.title }}</a>
+          <template v-if="data.taskUrl">
+            <i
+              v-if="data.isRootTask"
+              v-tooltip.top="'Корневая задача'"
+              class="pi pi-sitemap text-surface-400 mr-1"
+            />
+            <a
+              class="pts-blur"
+              :href="data.taskUrl"
+              target="_top"
+            >{{ data.title }}</a>
+          </template>
           <span v-else>—</span>
         </template>
       </Column>
@@ -753,6 +759,7 @@ onMounted(async () => {
         :value="selectedUserStageTasks"
         data-key="id"
         size="small"
+        striped-rows
         sort-field="points"
         :sort-order="-1"
         style="min-width: 400px;"
@@ -763,6 +770,11 @@ onMounted(async () => {
           sortable
         >
           <template #body="{ data }">
+            <i
+              v-if="data.isRootTask"
+              v-tooltip.top="'Корневая задача'"
+              class="pi pi-sitemap text-surface-400 mr-1"
+            />
             <a
               class="pts-blur"
               :href="data.url"

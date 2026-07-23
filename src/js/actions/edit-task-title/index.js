@@ -1,4 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
+import {showToast} from '../../toastHost/showToast.js';
 import { getTaskIdFromUrl, insertCSS } from '../../utils.js';
 
 export async function editTaskTitle(sessionId, options = {}) {
@@ -65,6 +66,7 @@ export async function editTaskTitle(sessionId, options = {}) {
     } catch (e) {
       titleEl.textContent = originalTitle;
       console.error('[edit-task-title] save failed', e);
+      showToast({severity: 'error', summary: 'Не удалось сохранить заголовок', detail: e.message, life: 5000});
     } finally {
       delete titleEl.dataset.saving;
     }

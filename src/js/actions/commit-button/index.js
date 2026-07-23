@@ -1,3 +1,4 @@
+import {showToast} from '../../toastHost/showToast.js';
 import { getCommitMessage, getTaskIdFromUrl } from '../../utils.js';
 
 (() => {
@@ -32,6 +33,7 @@ import { getCommitMessage, getTaskIdFromUrl } from '../../utils.js';
         commitButton.classList.add('commit-button--success');
 
         await navigator.clipboard.writeText(commitMessage);
+        showToast({severity: 'success', summary: 'Скопировано', detail: commitMessage, life: 3000});
 
         setTimeout(() => {
           commitButton.classList.remove('commit-button--success');

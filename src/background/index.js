@@ -1,3 +1,3 @@
 import './api.js';
-import './osNotifications.js';
+import './browserNotifications.js';
 import './updates.js';

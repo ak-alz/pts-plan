@@ -13,6 +13,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  author: {
+    type: String,
+    default: '',
+  },
 });
 
 const previewUrl = computed(() => getPreview(props.optionKey));
@@ -29,7 +33,7 @@ function showPopover(event) {
 
 <template>
   <i
-    class="pi pi-question-circle text-surface-500 cursor-help"
+    class="pi pi-question-circle text-surface-500 dark:text-surface-400 cursor-help"
     @mouseenter="showPopover($event)"
     @mouseleave="popover?.hide()"
   />
@@ -48,9 +52,15 @@ function showPopover(event) {
         playsinline
       />
       <div
-        class="option-hint-text m-0 text-xs text-surface-700"
+        class="option-hint-text m-0 text-xs text-surface-700 dark:text-surface-0"
         v-html="tip"
       />
+      <div
+        v-if="author"
+        class="text-xs italic text-primary"
+      >
+        Идея: {{ author }}
+      </div>
     </div>
   </Popover>
 </template>

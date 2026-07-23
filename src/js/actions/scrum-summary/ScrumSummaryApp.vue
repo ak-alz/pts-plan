@@ -2,7 +2,6 @@
 import {Button, Dialog} from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import ScrumSummary from './components/ScrumSummary.vue';
 
 defineProps({
@@ -80,7 +79,5 @@ const isInfoModalOpened = ref(false);
       <p>Если в вашей команде используется другой формат подведения итогов спринтов, создайте Pull Request и добавьте опцию переключения логики в настройках виджета.</p>
     </div>
   </Dialog>
-
-  <PtsToast group="scrum-summary" />
 </template>
 

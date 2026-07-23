@@ -10,10 +10,10 @@ import {
   Select,
   Skeleton,
 } from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {computed, onMounted, reactive, ref} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getDistinctLineStyleIndexes, getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
@@ -35,7 +35,6 @@ const props = defineProps({
   },
 });
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const groupFilterOptions = [
@@ -382,6 +381,7 @@ async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
       url: getTaskUrl(props.groupId, task.id),
       closedDate: task.closedDate ?? null,
       points,
+      isRootTask: String(task.parentId ?? 0) === '0',
     });
   });
 
@@ -429,8 +429,7 @@ async function fetchData() {
     }
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'task-analysis',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,

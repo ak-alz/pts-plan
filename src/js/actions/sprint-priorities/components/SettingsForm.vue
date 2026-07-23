@@ -1,8 +1,8 @@
 <script setup>
 import { Avatar, Button, InputNumber, InputText, MultiSelect, ToggleSwitch } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
+import { showToast } from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
 const props = defineProps({
@@ -40,7 +40,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
 const isLoading = ref(false);
 
 const defaultVisibleColumns = props.allColumns
@@ -66,8 +65,7 @@ const form = reactive({
 
 async function saveSettings() {
   if (!form.sheetUrl.trim()) {
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'warn',
       summary: 'Заполните поля',
       detail: 'Укажите ссылку на Google Таблицу.',
@@ -83,8 +81,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
 
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

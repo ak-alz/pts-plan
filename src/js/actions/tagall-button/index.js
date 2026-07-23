@@ -1,4 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
+import {showToast} from '../../toastHost/showToast.js';
 import {getTagallCommentText, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 export function tagallButton(sessionId, commentSuffix) {
@@ -43,10 +44,12 @@ function setupKanbanButton(sessionId, commentText) {
           await bitrixApi.addComment(taskId, commentText);
           button.classList.add('tagall-button--success');
           button.title = 'Комментарий уже опубликован — обновите страницу, чтобы отправить ещё раз';
+          showToast({severity: 'success', summary: 'Комментарий опубликован', detail: commentText, life: 3000});
           return;
         } catch (error) {
           console.warn(error);
           button.classList.add('tagall-button--error');
+          showToast({severity: 'error', summary: 'Не удалось опубликовать комментарий', detail: error.message, life: 5000});
         }
 
         setTimeout(() => {
