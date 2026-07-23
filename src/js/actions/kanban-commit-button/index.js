@@ -1,3 +1,4 @@
+import {showToast} from '../../toastHost/showToast.js';
 import {getCommitMessage, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
@@ -31,7 +32,9 @@ import {getCommitMessage, rehydrateOnChanges} from '../../utils.js';
         try {
           button.classList.add('kanban-commit-button--success');
           const currentTitle = titleElement.textContent.trim();
-          await navigator.clipboard.writeText(getCommitMessage(currentTitle, taskId));
+          const commitMessage = getCommitMessage(currentTitle, taskId);
+          await navigator.clipboard.writeText(commitMessage);
+          showToast({severity: 'success', summary: 'Скопировано', detail: commitMessage, life: 3000});
           setTimeout(() => {
             button.classList.remove('kanban-commit-button--success');
           }, 1000);

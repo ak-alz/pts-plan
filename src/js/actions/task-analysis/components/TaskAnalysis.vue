@@ -10,10 +10,10 @@ import {
   Select,
   Skeleton,
 } from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {computed, onMounted, reactive, ref} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getDistinctLineStyleIndexes, getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
@@ -35,7 +35,6 @@ const props = defineProps({
   },
 });
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const groupFilterOptions = [
@@ -53,16 +52,16 @@ const settings = ref({});
 const isSettingsOpened = ref(false);
 
 function getDefaults() {
-  const s = settings.value;
-  const months = s.defaultMonths ?? 1;
+  const savedSettings = settings.value;
+  const months = savedSettings.defaultMonths ?? 1;
   let userIds = props.options?.userId ? [String(props.options.userId)] : [];
-  if (s.defaultUserIds?.length) userIds = s.defaultUserIds;
-  else if (s.defaultUserId != null) userIds = [s.defaultUserId];
+  if (savedSettings.defaultUserIds?.length) userIds = savedSettings.defaultUserIds;
+  else if (savedSettings.defaultUserId != null) userIds = [savedSettings.defaultUserId];
   return {
     dateRange: [dayjs().subtract(months, 'month').toDate(), dayjs().toDate()],
     selectedUserIds: userIds,
-    compareWithPrev: s.defaultCompareWithPrev ?? false,
-    excludeHotfixes: s.defaultExcludeHotfixes ?? false,
+    compareWithPrev: savedSettings.defaultCompareWithPrev ?? false,
+    excludeHotfixes: savedSettings.defaultExcludeHotfixes ?? false,
   };
 }
 
@@ -72,7 +71,7 @@ const users = ref([]);
 const visibleUsers = computed(() => {
   const ids = settings.value.visibleUserIds;
   if (!ids?.length) return users.value;
-  return users.value.filter((u) => ids.includes(u.id));
+  return users.value.filter((user) => ids.includes(user.id));
 });
 const isInitialLoading = ref(true);
 const isLoading = ref(false);
@@ -81,25 +80,25 @@ const prevRows = ref([]);
 const allUserTasksPerUser = ref([]);
 const fetchedDateRange = ref(null);
 const MIN_POINTS = 1;
-const filteredRows = computed(() => rows.value.filter((r) => r.totalPoints >= MIN_POINTS));
+const filteredRows = computed(() => rows.value.filter((row) => row.totalPoints >= MIN_POINTS));
 
 const displayRows = computed(() => {
   if (!form.excludeHotfixes) return filteredRows.value;
   return filteredRows.value
     .map((row) => {
-      const tasks = row.tasks.filter((t) => !isHotfixTask(t.title));
-      const totalPoints = tasks.reduce((sum, t) => sum + t.points, 0);
+      const tasks = row.tasks.filter((task) => !isHotfixTask(task.title));
+      const totalPoints = tasks.reduce((sum, task) => sum + task.points, 0);
       return {...row, tasks, totalPoints};
     })
     .filter((row) => row.totalPoints >= MIN_POINTS);
 });
 
 const displayPrevRows = computed(() => {
-  if (!form.excludeHotfixes) return prevRows.value.filter((r) => r.totalPoints >= MIN_POINTS);
+  if (!form.excludeHotfixes) return prevRows.value.filter((row) => row.totalPoints >= MIN_POINTS);
   return prevRows.value
     .map((row) => {
-      const tasks = row.tasks.filter((t) => !isHotfixTask(t.title));
-      const totalPoints = tasks.reduce((sum, t) => sum + t.points, 0);
+      const tasks = row.tasks.filter((task) => !isHotfixTask(task.title));
+      const totalPoints = tasks.reduce((sum, task) => sum + task.points, 0);
       return {...row, tasks, totalPoints};
     })
     .filter((row) => row.totalPoints >= MIN_POINTS);
@@ -109,7 +108,7 @@ const displayUserTasksPerUser = computed(() => {
   if (!form.excludeHotfixes) return allUserTasksPerUser.value;
   return allUserTasksPerUser.value.map(({userId, tasks}) => ({
     userId,
-    tasks: tasks.filter((t) => !isHotfixTask(t.title)),
+    tasks: tasks.filter((task) => !isHotfixTask(task.title)),
   }));
 });
 
@@ -125,13 +124,13 @@ const summaryTableData = computed(() => {
     if (!byUser[row.userId]) {
       byUser[row.userId] = {userId: row.userId, userName: row.userName, totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}, rootTasks: []};
     }
-    const u = byUser[row.userId];
-    u.totalPoints += row.totalPoints;
-    u.totalTasks += row.tasks.length;
-    u.totalRoots += 1;
-    u.rootTasks.push({title: row.title, points: row.totalPoints});
+    const userSummary = byUser[row.userId];
+    userSummary.totalPoints += row.totalPoints;
+    userSummary.totalTasks += row.tasks.length;
+    userSummary.totalRoots += 1;
+    userSummary.rootTasks.push({title: row.title, points: row.totalPoints});
     row.tasks.forEach((task) => {
-      if (task.points > 0) u.pointCounts[task.points] = (u.pointCounts[task.points] || 0) + 1;
+      if (task.points > 0) userSummary.pointCounts[task.points] = (userSummary.pointCounts[task.points] || 0) + 1;
     });
   });
 
@@ -147,37 +146,37 @@ const summaryTableData = computed(() => {
   });
 
   return {
-    rows: Object.values(byUser).map((u) => {
-      const avgPoints = Math.round((u.totalPoints / periodLength) * 10) / 10;
-      const prev = prevByUser[u.userId];
-      const totalWithPoints = Object.values(u.pointCounts).reduce((a, b) => a + b, 0);
-      const pointDistribution = Object.entries(u.pointCounts)
+    rows: Object.values(byUser).map((userSummary) => {
+      const avgPoints = Math.round((userSummary.totalPoints / periodLength) * 10) / 10;
+      const previousSummary = prevByUser[userSummary.userId];
+      const totalWithPoints = Object.values(userSummary.pointCounts).reduce((a, b) => a + b, 0);
+      const pointDistribution = Object.entries(userSummary.pointCounts)
         .map(([pts, count]) => ({points: Number(pts), count, pct: totalWithPoints ? Math.round((count / totalWithPoints) * 100) : 0}))
         .sort((a, b) => a.points - b.points);
-      const prevTotalWithPoints = prev ? Object.values(prev.pointCounts).reduce((a, b) => a + b, 0) : 0;
-      const prevPointDistribution = prev ? Object.entries(prev.pointCounts)
+      const prevTotalWithPoints = previousSummary ? Object.values(previousSummary.pointCounts).reduce((a, b) => a + b, 0) : 0;
+      const prevPointDistribution = previousSummary ? Object.entries(previousSummary.pointCounts)
         .map(([pts, count]) => ({points: Number(pts), count, pct: prevTotalWithPoints ? Math.round((count / prevTotalWithPoints) * 100) : 0}))
         .sort((a, b) => a.points - b.points) : null;
-      const decompRatio = u.totalRoots ? Math.round((u.totalTasks / u.totalRoots) * 10) / 10 : 0;
-      const prevDecompRatio = prev?.totalRoots ? prev.totalTasks / prev.totalRoots : 0;
+      const decompRatio = userSummary.totalRoots ? Math.round((userSummary.totalTasks / userSummary.totalRoots) * 10) / 10 : 0;
+      const prevDecompRatio = previousSummary?.totalRoots ? previousSummary.totalTasks / previousSummary.totalRoots : 0;
       return {
-        userId: u.userId,
-        userName: u.userName,
-        totalPoints: u.totalPoints,
-        totalTasks: u.totalTasks,
-        totalRoots: u.totalRoots,
+        userId: userSummary.userId,
+        userName: userSummary.userName,
+        totalPoints: userSummary.totalPoints,
+        totalTasks: userSummary.totalTasks,
+        totalRoots: userSummary.totalRoots,
         decompRatio,
         avgPoints,
-        avgPointsPerTask: u.totalTasks ? Math.round((u.totalPoints / u.totalTasks) * 10) / 10 : 0,
+        avgPointsPerTask: userSummary.totalTasks ? Math.round((userSummary.totalPoints / userSummary.totalTasks) * 10) / 10 : 0,
         pointDistribution,
         prevPointDistribution,
-        deltaTotal: prev != null ? u.totalPoints - prev.totalPoints : null,
-        deltaTotalTasks: prev != null ? u.totalTasks - prev.totalTasks : null,
-        deltaTotalRoots: prev != null ? u.totalRoots - prev.totalRoots : null,
-        deltaDecompRatio: prev != null ? Math.round((decompRatio - prevDecompRatio) * 10) / 10 : null,
-        deltaAvgPointsPerTask: prev != null ? Math.round(((u.totalTasks ? u.totalPoints / u.totalTasks : 0) - (prev.totalTasks ? prev.totalPoints / prev.totalTasks : 0)) * 10) / 10 : null,
-        deltaAvgPoints: prev != null ? Math.round((avgPoints - Math.round((prev.totalPoints / periodLength) * 10) / 10) * 10) / 10 : null,
-        topTasks: [...u.rootTasks].sort((a, b) => b.points - a.points).slice(0, 5),
+        deltaTotal: previousSummary != null ? userSummary.totalPoints - previousSummary.totalPoints : null,
+        deltaTotalTasks: previousSummary != null ? userSummary.totalTasks - previousSummary.totalTasks : null,
+        deltaTotalRoots: previousSummary != null ? userSummary.totalRoots - previousSummary.totalRoots : null,
+        deltaDecompRatio: previousSummary != null ? Math.round((decompRatio - prevDecompRatio) * 10) / 10 : null,
+        deltaAvgPointsPerTask: previousSummary != null ? Math.round(((userSummary.totalTasks ? userSummary.totalPoints / userSummary.totalTasks : 0) - (previousSummary.totalTasks ? previousSummary.totalPoints / previousSummary.totalTasks : 0)) * 10) / 10 : null,
+        deltaAvgPoints: previousSummary != null ? Math.round((avgPoints - Math.round((previousSummary.totalPoints / periodLength) * 10) / 10) * 10) / 10 : null,
+        topTasks: [...userSummary.rootTasks].sort((a, b) => b.points - a.points).slice(0, 5),
       };
     }),
   };
@@ -222,11 +221,11 @@ const timelineChartData = computed(() => {
   const end = dayjs(fetchedDateRange.value[1] ?? fetchedDateRange.value[0]);
 
   const buckets = [];
-  let cur = start.startOf('month');
+  let currentBucket = start.startOf('month');
   const endBucket = end.startOf('month');
-  while (cur.valueOf() <= endBucket.valueOf()) {
-    buckets.push(cur.format('YYYY-MM'));
-    cur = cur.add(1, 'month');
+  while (currentBucket.valueOf() <= endBucket.valueOf()) {
+    buckets.push(currentBucket.format('YYYY-MM'));
+    currentBucket = currentBucket.add(1, 'month');
   }
   if (!buckets.length) return null;
 
@@ -235,16 +234,16 @@ const timelineChartData = computed(() => {
   // Индекс подбирается по коллизии цвета между пользователями (см. getDistinctLineStyleIndexes) —
   // у большинства пользователей index=0 (баллы: сплошная, задачи: пунктирная — как раньше),
   // конфликтующим по цвету парам достаётся другой индекс, т.е. другая пара стилей линии.
-  const userColors = displayUserTasksPerUser.value.map(({userId}) => stringToPastelColor(users.value.find((u) => u.id === userId)?.name ?? userId));
+  const userColors = displayUserTasksPerUser.value.map(({userId}) => stringToPastelColor(users.value.find((user) => user.id === userId)?.name ?? userId));
   const lineStyleIndexes = getDistinctLineStyleIndexes(userColors);
 
   const datasets = displayUserTasksPerUser.value.flatMap(({userId, tasks}, userIndex) => {
-    const userName = users.value.find((u) => u.id === userId)?.name ?? userId;
+    const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
     const color = userColors[userIndex];
     const styleIndex = lineStyleIndexes[userIndex];
 
-    const pointsByBucket = Object.fromEntries(buckets.map((b) => [b, 0]));
-    const countByBucket = Object.fromEntries(buckets.map((b) => [b, 0]));
+    const pointsByBucket = Object.fromEntries(buckets.map((bucket) => [bucket, 0]));
+    const countByBucket = Object.fromEntries(buckets.map((bucket) => [bucket, 0]));
     tasks.forEach((task) => {
       if (!task.closedDate) return;
       const key = dayjs(task.closedDate).format('YYYY-MM');
@@ -256,7 +255,7 @@ const timelineChartData = computed(() => {
     return [
       {
         label: multiUser ? `${userName} — баллы` : 'Баллы',
-        data: buckets.map((b) => ({x: dayjs(b).format('MM.YYYY'), y: pointsByBucket[b]})),
+        data: buckets.map((bucket) => ({x: dayjs(bucket).format('MM.YYYY'), y: pointsByBucket[bucket]})),
         yAxisID: 'y',
         showLine: true,
         tension: 0.3,
@@ -269,7 +268,7 @@ const timelineChartData = computed(() => {
       },
       {
         label: multiUser ? `${userName} — задачи` : 'Задачи',
-        data: buckets.map((b) => ({x: dayjs(b).format('MM.YYYY'), y: countByBucket[b]})),
+        data: buckets.map((bucket) => ({x: dayjs(bucket).format('MM.YYYY'), y: countByBucket[bucket]})),
         yAxisID: 'y1',
         showLine: true,
         tension: 0.3,
@@ -284,17 +283,17 @@ const timelineChartData = computed(() => {
   });
 
   return {
-    labels: buckets.map((b) => dayjs(b).format('MM.YYYY')),
+    labels: buckets.map((bucket) => dayjs(bucket).format('MM.YYYY')),
     datasets,
   };
 });
 
 async function loadUsers() {
   const groupUsers = await bitrixApi.getGroupUsers(props.groupId);
-  users.value = groupUsers.map((u) => ({
-    id: String(u.ID),
-    name: [u.NAME, u.LAST_NAME].filter(Boolean).join(' '),
-    photo: u.PERSONAL_PHOTO || null,
+  users.value = groupUsers.map((user) => ({
+    id: String(user.ID),
+    name: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
+    photo: user.PERSONAL_PHOTO || null,
   }));
 }
 
@@ -312,9 +311,9 @@ function findRootId(taskId, taskMap) {
     visited.add(currentId);
     const task = taskMap.get(currentId);
     if (!task) return currentId;
-    const pid = String(task.parentId ?? '0');
-    if (!pid || pid === '0' || !taskMap.has(pid)) return currentId;
-    currentId = pid;
+    const parentId = String(task.parentId ?? '0');
+    if (!parentId || parentId === '0' || !taskMap.has(parentId)) return currentId;
+    currentId = parentId;
   }
 }
 
@@ -327,22 +326,22 @@ async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
     status: 'closed',
   });
 
-  const taskMap = new Map(userTasks.map((t) => [String(t.id), t]));
+  const taskMap = new Map(userTasks.map((task) => [String(task.id), task]));
 
   let unknownParentIds = new Set();
   taskMap.forEach((task) => {
-    const pid = String(task.parentId ?? '0');
-    if (pid !== '0' && !taskMap.has(pid)) unknownParentIds.add(pid);
+    const parentId = String(task.parentId ?? '0');
+    if (parentId !== '0' && !taskMap.has(parentId)) unknownParentIds.add(parentId);
   });
 
   while (unknownParentIds.size > 0) {
     const parents = await bitrixApi.searchTasks({ids: [...unknownParentIds]});
     const nextUnknown = new Set();
-    parents.forEach((p) => {
-      const pId = String(p.id);
-      taskMap.set(pId, p);
-      const ppId = String(p.parentId ?? '0');
-      if (ppId !== '0' && !taskMap.has(ppId)) nextUnknown.add(ppId);
+    parents.forEach((parentTask) => {
+      const parentId = String(parentTask.id);
+      taskMap.set(parentId, parentTask);
+      const grandParentId = String(parentTask.parentId ?? '0');
+      if (grandParentId !== '0' && !taskMap.has(grandParentId)) nextUnknown.add(grandParentId);
     });
     unknownParentIds = nextUnknown;
   }
@@ -382,6 +381,7 @@ async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
       url: getTaskUrl(props.groupId, task.id),
       closedDate: task.closedDate ?? null,
       points,
+      isRootTask: String(task.parentId ?? 0) === '0',
     });
   });
 
@@ -403,14 +403,14 @@ async function fetchData() {
 
     const results = await Promise.all(
       form.selectedUserIds.map((userId) => {
-        const userName = users.value.find((u) => u.id === userId)?.name ?? userId;
+        const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
         return fetchUserData(userId, userName, dateFrom, dateTo, form.groupFilter);
       }),
     );
 
-    allUserTasksPerUser.value = results.map((r) => ({userId: r.userId, tasks: r.tasks}));
+    allUserTasksPerUser.value = results.map((result) => ({userId: result.userId, tasks: result.tasks}));
     rows.value = orderBy(
-      results.flatMap((r) => r.rows),
+      results.flatMap((result) => result.rows),
       ['totalPoints'],
       ['desc'],
     );
@@ -421,16 +421,15 @@ async function fetchData() {
       const prevStartDay = prevEndDay.subtract(durationDays, 'day');
       const prevResults = await Promise.all(
         form.selectedUserIds.map((userId) => {
-          const userName = users.value.find((u) => u.id === userId)?.name ?? userId;
+          const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
           return fetchUserData(userId, userName, prevStartDay.format('YYYY-MM-DD 00:00:00'), prevEndDay.format('YYYY-MM-DD 23:59:59'), form.groupFilter);
         }),
       );
-      prevRows.value = prevResults.flatMap((r) => r.rows);
+      prevRows.value = prevResults.flatMap((result) => result.rows);
     }
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'task-analysis',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -547,7 +546,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="flex gap-2 items-center mb-4 border-t border-surface-200 pt-3">
+      <div class="flex gap-2 items-center mb-4 border-t border-surface-200 dark:border-surface-700 pt-3">
         <Checkbox
           v-model="form.excludeHotfixes"
           binary
@@ -560,7 +559,7 @@ onMounted(async () => {
           Исключить хотфиксы
           <i
             v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
-            class="pi pi-question-circle text-surface-400"
+            class="pi pi-question-circle text-surface-400 dark:text-surface-500"
           />
         </label>
       </div>

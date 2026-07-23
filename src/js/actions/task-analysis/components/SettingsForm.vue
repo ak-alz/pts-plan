@@ -1,8 +1,8 @@
 <script setup>
 import { Avatar, Button, Checkbox, MultiSelect, Select } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
 const props = defineProps({
@@ -21,7 +21,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['success']);
-const toast = useToast();
 const isLoading = ref(false);
 
 const monthOptions = [
@@ -65,8 +64,7 @@ async function saveSettings() {
     await chrome.storage.local.set({
       [props.settingsStorageKey]: toRaw(form),
     });
-    toast.add({
-      group: 'task-analysis',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

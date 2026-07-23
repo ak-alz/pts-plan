@@ -29,18 +29,23 @@ const totalPoints = computed(() => {
     sort-field="points"
     :sort-order="-1"
     size="small"
+    striped-rows
   >
     <Column
       field="name"
       header="Задача"
     >
       <template #body="{data}">
+        <i
+          v-if="data.isRootTask"
+          v-tooltip.top="'Корневая задача'"
+          class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
+        />
         <a
           class="pts-blur"
           target="_top"
           :href="data.url"
-          v-html="data.name"
-        />
+        >{{ data.name }}</a>
       </template>
     </Column>
     <Column

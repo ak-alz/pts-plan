@@ -2,7 +2,6 @@
 import {Dialog} from 'primevue';
 import {onMounted, onUnmounted, ref} from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import QuickTask from './components/QuickTask.vue';
 
 defineProps({
@@ -38,6 +37,4 @@ onUnmounted(() => document.removeEventListener('pts:quick-task:open', handleOpen
       @success="isOpen = false"
     />
   </Dialog>
-
-  <PtsToast group="quick-task" />
 </template>

@@ -1,5 +1,8 @@
+import dayjs from 'dayjs';
+
 import BitrixApi from '../../BitrixApi.js';
 import {NOTIF_CHANGE_RE, NOTIF_CLOSE_RE, NOTIF_NEW_TASK_RE, NOTIF_REACTION_RE, TAGALL_STATUS_RE} from '../../patterns.js';
+import {showToast} from '../../toastHost/showToast.js';
 import {canonicalizeTagallHtml, getTaskIdFromUrl, rehydrateOnChanges, triggerScrollLoadMore} from '../../utils.js';
 
 const TASK_STATUS_CLOSED = 5;
@@ -15,6 +18,8 @@ async function nudgeLoadMoreAfterDeletion(container) {
 }
 
 const RELATIVE_DAY_OFFSETS = {'сегодня': 0, 'вчера': -1};
+// dayjs 1.11.21's ru-locale MMMM-парсинг (customParseFormat) миспарсит родительный падеж
+// декабря на год вперёд — название месяца сверяем сами, dayjs используем только для арифметики
 const MONTH_NAMES = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
@@ -30,22 +35,24 @@ function parseNotificationDate(text) {
   const [, prefix, hoursText, minutesText] = match;
   const hours = Number(hoursText);
   const minutes = Number(minutesText);
-  const now = new Date();
+  const now = dayjs();
 
   const relativeDayPrefix = prefix.toLowerCase();
   if (relativeDayPrefix in RELATIVE_DAY_OFFSETS) {
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + RELATIVE_DAY_OFFSETS[relativeDayPrefix], hours, minutes);
+    return now.add(RELATIVE_DAY_OFFSETS[relativeDayPrefix], 'day').hour(hours).minute(minutes).second(0).millisecond(0);
   }
 
   const dayMonthMatch = prefix.match(/^(\d{1,2})\s+([а-яё]+)$/i);
   if (!dayMonthMatch) return null;
 
-  const day = Number(dayMonthMatch[1]);
   const month = MONTH_NAMES.indexOf(dayMonthMatch[2].toLowerCase());
   if (month === -1) return null;
 
-  const date = new Date(now.getFullYear(), month, day, hours, minutes);
-  return date > now ? new Date(now.getFullYear() - 1, month, day, hours, minutes) : date;
+  const day = Number(dayMonthMatch[1]);
+  // date(1) перед month(): без него смена месяца на более короткий при текущем дне >28
+  // перескочила бы на следующий месяц ещё до того, как ниже проставится нужный day
+  const parsed = now.date(1).month(month).date(day).hour(hours).minute(minutes).second(0).millisecond(0);
+  return parsed.isAfter(now) ? parsed.subtract(1, 'year') : parsed;
 }
 
 export function removeSystemNotifications(sessionId, options = {}) {
@@ -98,7 +105,9 @@ export function removeSystemNotifications(sessionId, options = {}) {
       async onclick() {
         const allNotifications = [...notificationsContainer.querySelectorAll('.bx-im-content-notification-item__container[data-id]:not([data-id=""])')];
 
-        const systemIds = allNotifications
+        // Set, а не массив: ниже по нему проверяется каждое уведомление списка, а список после
+        // нескольких подгрузок бывает длинным
+        const systemIds = new Set(allNotifications
           .filter((notification) => {
             // Если вместо аватарки серый колокольчик (в новых версиях синяя системная иконка)
             if (removeSystem && notification.querySelector('.bx-im-content-notification-item-avatar__system-icon')) return true;
@@ -117,7 +126,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
 
             return false;
           })
-          .map((notification) => notification.getAttribute('data-id'));
+          .map((notification) => notification.getAttribute('data-id')));
 
         // dedupe и removeClosedTasks оба нуждаются в taskId несистемных уведомлений — извлекаем
         // его один раз для обоих фильтров вместо повторного обхода allNotifications и DOM-запросов
@@ -125,7 +134,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
         if (dedupe || removeClosedTasks) {
           for (const notification of allNotifications) {
             const id = notification.getAttribute('data-id');
-            if (systemIds.includes(id)) continue;
+            if (systemIds.has(id)) continue;
 
             const taskLink = notification.querySelector('a[href*="/tasks/task/view/"]');
             const ids = getTaskIdFromUrl(taskLink?.getAttribute('href') ?? '');
@@ -161,7 +170,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
               const dateText = notification.querySelector('.bx-im-content-notification-item-content__date')?.textContent;
               const notificationDate = parseNotificationDate(dateText);
               // Уведомление, пришедшее после закрытия задачи, не трогаем — вдруг там важное упоминание
-              if (notificationDate && notificationDate < new Date(task.closedDate)) {
+              if (notificationDate && notificationDate.isBefore(task.closedDate)) {
                 closedTaskIds.push(notification.getAttribute('data-id'));
               }
             });
@@ -170,6 +179,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
           const toDelete = [...new Set([...systemIds, ...dedupeIds, ...closedTaskIds])];
           if (!toDelete.length) {
             this.removeAttribute('disabled');
+            showToast({severity: 'info', summary: 'Уведомлений нет', detail: 'Среди видимых уведомлений подходящих не нашлось.', life: 3000});
             return;
           }
 
@@ -180,6 +190,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
 
           this.textContent = 'Уведомления успешно удалены';
           this.classList.add('remove-notifications--success');
+          showToast({severity: 'success', summary: 'Уведомления удалены', detail: `Удалено: ${toDelete.length}`, life: 3000});
 
           setTimeout(() => {
             this.removeAttribute('disabled');

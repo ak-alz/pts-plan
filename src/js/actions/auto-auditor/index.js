@@ -1,24 +1,28 @@
-(() => {
-  function init() {
-    if (!/\/tasks\/task\/edit\/0(?:\/|\?|$)/.test(window.location.href)) return;
+import {waitForElement} from '../../utils.js';
 
-    const addBtn = document.querySelector('.add[data-field="auditor"]');
-    const targetBtn = document.querySelector('[data-target="auditor"]');
+const ADD_BUTTON_SELECTOR = '.add[data-field="auditor"]';
+const TARGET_BUTTON_SELECTOR = '[data-target="auditor"]';
 
-    if (!addBtn && !targetBtn) {
-      setTimeout(init, 500);
-      return;
-    }
+(async () => {
+  if (!/\/tasks\/task\/edit\/0(?:\/|\?|$)/.test(window.location.href)) return;
 
-    if (addBtn) {
-      const preventNav = (e) => e.preventDefault();
-      addBtn.addEventListener('click', preventNav, true);
-      addBtn.click();
-      addBtn.removeEventListener('click', preventNav, true);
-    }
+  // Ждём появления любой из двух кнопок: Bitrix дорисовывает поля формы асинхронно. Если их нет
+  // вовсе (другая раскладка формы, нет прав), waitForElement сдастся сам — прежний цикл на
+  // setTimeout в этом случае опрашивал DOM всё время жизни страницы
+  const anyButton = await waitForElement(`${ADD_BUTTON_SELECTOR}, ${TARGET_BUTTON_SELECTOR}`);
+  if (!anyButton) return;
 
-    targetBtn?.click();
+  const addButton = document.querySelector(ADD_BUTTON_SELECTOR);
+  const targetButton = document.querySelector(TARGET_BUTTON_SELECTOR);
+
+  if (addButton) {
+    const preventNavigation = (event) => event.preventDefault();
+    addButton.addEventListener('click', preventNavigation, true);
+    addButton.click();
+    addButton.removeEventListener('click', preventNavigation, true);
   }
 
-  init();
-})();
+  targetButton?.click();
+  // Промис этой функции никому не возвращается (модуль исполняется целиком до её завершения),
+  // поэтому ошибку гасим здесь — иначе она всплыла бы необработанным отказом промиса
+})().catch((error) => console.warn('[pts-plan] autoAuditor', error));

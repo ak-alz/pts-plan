@@ -1,18 +1,11 @@
-import {TAGALL_NAMED_RE} from '../../patterns.js';
-import {isUserMentioned, rehydrateOnChanges} from '../../utils.js';
+import {onNewNotificationBalloon} from '../../notificationBalloons.js';
+import {isUserMentioned, markTagallAndMentions} from '../../utils.js';
 
-const TAGALL_TOKEN = 'TAGALL';
-
-function nameVariants(firstName, lastName) {
-  return [...new Set([`${firstName} ${lastName}`, `${lastName} ${firstName}`])];
-}
+const PROCESSED_CLASS = 'js-notification-processed';
+const CLOSE_BUTTON_SELECTOR = '.ui-notification-manager-browser-button-close';
 
 function applyTextTransform(textElement, firstName, lastName) {
-  let html = textElement.innerHTML.replace(TAGALL_NAMED_RE, `<b>${TAGALL_TOKEN}</b>`);
-  nameVariants(firstName, lastName).forEach((name) => {
-    html = html.split(name).join(`<b>${name}</b>`);
-  });
-  textElement.innerHTML = html;
+  textElement.innerHTML = markTagallAndMentions(textElement.innerHTML, firstName, lastName);
 }
 
 export function closeNotifications(firstName, lastName, options = {}) {
@@ -20,37 +13,12 @@ export function closeNotifications(firstName, lastName, options = {}) {
 
   const transformText = !!options.closeNotificationsTransformText;
 
-  async function closeVisibleNotifications() {
-    const notifications = document.querySelectorAll('.ui-notification-manager-browser-balloon:not(.js-notification-processed)');
-    for (const notification of notifications) {
-      notification.classList.add('js-notification-processed');
+  onNewNotificationBalloon(PROCESSED_CLASS, ({notification, textElement, text}) => {
+    if (isUserMentioned(text, firstName, lastName)) {
+      if (transformText && textElement) applyTextTransform(textElement, firstName, lastName);
+      return;
     }
 
-    // Ждём макротаск — Bitrix рендерит текст асинхронно после добавления элемента в DOM
-    await new Promise((r) => setTimeout(r, 0));
-
-    for (const notification of notifications) {
-      const textElement = notification.querySelector('.ui-notification-manager-browser-text');
-      if (!textElement) continue;
-
-      // Канонизируем tagall-фразу в токен TAGALL, чтобы имя из неё не считалось личным упоминанием
-      const canonicalText = textElement.textContent.trim().replace(TAGALL_NAMED_RE, TAGALL_TOKEN);
-      if (isUserMentioned(canonicalText, firstName, lastName)) {
-        if (transformText) applyTextTransform(textElement, firstName, lastName);
-        continue;
-      }
-
-      notification.querySelector('.ui-notification-manager-browser-button-close')?.click();
-    }
-  }
-
-  rehydrateOnChanges(
-    closeVisibleNotifications,
-    document.body,
-    {
-      filterMutation: (mutation) => mutation.type === 'childList'
-        && mutation.target === document.body
-        && Array.from(mutation.addedNodes).some((element) => element.classList?.contains('ui-notification-manager-browser-balloon')),
-    },
-  );
+    notification.querySelector(CLOSE_BUTTON_SELECTOR)?.click();
+  });
 }

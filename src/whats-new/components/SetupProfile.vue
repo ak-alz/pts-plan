@@ -15,10 +15,10 @@ const {autoFill, isFetching} = useAutoFill(model);
 <template>
   <div class="flex flex-col gap-3">
     <div>
-      <p class="m-0 text-base font-medium text-slate-800">
+      <p class="m-0 text-base font-medium text-surface-800 dark:text-surface-0">
         Заполните данные профиля
       </p>
-      <p class="m-0 mt-1 text-[13px] text-slate-500">
+      <p class="m-0 mt-1 text-[13px] text-surface-500 dark:text-surface-400">
         Имя, фамилию и ID указывайте точно как в Bitrix24 — по ним расширение находит ваши задачи и упоминания. Заполните автоматически или пропустите — тогда такие функции не появятся.
       </p>
     </div>

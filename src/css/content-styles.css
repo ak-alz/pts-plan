@@ -4,6 +4,8 @@
 @import 'tailwindcss-primeui';
 @import 'primeicons/primeicons.css';
 
+@custom-variant dark (&:where(.pts-dark, .pts-dark *));
+
 .commit-button,
 .decompose-task-button,
 .export-task-button {

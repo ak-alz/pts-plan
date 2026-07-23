@@ -21,8 +21,10 @@ import {
   BBCODE_URL_LABELED_RE,
   BBCODE_URL_PLAIN_RE,
   BBCODE_USER_RE,
+  OUTSIDE_HTML_TAG_LOOKAHEAD,
   SYSTEM_COMMENT_PHRASES,
   TAGALL_LEADING_RE,
+  TAGALL_NAMED_OUTSIDE_TAG_RE,
   TAGALL_NAMED_RE,
   TAGALL_TOKEN,
 } from './patterns.js';
@@ -123,11 +125,30 @@ export function getTagallCommentText(suffix) {
   return `TAGALL, ${normalizedSuffix}`;
 }
 
+/**
+ * Числовые коды поля STATUS (общие для tasks.task.list/get) — по документации Bitrix24
+ * (REST v3, tasks/rest-v3/fields.html: `2` ждет выполнения … `6` отложена) плюс общеизвестный
+ * код `7` отклонена, единой числовой таблицы для классического API в документации нет.
+ */
+export const TASK_STATUS_LABELS = {
+  1: 'Новая',
+  2: 'Ждёт выполнения',
+  3: 'Выполняется',
+  4: 'Ждёт контроля',
+  5: 'Завершена',
+  6: 'Отложена',
+  7: 'Отклонена',
+};
+
 export function isHotfixTask(taskName) {
   return typeof taskName === 'string' && taskName.trim().toLowerCase().startsWith('hotfix');
 }
 
 export function getTaskPointsFromName(taskName) {
+  // Название приходит прямо из ответа API: при урезанном select[] или отказе по правам поля TITLE
+  // может не быть вовсе, а функция вызывается из computed — без этой проверки падал бы весь рендер
+  if (typeof taskName !== 'string') return 0;
+
   const parts = taskName.split(/[|I/\\]/); // | или I (большая буква I как разделитель), а также / и \
   const lastPart = parts[parts.length - 1].trim();
   const match = lastPart.match(/^(\d+)\+?$/);
@@ -256,6 +277,37 @@ export function insertCSS(css, id = null) {
 
 export function validateHexColor(color) {
   return /^#[0-9A-Fa-f]{6}$|^#[0-9A-Fa-f]{3}$/.test(color);
+}
+
+// Excel и LibreOffice считают формулой любую ячейку, начинающуюся с этих символов
+const CSV_FORMULA_START_RE = /^[=+\-@\t\r]/;
+
+/**
+ * Готовит значение к вставке в CSV: экранирует кавычки и обезвреживает ячейку, которую табличный
+ * редактор принял бы за формулу. Названия и описания задач пишут произвольные сотрудники, а файл
+ * по смыслу выгрузки уходит другим людям — без этого «=HYPERLINK(…)» в названии выполнился бы у них
+ * при открытии файла.
+ * @param {*} value - Значение ячейки (приводится к строке).
+ * @returns {string} Значение в кавычках, готовое к склейке разделителем.
+ */
+export function escapeCsvCell(value) {
+  const text = String(value ?? '');
+  // Ведущий апостроф — принятый способ сказать таблице «это текст»; в самой ячейке он не виден
+  const safeText = CSV_FORMULA_START_RE.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Скачивает Blob как файл через временную ссылку.
+ * @param {Blob} blob - Содержимое файла.
+ * @param {string} fileName - Имя файла для сохранения.
+ */
+export function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  Object.assign(document.createElement('a'), {href: url, download: fileName}).click();
+  // Не отзываем ссылку сразу: загрузка забирает данные по ней асинхронно, и синхронный revoke —
+  // гонка, которая тем заметнее, чем больше файл (например, ZIP со всеми вложениями задачи)
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export const colors = {
@@ -569,15 +621,22 @@ export function getColors(palettes, weight = '500') {
  * Следит за изменениями в DOM и вызывает callback при обновлении контента.
  * Автоматически делает throttle вызовов и обрабатывает фокус окна.
  *
- * @param {Function} callBack - Функция, выполняемая при изменениях.
+ * Наблюдение отключено на время работы `callBack`, чтобы его собственные вставки не вызывали его же
+ * повторно. Асинхронный `callBack` поддерживается: результат ожидается целиком, а не до первого
+ * `await` — иначе наблюдатель включался бы обратно посреди работы (так было с notificationDetails
+ * и обработкой всплывающих уведомлений).
+ *
+ * @param {Function} callBack - Функция, выполняемая при изменениях. Может быть асинхронной.
  * @param {Node} [target=document.body] - Элемент, за которым ведется наблюдение.
  * @param {RehydrateOptions} [options] - Дополнительные настройки.
  * @returns {function(): void} Функция для остановки наблюдения и снятия обработчиков (cleanup).
+ * Если аргументы некорректны (нет колбэка или элемента), возвращается пустая функция — вызывающему
+ * коду не нужно проверять результат перед вызовом.
  */
 export function rehydrateOnChanges(callBack, target = document.body, options) {
-  if (typeof callBack !== 'function') return;
+  if (typeof callBack !== 'function') return () => {};
 
-  if (!target) return;
+  if (!target) return () => {};
 
   const observerConfig = {
     childList: true,
@@ -586,13 +645,16 @@ export function rehydrateOnChanges(callBack, target = document.body, options) {
     ...(Array.isArray(options?.attributes) && {attributeFilter: options.attributes}),
   };
 
-  const throttledCallBack = throttle(() => {
+  const throttledCallBack = throttle(async () => {
     observer.disconnect();
 
     try {
       // DEBUG
       // console.count(`rehydrate:${callBack.name || 'unknown'}`);
-      callBack();
+      await callBack();
+    } catch (error) {
+      // Промис колбэка никто не ждёт, поэтому его отказ иначе всплыл бы необработанным
+      console.warn(`[pts-plan] rehydrate:${callBack.name || 'unknown'}`, error);
     } finally {
       observer.observe(target, observerConfig);
     }
@@ -645,6 +707,32 @@ export function waitForElement(selector, retriesLeft = 20, delayMs = 500) {
 }
 
 /**
+ * Опрашивает `textContent` элемента, пока он не перестанет меняться между двумя последовательными
+ * попытками — Bitrix заполняет текст всплывающего тост-уведомления асинхронно и может делать это
+ * в несколько заходов (например, длинный текст с большим списком соисполнителей дорисовывается не
+ * за один тик), поэтому проверки "непустой текст" недостаточно — нужно дождаться именно стабилизации.
+ * @param {Element|null} element - Элемент, чей текст нужно дождаться, либо `null`, если не найден.
+ * @param {number} [retriesLeft=6] - Сколько повторных попыток сделать, прежде чем сдаться.
+ * @param {number} [delayMs=50] - Пауза между попытками в миллисекундах.
+ * @returns {Promise<string>} Стабилизировавшийся (trim()-нутый) текст, либо последнее прочитанное значение, если так и не дождались.
+ */
+export function waitForStableText(element, retriesLeft = 6, delayMs = 50) {
+  if (!element) return Promise.resolve('');
+
+  return new Promise((resolve) => {
+    function attempt(remaining, previousText) {
+      const text = element.textContent.trim();
+      if ((text && text === previousText) || remaining <= 0) {
+        resolve(text);
+        return;
+      }
+      setTimeout(() => attempt(remaining - 1, text), delayMs);
+    }
+    attempt(retriesLeft, null);
+  });
+}
+
+/**
  * Триггерит нативную бесконечную прокрутку контейнера, только если видимого контента пока
  * недостаточно, чтобы контейнер физически переполнился. Нужно, когда контейнер визуально короткий
  * (часть элементов скрыта через display:none или удалена из DOM) и пользователь физически не может
@@ -671,6 +759,55 @@ export function triggerScrollLoadMore(container) {
  */
 export function canonicalizeTagallHtml(html) {
   return html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(TAGALL_NAMED_RE, TAGALL_TOKEN);
+}
+
+/**
+ * Экранирует спецсимволы регулярных выражений, чтобы строку можно было безопасно подставить
+ * в `new RegExp()` (имя пользователя вполне может содержать дефис или скобки).
+ * @param {string} value
+ * @returns {string}
+ */
+export function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Две перестановки полного имени пользователя — «Имя Фамилия» и «Фамилия Имя», без повторов.
+ * Bitrix выводит имя в разном порядке в зависимости от места, поэтому искать нужно оба варианта.
+ * @param {string} firstName
+ * @param {string} lastName
+ * @returns {string[]}
+ */
+export function getNameVariants(firstName, lastName) {
+  return [...new Set([`${firstName} ${lastName}`, `${lastName} ${firstName}`])];
+}
+
+/**
+ * Выделяет жирным tagall-фразу и упоминания пользователя прямо в HTML-фрагменте текста уведомления:
+ * «[Имя Фамилия] и другие участники задачи» превращается в `<b>TAGALL</b>` (имя внутри фразы
+ * поглощается заменой), затем жирным помечается имя самого пользователя. Порядок важен: tagall
+ * раньше имён, иначе имя из фразы засчиталось бы за личное упоминание.
+ *
+ * Замены идут по строке, но только вне тегов (см. `OUTSIDE_HTML_TAG_LOOKAHEAD`) — Bitrix кладёт имя
+ * пользователя ещё и в атрибуты (`title`, `alt`) ссылок на профиль, и без этой оговорки `<b>`
+ * вставлялся бы прямо в значение атрибута.
+ *
+ * @param {string} html - Исходный HTML-фрагмент (`element.innerHTML`).
+ * @param {string} [firstName] - Имя пользователя; без имени и фамилии выделяется только tagall.
+ * @param {string} [lastName] - Фамилия пользователя.
+ * @returns {string} HTML с расставленными `<b>`.
+ */
+export function markTagallAndMentions(html, firstName, lastName) {
+  let result = html.replace(TAGALL_NAMED_OUTSIDE_TAG_RE, `<b>${TAGALL_TOKEN}</b>`);
+
+  if (!firstName || !lastName) return result;
+
+  getNameVariants(firstName, lastName).forEach((name) => {
+    const nameOutsideTagRe = new RegExp(`${escapeRegExp(name)}${OUTSIDE_HTML_TAG_LOOKAHEAD}`, 'g');
+    result = result.replace(nameOutsideTagRe, `<b>${name}</b>`);
+  });
+
+  return result;
 }
 
 /**

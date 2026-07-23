@@ -14,10 +14,10 @@ import {
   Skeleton,
   ToggleSwitch,
 } from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getTaskUrl, isHotfixTask, pluralize} from '../../../utils.js';
@@ -67,7 +67,6 @@ function migrateHiddenFilters(storedSettings) {
     .map(([, hiddenFilterKey]) => hiddenFilterKey);
 }
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const settings = ref({});
@@ -103,13 +102,13 @@ const hasSearched = ref(false);
 const filterFavorites = ref(false);
 const currentUserId = ref(null);
 
-const userOptions = computed(() => groupUsers.value.map((u) => ({
-  id: Number(u.ID),
-  name: [u.NAME, u.LAST_NAME].filter(Boolean).join(' '),
-  avatar: u.PERSONAL_PHOTO ?? '',
+const userOptions = computed(() => groupUsers.value.map((user) => ({
+  id: Number(user.ID),
+  name: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
+  avatar: user.PERSONAL_PHOTO ?? '',
 })));
 
-const stageMap = computed(() => Object.fromEntries(stages.value.map((s) => [String(s.id), s])));
+const stageMap = computed(() => Object.fromEntries(stages.value.map((stage) => [String(stage.id), stage])));
 const isInitialLoading = computed(() => isUsersLoading.value || isStagesLoading.value);
 const isHiddenExcludeTitleActive = computed(
   () => !!settings.value.hiddenFilters?.includes('excludeTitle') && !!settings.value.defaultExcludeTitle?.trim(),
@@ -131,7 +130,7 @@ onMounted(async () => {
     groupUsers.value = groupUsersResult;
     stages.value = Object.values(stagesResponse.data?.result ?? {})
       .sort((a, b) => a.SORT - b.SORT)
-      .map((s) => ({id: s.ID, title: s.TITLE, color: `#${s.COLOR}`}));
+      .map((stage) => ({id: stage.ID, title: stage.TITLE, color: `#${stage.COLOR}`}));
     currentUserId.value = currentUser?.ID ? String(currentUser.ID) : null;
     if (stored[SETTINGS_KEY]) {
       settings.value = {
@@ -167,7 +166,7 @@ async function toggleFavorite(task) {
     if (isFav) {
       await bitrixApi.unfavoriteTask(task.id);
       if (filterFavorites.value) {
-        tasks.value = tasks.value.filter((t) => t.id !== task.id);
+        tasks.value = tasks.value.filter((item) => item.id !== task.id);
         return;
       }
     } else {
@@ -241,15 +240,14 @@ async function search() {
     const [standardResults, fulltextResults] = await Promise.all(requests);
 
     if (fulltextResults?.length) {
-      const existingIds = new Set(standardResults.map((t) => t.id));
-      tasks.value = [...standardResults, ...fulltextResults.filter((t) => !existingIds.has(t.id))];
+      const existingIds = new Set(standardResults.map((task) => task.id));
+      tasks.value = [...standardResults, ...fulltextResults.filter((task) => !existingIds.has(task.id))];
     } else {
       tasks.value = standardResults;
     }
   } catch (e) {
     console.warn('[task-search]', e);
-    toast.add({
-      group: 'task-search',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -260,9 +258,9 @@ async function search() {
   }
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  return dayjs(dateStr).format('DD.MM.YYYY');
+function formatDate(dateString) {
+  if (!dateString) return '—';
+  return dayjs(dateString).format('DD.MM.YYYY');
 }
 </script>
 
@@ -539,6 +537,7 @@ function formatDate(dateStr) {
         :rows="25"
         :rows-per-page-options="[25, 50, 100]"
         size="small"
+        striped-rows
         style="min-width: 600px;"
       >
         <Column style="width: 36px; min-width: 36px;">
@@ -558,6 +557,11 @@ function formatDate(dateStr) {
           style="min-width: 280px;"
         >
           <template #body="{ data }">
+            <i
+              v-if="String(data.parentId ?? 0) === '0'"
+              v-tooltip.top="'Корневая задача'"
+              class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
+            />
             <a
               class="pts-blur"
               :href="getTaskUrl(data.groupId, data.id, currentUserId)"

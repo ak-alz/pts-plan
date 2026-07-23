@@ -3,7 +3,7 @@ import { ref } from 'vue';
 
 import BitrixApi from '../js/BitrixApi.js';
 
-const ERROR_DETAIL = 'Откройте сайт plan.pixelplus.ru и войдите в аккаунт — после этого расширение сможет подтянуть ваши имя и ID. Если сайт уже открыт, обновите вкладку и попробуйте снова.';
+const ERROR_DETAIL = 'Откройте сайт Bitrix24 и войдите в аккаунт — после этого расширение сможет подтянуть ваши имя и ID. Если сайт уже открыт, обновите вкладку и попробуйте снова.';
 
 export function useAutoFill(model) {
   const toast = useToast();
@@ -12,8 +12,13 @@ export function useAutoFill(model) {
   async function autoFill() {
     isFetching.value = true;
     try {
-      const { sessionId } = await chrome.storage.local.get(['sessionId']);
-      const user = await new BitrixApi(sessionId).getCurrentUser();
+      // Эта страница живёт на origin расширения, поэтому BitrixApi нужен абсолютный адрес сайта.
+      // Домен не хардкодим: его записал контент-скрипт при последнем открытии Bitrix (см. isolated.js) —
+      // так автозаполнение работает на любом сайте из manifest.matches, а не только на одном
+      const { sessionId, bitrixOrigin } = await chrome.storage.local.get(['sessionId', 'bitrixOrigin']);
+      if (!bitrixOrigin) throw new Error('Неизвестен адрес сайта Bitrix24');
+
+      const user = await new BitrixApi(sessionId, bitrixOrigin).getCurrentUser();
       if (!user) throw new Error();
       model.value.userFirstName = user.NAME ?? '';
       model.value.userLastName = user.LAST_NAME ?? '';

@@ -2,7 +2,7 @@
 import { Button, Message, Textarea } from 'primevue';
 import { ref, watch } from 'vue';
 
-import optionsList, { optionTypes } from '../../js/options.js';
+import { getDefaultOptions } from '../../js/options.js';
 
 const props = defineProps({
   visible: Boolean,
@@ -15,35 +15,22 @@ const importError = ref('');
 const copyDone = ref(false);
 const resetConfirm = ref(false);
 
-function getOptionsMap() {
-  const result = {};
-  function recursive(opts) {
-    opts.forEach((option) => {
-      switch (option.type) {
-        case optionTypes.TEXT:
-        case optionTypes.COLOR:
-          result[option.key] = option.default || '';
-          break;
-        case optionTypes.NUMBER:
-          result[option.key] = option.default || null;
-          break;
-        case optionTypes.MULTISELECT:
-          result[option.key] = option.default ?? [];
-          break;
-        default:
-          result[option.key] = option.default || false;
-      }
-      if (option.options) recursive(option.options);
-    });
-  }
-  recursive(optionsList);
-  return result;
+// Технические поля, восстанавливаемые из самого Bitrix, и личный API-ключ: выгрузку принято
+// пересылать коллеге, а ключ вводится в профиле под скрытым полем именно потому, что он личный
+const PRIVATE_STORAGE_KEYS = ['sessionId', 'bitrixOrigin'];
+const PRIVATE_OPTION_KEYS = ['pixelToolsApiKey'];
+
+function withoutKeys(source, keys) {
+  return Object.fromEntries(Object.entries(source ?? {}).filter(([key]) => !keys.includes(key)));
 }
 
 watch(() => props.visible, async (val) => {
   if (!val) return;
   const all = await chrome.storage.local.get(null);
-  const { sessionId: _sessionId, ...exportData } = all;
+  const exportData = withoutKeys(all, PRIVATE_STORAGE_KEYS);
+  if (exportData.options) {
+    exportData.options = withoutKeys(exportData.options, PRIVATE_OPTION_KEYS);
+  }
   importExportJson.value = JSON.stringify(exportData, null, 4);
   importError.value = '';
   copyDone.value = false;
@@ -72,16 +59,28 @@ async function applyImport() {
     return;
   }
 
-  const { sessionId: _sessionId, ...data } = parsed;
+  const data = withoutKeys(parsed, PRIVATE_STORAGE_KEYS);
 
   if (data.options && typeof data.options === 'object') {
-    const knownKeys = new Set(Object.keys(getOptionsMap()));
+    const knownKeys = new Set(Object.keys(getDefaultOptions()));
     data.options = Object.fromEntries(
       Object.entries(data.options).filter(([k]) => knownKeys.has(k)),
     );
   }
 
   const backup = await chrome.storage.local.get(null);
+
+  // Приватных полей в выгрузке нет, поэтому переносим их из текущего хранилища: без этого clear()
+  // ниже стёр бы уже введённый API-ключ и адрес сайта при импорте чужого набора настроек
+  PRIVATE_STORAGE_KEYS.forEach((key) => {
+    if (backup[key] !== undefined) data[key] = backup[key];
+  });
+  PRIVATE_OPTION_KEYS.forEach((key) => {
+    if (backup.options?.[key] && !data.options?.[key]) {
+      data.options = { ...(data.options ?? {}), [key]: backup.options[key] };
+    }
+  });
+
   await chrome.storage.local.clear();
   try {
     await chrome.storage.local.set(data);
@@ -109,6 +108,10 @@ async function resetSettings() {
       class="font-mono resize-none"
       spellcheck="false"
     />
+    <p class="m-0 text-xs text-surface-500 dark:text-surface-400">
+      API-ключ для AI-функций в выгрузку не попадает — этими настройками можно спокойно поделиться.
+      При импорте ваш уже введённый ключ сохраняется.
+    </p>
     <Message
       v-if="importError"
       severity="error"

@@ -1,8 +1,8 @@
 <script setup>
 import { Button, InputNumber, MultiSelect, Select } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 import { defaultIgnorePoints } from '../variables.js';
 
@@ -39,8 +39,6 @@ const monthOptions = [
   { label: '12 месяцев', value: 12 },
 ];
 
-const toast = useToast();
-
 const isLoading = ref(false);
 
 const form = reactive({
@@ -58,8 +56,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
 
-    toast.add({
-      group: 'scrum-summary',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',

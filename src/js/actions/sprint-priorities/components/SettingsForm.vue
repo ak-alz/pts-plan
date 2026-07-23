@@ -1,8 +1,8 @@
 <script setup>
 import { Avatar, Button, InputNumber, InputText, MultiSelect, ToggleSwitch } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
+import { showToast } from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
 const props = defineProps({
@@ -40,7 +40,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
 const isLoading = ref(false);
 
 const defaultVisibleColumns = props.allColumns
@@ -60,14 +59,14 @@ const form = reactive({
     : [],
   showTeamPoints: props.initial.showTeamPoints ?? true,
   showRowMarker: props.initial.showRowMarker ?? true,
+  hideUserAvatar: props.initial.hideUserAvatar ?? false,
   teamUsers: props.initial.teamUsers ? toRaw(props.initial.teamUsers) : [],
   teamStages: props.initial.teamStages ? toRaw(props.initial.teamStages) : [],
 });
 
 async function saveSettings() {
   if (!form.sheetUrl.trim()) {
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'warn',
       summary: 'Заполните поля',
       detail: 'Укажите ссылку на Google Таблицу.',
@@ -83,8 +82,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
 
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',
@@ -215,13 +213,12 @@ async function saveSettings() {
         />
       </FormField>
 
-      <div class="col-span-2 border-t border-surface-200" />
+      <div class="col-span-2 border-t border-surface-200 dark:border-surface-700" />
 
       <FormField
         id="settings_show_team_points"
         label="Показывать баллы команды"
         tip="Выводит таблицу с суммой story points по исполнителям над списком приоритетов."
-        class="col-span-2"
       >
         <ToggleSwitch
           v-model="form.showTeamPoints"
@@ -230,6 +227,15 @@ async function saveSettings() {
       </FormField>
 
       <template v-if="form.showTeamPoints">
+        <FormField
+          id="settings_hide_user_avatar"
+          label="Скрывать аватар исполнителя"
+        >
+          <ToggleSwitch
+            v-model="form.hideUserAvatar"
+            input-id="settings_hide_user_avatar"
+          />
+        </FormField>
         <FormField
           id="settings_team_users"
           label="Участники"

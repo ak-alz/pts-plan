@@ -2,10 +2,10 @@
 import dayjs from 'dayjs';
 import {orderBy, sumBy} from 'lodash-es';
 import { Avatar, Badge, Button, Column, ColumnGroup, DataTable, Dialog, Row } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, provide, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {showToast} from '../../../toastHost/showToast.js';
 import {getTaskPointsFromName, getTaskUrl, pluralize, simplifyColumnName} from '../../../utils.js';
 import { defaultSortColumn } from '../variables.js';
 import ColumnTable from './ColumnTable.vue';
@@ -23,8 +23,6 @@ const props = defineProps({
     required: true,
   },
 });
-
-const toast = useToast();
 
 const bitrixApi = new BitrixApi(props.sessionId);
 provide('groupId', props.groupId);
@@ -45,32 +43,28 @@ const dateUpdated = ref(null);
 async function fetchData() {
   isLoading.value = true;
 
-  const res = await chrome.storage.local.get([settingsStorageKey.value]);
-  if (res[settingsStorageKey.value]) {
-    settings.value = res[settingsStorageKey.value];
+  const stored = await chrome.storage.local.get([settingsStorageKey.value]);
+  if (stored[settingsStorageKey.value]) {
+    settings.value = stored[settingsStorageKey.value];
   }
 
   try {
-    // Запускаем параллельно: метаданные колонок + первые страницы задач
-    // Для batch используем settings.value.columns (уже загружены выше)
-    const PAGE_SIZE = 50;
+    // Запускаем параллельно: метаданные колонок, задачи выбранных колонок и участники группы.
+    // Колонки берём из уже загруженных настроек
     const savedColumnIds = settings.value.columns || [];
-    const firstPageRequests = savedColumnIds.map((id) => ({ key: `col_${id}`, stageId: id, start: 0 }));
 
-    const [stagesResponse, firstRoundResponses, rawGroupUsers] = await Promise.all([
+    const [stagesResponse, tasks, rawGroupUsers] = await Promise.all([
       bitrixApi.getStages(props.groupId),
-      bitrixApi.getTasksBatch(firstPageRequests, props.groupId),
+      bitrixApi.getAllTasksByStages(savedColumnIds, props.groupId),
       bitrixApi.getGroupUsers(props.groupId),
     ]);
 
-    groupUsers.value = rawGroupUsers.map((u) => ({
-      id: u.ID,
-      name: [u.NAME, u.LAST_NAME].filter(Boolean).join(' '),
-      photo: u.PERSONAL_PHOTO || false,
-      url: u.DETAIL_URL || '',
+    groupUsers.value = rawGroupUsers.map((user) => ({
+      id: user.ID,
+      name: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
+      photo: user.PERSONAL_PHOTO || false,
+      url: user.DETAIL_URL || '',
     }));
-
-    let tasks;
 
     columns.value = Object.values(stagesResponse.data.result)
       .sort((a, b) => a.SORT - b.SORT)
@@ -80,36 +74,6 @@ async function fetchData() {
         shortName: simplifyColumnName(stage.TITLE),
         color: `#${stage.COLOR}`,
       }));
-
-    tasks = [];
-    const remainingRequests = [];
-
-    firstRoundResponses.forEach((response) => {
-      const { result, result_total } = response.data.result;
-      Object.entries(result).forEach(([key, stageResult]) => {
-        tasks = tasks.concat(stageResult.tasks || []);
-
-        // Если задач больше PAGE_SIZE — дозапрашиваем остальные страницы
-        const total = result_total?.[key] ?? 0;
-        if (total > PAGE_SIZE) {
-          const stageId = key.slice('col_'.length);
-          const pages = Math.ceil(total / PAGE_SIZE);
-          for (let page = 1; page < pages; page++) {
-            remainingRequests.push({ key: `${key}_p${page}`, stageId, start: page * PAGE_SIZE });
-          }
-        }
-      });
-    });
-
-    // Шаг 2: дозагружаем оставшиеся страницы (только если нужно)
-    if (remainingRequests.length > 0) {
-      const remainingResponses = await bitrixApi.getTasksBatch(remainingRequests, props.groupId);
-      remainingResponses.forEach((response) => {
-        Object.values(response.data.result.result).forEach((stageResult) => {
-          tasks = tasks.concat(stageResult.tasks || []);
-        });
-      });
-    }
 
     // Раскидываем задачи по исполнителям и колонкам
     const usersMap = {};
@@ -145,6 +109,7 @@ async function fetchData() {
           formattedDateUpdated: dayjs(task.activityDate).format('DD.MM.YYYY HH:mm:ss'),
           points,
           taskControl: task.taskControl === 'Y',
+          isRootTask: String(task.parentId ?? 0) === '0',
         });
         usersMap[responsible.id].columns[stageId].totalPoints += points;
 
@@ -164,8 +129,7 @@ async function fetchData() {
     dateUpdated.value = `Последнее обновление: ${dayjs().format('HH:mm:ss')}`;
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -204,15 +168,23 @@ function selectTotalColumn(user) {
 }
 
 /* Завершение задач в выбранной колонке */
+// Кнопка ниже намеренно с native title, а не v-tooltip: наведение на v-tooltip перед кликом
+// взвинчивает z-index открывающегося диалога (PrimeVue ZIndexUtils даёт большой скачок при смене
+// категории оверлея modal/tooltip/overlay/menu) — диалог оказывается выше слайдера задачи Bitrix
+// (z-index 1400), и открытая из диалога задача уходит под него
 const isCompleteTasksModalOpened = ref(false);
+// Обновляем сводную таблицу только если в диалоге что-то реально изменилось (завершили/отменили) —
+// не дёргаем API повторно, если окно просто открыли и закрыли
+const hasCompletionChanges = ref(false);
 
 function completeTasks(column) {
   selectedColumn.value = column;
   isCompleteTasksModalOpened.value = true;
 }
 
-function onCompleteTasks() {
-  isCompleteTasksModalOpened.value = false;
+function onCompleteTasksModalHide() {
+  if (!hasCompletionChanges.value) return;
+  hasCompletionChanges.value = false;
   fetchData();
 }
 
@@ -260,8 +232,7 @@ ${ordered.map((user) => `[*][USER=${user.id}]${user.name}[/USER] — ${formatPoi
 async function copySummary(column) {
   try {
     await window.navigator.clipboard.writeText(buildSummaryText(column));
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'success',
       summary: 'Успешно',
       detail: 'Итоги скопированы в буфер обмена',
@@ -269,8 +240,7 @@ async function copySummary(column) {
     });
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -290,8 +260,7 @@ async function postSummary(column) {
     const commentUrl = commentId
       ? `/workgroups/group/${props.groupId}/tasks/task/view/${settings.value.summaryTaskId}/?MID=${commentId}#com${commentId}`
       : null;
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'success',
       summary: 'Итоги опубликованы',
       links: commentUrl ? [{ url: commentUrl, label: 'Открыть комментарий' }] : undefined,
@@ -299,8 +268,7 @@ async function postSummary(column) {
     });
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -324,6 +292,7 @@ onMounted(() => {
     :sort-field="settings.sortColumn || defaultSortColumn"
     :sort-order="-1"
     :default-sort-order="-1"
+    striped-rows
   >
     <template #header>
       <div class="flex gap-2">
@@ -356,7 +325,7 @@ onMounted(() => {
       <template #body="{data}">
         <div class="flex gap-3 items-center">
           <Avatar
-            v-if="data.photo"
+            v-if="data.photo && !settings.hideUserAvatar"
             :image="data.photo"
             shape="circle"
           />
@@ -442,7 +411,7 @@ onMounted(() => {
             <div class="flex gap-3">
               <Button
                 v-if="settings.showCompleteTasksButton?.includes(column.id)"
-                v-tooltip="`Завершить все задачи в колонке «${column.name}»`"
+                :title="`Завершить все задачи в колонке «${column.name}»`"
                 icon="pi pi-flag"
                 size="small"
                 rounded
@@ -537,11 +506,12 @@ onMounted(() => {
     :header="`Завершение всех задач в колонке «${selectedColumn?.name}»`"
     dismissable-mask
     modal
+    @hide="onCompleteTasksModalHide"
   >
     <CompleteTasksTable
       :users
       :column="selectedColumn"
-      @success="onCompleteTasks"
+      @change="hasCompletionChanges = true"
     />
   </Dialog>
 </template>

@@ -2,7 +2,6 @@
 import {Button, Dialog} from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import ScrumSummary from './components/ScrumSummary.vue';
 
 defineProps({
@@ -66,7 +65,7 @@ const isInfoModalOpened = ref(false);
       <p>Все итоги спринтов должны размещаться в комментариях к одной и той же задаче.</p>
       <p>Для корректной работы виджета структура комментария с итогами спринта должна быть следующей:</p>
 
-      <div class="bg-surface-100 border border-surface-200 rounded-lg p-3">
+      <div class="bg-surface-100 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-lg p-3">
         <p class="mt-0">
           Итог 327 спринта
         </p>
@@ -80,7 +79,5 @@ const isInfoModalOpened = ref(false);
       <p>Если в вашей команде используется другой формат подведения итогов спринтов, создайте Pull Request и добавьте опцию переключения логики в настройках виджета.</p>
     </div>
   </Dialog>
-
-  <PtsToast group="scrum-summary" />
 </template>
 

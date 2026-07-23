@@ -1,13 +1,13 @@
 <script setup>
 import dayjs from 'dayjs';
 import { Avatar, Badge, Button, Column, DataTable, Message, MultiSelect, Select, SelectButton, Step, StepList, StepPanel, StepPanels, Stepper } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, toRaw, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import { bbcodeToMarkdown, getTaskPointsFromName, getTaskUrl, isSystemComment } from '../../../utils.js';
+import { bbcodeToMarkdown, downloadBlob, escapeCsvCell, getTaskPointsFromName, getTaskUrl, isSystemComment, TASK_STATUS_LABELS } from '../../../utils.js';
 
 const props = defineProps({
   sessionId: {
@@ -20,7 +20,6 @@ const props = defineProps({
   },
 });
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 // Личные предпочтения (набор колонок, формат, разделители) — общие для всех групп.
@@ -55,19 +54,6 @@ const TEXT_FORMAT_OPTIONS = [
   { label: 'BBCode', value: 'bbcode' },
   { label: 'Markdown', value: 'markdown' },
 ];
-
-// Числовые коды поля STATUS (общие для tasks.task.list/get) — по документации Bitrix24
-// (REST v3, tasks/rest-v3/fields.html: `2` ждет выполнения … `6` отложена) плюс общеизвестный
-// код `7` отклонена, единой числовой таблицы для классического API в документации нет.
-const STATUS_LABELS = {
-  1: 'Новая',
-  2: 'Ждёт выполнения',
-  3: 'Выполняется',
-  4: 'Ждёт контроля',
-  5: 'Завершена',
-  6: 'Отложена',
-  7: 'Отклонена',
-};
 
 // Числовые коды поля PRIORITY — по документации Bitrix24 (REST v3, tasks/rest-v3/fields.html).
 const PRIORITY_LABELS = {
@@ -164,6 +150,7 @@ function enrichTask(task) {
   return {
     id: task.id,
     title: task.title,
+    isRootTask: String(task.parentId ?? 0) === '0',
     groupId: task.groupId,
     stage: stageMap.value[String(task.stageId)]?.name ?? '',
     stageColor: stageMap.value[String(task.stageId)]?.color ?? null,
@@ -187,6 +174,10 @@ function enrichTask(task) {
 }
 
 const enrichedPreviewTasks = computed(() => previewTasks.value.map(enrichTask));
+
+// Предпросмотр грузится по тем же фильтрам, что и сама выгрузка (просто с limit) — значит пустой
+// предпросмотр означает пустой результат, и по нему же решаем, есть ли что выгружать
+const hasTasksToExport = computed(() => enrichedPreviewTasks.value.length > 0);
 
 watch([selectedColumnKeys, format, csvSeparator, textFormat], () => {
   if (isInitializing) return;
@@ -325,8 +316,7 @@ async function loadPreview() {
     return true;
   } catch (e) {
     console.warn('[export-group-tasks]', e);
-    toast.add({
-      group: 'export-group-tasks',
+    showToast({
       severity: 'error',
       summary: 'Ошибка загрузки задач',
       detail: e.message,
@@ -407,7 +397,7 @@ function displayValue(task, column) {
   if (column.isDate) return formatDate(task[column.key]);
   if (column.isDuration) return formatTimeEstimate(task[column.key]);
   if (column.isDurationMinutes) return formatTimeEstimate(task[column.key] != null ? task[column.key] * 60 : null);
-  if (column.isStatus) return STATUS_LABELS[task[column.key]] ?? '';
+  if (column.isStatus) return TASK_STATUS_LABELS[task[column.key]] ?? '';
   if (column.isPriority) return PRIORITY_LABELS[task[column.key]] ?? '';
   if (column.isMark) return MARK_LABELS[task[column.key]] ?? '';
   return task[column.key] ?? '';
@@ -417,7 +407,7 @@ function buildCsv(tasks) {
   const headers = visibleColumns.value.map((column) => column.label);
   const dataRows = tasks.map((task) => visibleColumns.value.map((column) => displayValue(task, column)));
   return [headers, ...dataRows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(csvSeparator.value))
+    .map((row) => row.map(escapeCsvCell).join(csvSeparator.value))
     .join('\n');
 }
 
@@ -437,10 +427,10 @@ async function copyToClipboard() {
   try {
     const tasks = (await getExportTasks()).map(enrichTask);
     await navigator.clipboard.writeText(buildOutput(tasks));
-    toast.add({ group: 'export-group-tasks', severity: 'success', summary: 'Скопировано!', life: 2000 });
+    showToast({ severity: 'success', summary: 'Скопировано!', life: 2000 });
   } catch (e) {
     console.warn('[export-group-tasks]', e);
-    toast.add({ group: 'export-group-tasks', severity: 'error', summary: 'Ошибка копирования', life: 3000 });
+    showToast({ severity: 'error', summary: 'Ошибка копирования', life: 3000 });
   } finally {
     isExporting.value = false;
   }
@@ -452,13 +442,10 @@ async function downloadFile() {
     const tasks = (await getExportTasks()).map(enrichTask);
     const mimeType = format.value === 'json' ? 'application/json' : 'text/csv';
     const blob = new Blob([buildOutput(tasks)], { type: `${mimeType};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement('a'), { href: url, download: `tasks-group-${props.groupId}.${format.value}` }).click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `tasks-group-${props.groupId}.${format.value}`);
   } catch (e) {
     console.warn('[export-group-tasks]', e);
-    toast.add({
-      group: 'export-group-tasks',
+    showToast({
       severity: 'error',
       summary: 'Ошибка выгрузки',
       detail: e.message,
@@ -650,7 +637,7 @@ async function downloadFile() {
           </div>
 
           <div>
-            <div class="text-xs text-surface-400 mb-2">
+            <div class="text-xs text-surface-400 dark:text-surface-500 mb-2">
               Предпросмотр по первым {{ PREVIEW_LIMIT }} задачам — при экспорте выгрузятся все, подходящие под фильтры
             </div>
             <DataTable
@@ -658,6 +645,7 @@ async function downloadFile() {
               :loading="isLoading"
               data-key="id"
               size="small"
+              striped-rows
               table-class="min-w-max"
             >
               <Column
@@ -669,14 +657,20 @@ async function downloadFile() {
                 body-class="whitespace-nowrap"
               >
                 <template #body="{ data }">
-                  <a
-                    v-if="column.key === 'title'"
-                    class="pts-blur"
-                    :href="getTaskUrl(data.groupId, data.id)"
-                    target="_top"
-                  >
-                    {{ data.title }}
-                  </a>
+                  <template v-if="column.key === 'title'">
+                    <i
+                      v-if="data.isRootTask"
+                      v-tooltip.top="'Корневая задача'"
+                      class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
+                    />
+                    <a
+                      class="pts-blur"
+                      :href="getTaskUrl(data.groupId, data.id)"
+                      target="_top"
+                    >
+                      {{ data.title }}
+                    </a>
+                  </template>
                   <div
                     v-else-if="column.key === 'stage'"
                     class="flex gap-2 items-center"
@@ -708,7 +702,7 @@ async function downloadFile() {
                     {{ formatTimeEstimate(data[column.key] != null ? data[column.key] * 60 : null) || '—' }}
                   </template>
                   <template v-else-if="column.isStatus">
-                    {{ STATUS_LABELS[data.status] || '—' }}
+                    {{ TASK_STATUS_LABELS[data.status] || '—' }}
                   </template>
                   <template v-else-if="column.isPriority">
                     {{ PRIORITY_LABELS[data.priority] || '—' }}
@@ -728,7 +722,7 @@ async function downloadFile() {
             </DataTable>
           </div>
 
-          <div class="flex gap-2 flex-wrap items-center border-t border-surface-200 pt-3">
+          <div class="flex gap-2 flex-wrap items-center border-t border-surface-200 dark:border-surface-700 pt-3">
             <FormField label="Формат">
               <SelectButton
                 v-model="format"
@@ -757,7 +751,7 @@ async function downloadFile() {
               icon="pi pi-copy"
               size="small"
               :loading="isExporting"
-              :disabled="!enrichedPreviewTasks.length || !visibleColumns.length"
+              :disabled="!hasTasksToExport || !visibleColumns.length"
               class="ml-auto"
               @click="copyToClipboard"
             />
@@ -767,7 +761,7 @@ async function downloadFile() {
               severity="secondary"
               size="small"
               :loading="isExporting"
-              :disabled="!enrichedPreviewTasks.length || !visibleColumns.length"
+              :disabled="!hasTasksToExport || !visibleColumns.length"
               @click="downloadFile"
             />
           </div>

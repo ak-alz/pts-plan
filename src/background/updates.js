@@ -79,12 +79,37 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await chrome.storage.local.remove('taskSearchFavorites');
   }
 
+  if (compareVersions(previousVersion, '2.12.0') < 0) {
+    const stored = await chrome.storage.local.get(['notification-details-filter']);
+    const savedFilter = stored['notification-details-filter'];
+
+    // Старый формат — одиночный выбор (groupId/highlightAttribute — строка). Оборачиваем в
+    // массивы (новый формат — мультивыбор) и полностью заменяем значение, без старых полей
+    if (savedFilter && !Array.isArray(savedFilter.groupIds)) {
+      await chrome.storage.local.set({
+        'notification-details-filter': {
+          groupIds: savedFilter.groupId ? [savedFilter.groupId] : [],
+          highlightAttributes: savedFilter.highlightAttribute ? [savedFilter.highlightAttribute] : [],
+        },
+      });
+    }
+  }
+
+  if (compareVersions(previousVersion, '2.13.0') < 0) {
+    // Присутствие вкладок в call-notifications переехало со storage на BroadcastChannel —
+    // записи под этим префиксом больше никто не читает, но у пользователей 2.12 они остались
+    const all = await chrome.storage.local.get(null);
+    const presenceKeys = Object.keys(all).filter((key) => key.startsWith('call-notifications-presence:'));
+    if (presenceKeys.length) await chrome.storage.local.remove(presenceKeys);
+  }
+
   if (notificationMessage) {
     await chrome.notifications.create({
       type: 'basic',
       iconUrl: chrome.runtime.getURL('img/logo.png'),
       title: 'Pixel Plan Injection обновлён!',
       message: notificationMessage,
+      silent: true,
     });
   }
 

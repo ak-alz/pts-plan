@@ -1,8 +1,8 @@
 <script setup>
 import {Avatar, Button, Checkbox, MultiSelect, Select} from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {reactive, ref, toRaw} from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
 const props = defineProps({
@@ -14,7 +14,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
 const isLoading = ref(false);
 
 const form = reactive({
@@ -34,7 +33,7 @@ async function save() {
         defaultAuditors: [...form.defaultAuditors],
       },
     });
-    toast.add({group: 'quick-task', severity: 'success', summary: 'Сохранено', life: 3000});
+    showToast({severity: 'success', summary: 'Сохранено', life: 3000});
     emit('success');
   } catch {
     // ignore

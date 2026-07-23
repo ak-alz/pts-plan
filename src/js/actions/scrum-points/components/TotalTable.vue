@@ -51,6 +51,7 @@ const userTasks = computed(() => {
     :value="userTasks"
     data-key="id"
     size="small"
+    striped-rows
     row-group-mode="rowspan"
     group-rows-by="column.id"
   >
@@ -74,12 +75,16 @@ const userTasks = computed(() => {
       header="Задача"
     >
       <template #body="{data}">
+        <i
+          v-if="data.isRootTask"
+          v-tooltip.top="'Корневая задача'"
+          class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
+        />
         <a
           class="pts-blur"
           target="_top"
           :href="data.url"
-          v-html="data.name"
-        />
+        >{{ data.name }}</a>
       </template>
     </Column>
 

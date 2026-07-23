@@ -2,7 +2,7 @@ import {escape} from 'lodash-es';
 
 import {minifyPrompt} from '../../utils.js';
 
-const chip = (s) => `<span class="rounded bg-surface-100 font-semibold px-1">${escape(s)}</span>`;
+const chip = (s) => `<span class="rounded bg-surface-100 dark:bg-surface-800 font-semibold px-1">${escape(s)}</span>`;
 const v = (label) => chip(`{ ${label} }`);
 
 export function buildPromptPreview(title, extraContext) {

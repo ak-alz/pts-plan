@@ -1,6 +1,5 @@
 import PrimeVue from 'primevue/config';
 import Ripple from 'primevue/ripple';
-import ToastService from 'primevue/toastservice';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
@@ -18,9 +17,9 @@ export async function decomposeTask(sessionId) {
   const initialized = !!titleBlock.querySelector('.js-decompose-task');
   if (initialized) return;
 
-  const responsiveBlock = document.querySelector('.task-user-selector.single:not(.readonly) [data-item-value]');
-  if (!responsiveBlock) return;
-  const responsiveId = Number(responsiveBlock.getAttribute('data-item-value'));
+  const responsibleBlock = document.querySelector('.task-user-selector.single:not(.readonly) [data-item-value]');
+  if (!responsibleBlock) return;
+  const responsibleId = Number(responsibleBlock.getAttribute('data-item-value'));
 
   const buttonContainer = titleBlock.querySelector('.ui-toolbar-after-title');
   if (!buttonContainer) return;
@@ -36,12 +35,11 @@ export async function decomposeTask(sessionId) {
 
   const app = createApp(DecomposeTaskApp, {
     sessionId,
-    responsiveId,
+    responsibleId,
     taskTitle,
     taskId: ids.taskId,
   });
   app.use(PrimeVue, primeVueOptions);
-  app.use(ToastService);
   app.directive('tooltip', Tooltip);
   app.directive('ripple', Ripple);
 

@@ -23,10 +23,10 @@ const model = defineModel({
   default: '',
 });
 
-const op = ref();
+const popover = ref();
 
 const toggle = (event) => {
-  op.value.toggle(event);
+  popover.value.toggle(event);
 };
 </script>
 
@@ -39,7 +39,7 @@ const toggle = (event) => {
     @click="toggle"
   />
 
-  <Popover ref="op">
+  <Popover ref="popover">
     <slot name="before" />
     <TwitterPicker
       v-model="model"

@@ -12,9 +12,9 @@ function userLine(user, points) {
 }
 
 /**
- * Generates a sample sprint results comment from real group members (up to 5).
+ * Собирает пример комментария с итогами спринта по реальным участникам группы (до 5 человек).
  * @param {Array<{id: number, title: string}>} users
- * @returns {string} BBCode comment text
+ * @returns {string} Текст комментария в BBCode
  */
 export function buildSprintComment(users) {
   const topUsers = users.slice(0, 5);
@@ -24,9 +24,9 @@ export function buildSprintComment(users) {
 }
 
 /**
- * Generates an extended sprint comment with Back/Front/Full-stack grouping from real group members.
+ * То же, но расширенный пример: с разбивкой участников по стеку (Back/Front).
  * @param {Array<{id: number, title: string}>} users
- * @returns {string} BBCode comment text
+ * @returns {string} Текст комментария в BBCode
  */
 function buildExtendedSprintComment(users) {
   const topUsers = users.slice(0, 5);
@@ -34,28 +34,28 @@ function buildExtendedSprintComment(users) {
   const backUsers = topUsers.slice(0, splitIndex);
   const frontUsers = topUsers.slice(splitIndex);
 
-  const backTotal = backUsers.reduce((sum, _, i) => sum + EXTENDED_EXAMPLE_POINTS[i], 0);
-  const backLines = backUsers.map((u, i) => userLine(u, EXTENDED_EXAMPLE_POINTS[i])).join('\n');
+  const backTotal = backUsers.reduce((sum, _, index) => sum + EXTENDED_EXAMPLE_POINTS[index], 0);
+  const backLines = backUsers.map((user, index) => userLine(user, EXTENDED_EXAMPLE_POINTS[index])).join('\n');
   const backSection = `Back: ${backTotal} ${pluralize(backTotal, ['балл', 'балла', 'баллов'])}\n${backLines}`;
 
   let frontSection;
   if (frontUsers.length) {
-    const frontTotal = frontUsers.reduce((sum, _, i) => sum + EXTENDED_EXAMPLE_POINTS[splitIndex + i], 0);
-    const frontLines = frontUsers.map((u, i) => userLine(u, EXTENDED_EXAMPLE_POINTS[splitIndex + i])).join('\n');
+    const frontTotal = frontUsers.reduce((sum, _, index) => sum + EXTENDED_EXAMPLE_POINTS[splitIndex + index], 0);
+    const frontLines = frontUsers.map((user, index) => userLine(user, EXTENDED_EXAMPLE_POINTS[splitIndex + index])).join('\n');
     frontSection = `Front: ${frontTotal} ${pluralize(frontTotal, ['балл', 'балла', 'баллов'])}\n${frontLines}`;
   } else {
     frontSection = 'Front: —';
   }
 
-  const total = topUsers.reduce((sum, _, i) => sum + (EXTENDED_EXAMPLE_POINTS[i] ?? 0), 0);
+  const total = topUsers.reduce((sum, _, index) => sum + (EXTENDED_EXAMPLE_POINTS[index] ?? 0), 0);
   return `TAGALL,\nИтог 2 спринта\n\n${total} ${pluralize(total, ['балл', 'балла', 'баллов'])}!\n\n${backSection}\n\n${frontSection}`;
 }
 
 /**
- * Builds the full task description with embedded example sprint comments.
- * @param {string} exampleComment - result of buildSprintComment
+ * Собирает полное описание задачи-шаблона со встроенными примерами комментариев с итогами.
+ * @param {string} exampleComment - результат buildSprintComment
  * @param {Array<{id: number, title: string}>} users
- * @returns {string} BBCode description
+ * @returns {string} Описание задачи в BBCode
  */
 export function buildTaskDescription(exampleComment, users) {
   const extendedComment = buildExtendedSprintComment(users);

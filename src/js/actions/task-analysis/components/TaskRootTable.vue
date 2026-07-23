@@ -32,6 +32,7 @@ function openTaskList(row) {
     :rows="20"
     :rows-per-page-options="[10, 20, 50]"
     size="small"
+    striped-rows
   >
     <Column
       v-if="multiUser"

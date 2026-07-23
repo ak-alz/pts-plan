@@ -1,3 +1,5 @@
+import {backgroundFetch} from './backgroundFetch.js';
+
 const BASE_URL = 'https://tools.pixelplus.ru/api';
 const MODEL = 'gpt-5.3-chat-latest';
 const PRIORITY = 1000;
@@ -6,17 +8,10 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const PROGRESS_RAMP_MAX = 5;
 const PROGRESS_RAMP_STEP_MS = 400;
 
-async function bgFetch(method, path, { body, params } = {}) {
-  const response = await chrome.runtime.sendMessage({
-    type: 'pixeltools-api-fetch',
-    method,
-    url: `${BASE_URL}${path}`,
-    body,
-    params,
-  });
-  if (!response) throw new Error('Нет ответа от фонового скрипта');
-  if (response.error) throw new Error(response.error);
-  return response.data;
+// Ошибки API приходят телом ответа (см. разбор data.code ниже), поэтому HTTP-статус здесь
+// намеренно не превращается в исключение — throwOnHttpError не включаем
+function bgFetch(method, path, { body, params } = {}) {
+  return backgroundFetch(method, `${BASE_URL}${path}`, { body, params });
 }
 
 export class PixelToolsApi {

@@ -51,8 +51,8 @@ const { autoFill, isFetching } = useAutoFill(model);
       tip="Ваш ID в Bitrix24 (нужно для некоторых фич)"
     >
       <InputNumber
-        id="profile_userId"
         v-model="model.userId"
+        input-id="profile_userId"
         size="small"
         fluid
         :use-grouping="false"
@@ -66,15 +66,15 @@ const { autoFill, isFetching } = useAutoFill(model);
       tip="Нужен для AI-функций расширения. Сгенерировать можно в настройках аккаунта на tools.pixelplus.ru"
     >
       <Password
-        id="profile_pixelToolsApiKey"
         v-model="model.pixelToolsApiKey"
+        input-id="profile_pixelToolsApiKey"
         size="small"
         fluid
         :feedback="false"
         toggle-mask
         placeholder="Введите API ключ"
       />
-      <p class="text-xs text-surface-400 mt-1">
+      <p class="text-xs text-surface-400 dark:text-surface-500 mt-1">
         <a
           href="https://tools.pixelplus.ru/"
           target="_blank"

@@ -2,7 +2,6 @@
 import { Button, Dialog } from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import TaskAnalysis from './components/TaskAnalysis.vue';
 
 defineProps({
@@ -71,6 +70,4 @@ const isInfoModalOpened = ref(false);
       <p>Если в вашей команде используется другой формат названий задач, создайте Pull Request и добавьте опцию переключения логики в настройках виджета.</p>
     </div>
   </Dialog>
-
-  <PtsToast group="task-analysis" />
 </template>

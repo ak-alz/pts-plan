@@ -191,7 +191,7 @@ function enableAll() {
     class="flex flex-col items-center gap-2 py-10 text-center"
   >
     <i class="pi pi-check-circle text-4xl text-green-400" />
-    <p class="m-0 text-sm text-slate-600">
+    <p class="m-0 text-sm text-surface-600 dark:text-surface-300">
       У вас уже включены все функции 🎉<br>Предлагать нечего.
     </p>
     <Button
@@ -208,7 +208,7 @@ function enableAll() {
     class="flex flex-col gap-5"
   >
     <SetupStart v-model="mode" />
-    <div class="flex border-t border-slate-200 pt-3">
+    <div class="flex border-t border-surface-200 dark:border-surface-700 pt-3">
       <Button
         label="Начать"
         size="small"
@@ -243,7 +243,7 @@ function enableAll() {
       />
     </div>
 
-    <div class="flex items-center gap-2 border-t border-slate-200 pt-3">
+    <div class="flex items-center gap-2 border-t border-surface-200 dark:border-surface-700 pt-3">
       <Button
         label="Назад"
         size="small"

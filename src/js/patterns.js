@@ -1,6 +1,9 @@
 // Tagall
 export const TAGALL_PHRASE_RE = /и другие участники задачи/i;
-export const TAGALL_WORD_RE = /\bTAGALL\b/gi;
+// Две константы вместо одной с /g: у глобальной регулярки .test() двигает lastIndex, и следующая
+// проверка начиналась бы не с начала строки. Для проверок — TAGALL_WORD_RE, для замен — …_GLOBAL_RE
+export const TAGALL_WORD_RE = /\bTAGALL\b/i;
+export const TAGALL_WORD_GLOBAL_RE = /\bTAGALL\b/gi;
 
 // Срезает дублирующий TAGALL (с любым регистром и хвостовой пунктуацией/пробелами), если
 // пользователь уже вписал его сам в начало текста — используется при сборке текста комментария.
@@ -14,6 +17,17 @@ export const TAGALL_NAMED_RE = new RegExp(`(?:[А-ЯЁ][а-яё]+ [А-ЯЁ][а-�
 // Канонический токен, на который заменяется tagall-фраза (TAGALL_NAMED_RE) перед детекцией —
 // упрощает поиск и не даёт имени из фразы засчитаться за личное упоминание
 export const TAGALL_TOKEN = 'TAGALL';
+
+// Хвост для регулярок, которые правят HTML-фрагмент как строку: совпадение засчитывается, только
+// если оно НЕ внутри тега. Внутри тега сразу за совпадением идут символы без «<» и затем «>»
+// (например `Иван Иванов">` в title) — такое отбрасывается, иначе <b> вставился бы внутрь атрибута.
+// Обратная сторона: «>» в самом тексте уведомления тоже гасит замену — подсветки просто не будет
+export const OUTSIDE_HTML_TAG_LOOKAHEAD = '(?![^<>]*>)';
+
+// TAGALL_NAMED_RE для замены прямо в HTML — см. OUTSIDE_HTML_TAG_LOOKAHEAD.
+// Отдельная константа, а не флаг у TAGALL_NAMED_RE: канонизация текста (canonicalizeTagallHtml)
+// работает уже без тегов, и там этот просмотр только мешал бы
+export const TAGALL_NAMED_OUTSIDE_TAG_RE = new RegExp(`${TAGALL_NAMED_RE.source}${OUTSIDE_HTML_TAG_LOOKAHEAD}`, 'g');
 
 export const TAGALL_STATUS_KEYWORDS = [
   'на прод[е]?',
@@ -122,6 +136,21 @@ export const BBCODE_STRIP_WRAPPER_RE = /\[(COLOR|SIZE|LEFT|CENTER|RIGHT)[^\]]*\]
 // заглавной латиницей, чтобы не задеть кириллические плейсхолдеры типа "[Вложения: ...]".
 export const BBCODE_UNKNOWN_TAG_RE = /\[\/?[A-Z][A-Z0-9]*(?:=[^\]]*)?\]/g;
 
+// scrum-summary: разбор комментариев с итогами спринта в задаче-шаблоне.
+// Отбор нужных комментариев: «Итоги спринта» и «Итоги 42 спринта» — оба валидны, номер необязателен
+export const SPRINT_SUMMARY_RE = /итоги?[\s\S]*?(?:(\d+)[\s\S]*?)?спринт/gi;
+// Строка участника, новый формат: [URL=…/user/ID/]Имя[/URL] — N баллов
+export const SPRINT_SUMMARY_URL_USER_RE = /\[URL=([^\]]*\/company\/personal\/user\/(\d+)\/)]([^[\n]+)\[\/URL][^\d\n]*(\d+)\s+балл/g;
+// Она же в старом формате: [USER=ID]Имя[/USER] — N баллов
+export const SPRINT_SUMMARY_BB_USER_RE = /\[USER=(\d+)]([^[\n]+)\[\/USER][^\d\n]*(\d+)\s+балл/g;
+
+// decompose-task: готовая декомпозиция, которую внешний AI-инструмент оценки задач (pts-ai, не эта
+// фича) вставляет в сырое описание задачи. Маркер [AI_DECOMPOSITIONS] содержит "_", поэтому не
+// совпадает с BBCODE_UNKNOWN_TAG_RE и не вырезается. Список подзадач — обычные строки
+// "- {title} — {points} points" внутри [QUOTE] (не BBCode [LIST]).
+export const AI_DECOMPOSITIONS_BLOCK_RE = /\[AI_DECOMPOSITIONS\][\s\S]*?\[QUOTE[^\]]*\]([\s\S]*?)\[\/QUOTE\]/i;
+export const AI_DECOMPOSITIONS_ITEM_RE = /^-\s*(.+?)(?:\s*—\s*(\d+)\s*points?)?\s*$/;
+
 // Типы уведомлений (для чипа в notification-details)
 export const NOTIF_NEW_TASK_RE = /добавил[а]? новую задачу|добавлена новая задача/i;
 export const NOTIF_COMMENT_RE = /добавил[а]? комментарий|добавлен комментарий/i;
@@ -132,3 +161,8 @@ export const NOTIF_CHANGE_RE = /изменил[а]? задачу|изменен�
 // Bitrix упоминает ID задачи в тексте уведомления как "[#481203]" — используется, когда в самом
 // уведомлении нет ссылки на задачу (всплывающий тост .ui-notification-manager-browser-balloon)
 export const NOTIF_TASK_ID_RE = /\[#(\d+)\]/;
+
+// call-notifications: время регулярной встречи, "ЧЧ:ММ" в сутках. Маска поля гарантирует только
+// цифры на своих местах, поэтому диапазон часов/минут проверяется этим шаблоном — им же валидируется
+// импорт встреч из JSON, где никакой маски не было вовсе
+export const MEETING_TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;

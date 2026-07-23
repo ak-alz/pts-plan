@@ -107,11 +107,17 @@ export async function showCats(options) {
     },
   });
 
+  // Подряд идущие пропуски по пропорциям: перебор идёт по кругу (catIndex % cats.length), поэтому
+  // без счётчика партия, целиком не прошедшая проверку, качалась бы бесконечно
+  let skippedInARow = 0;
+
   image.addEventListener('load', () => {
-    if (!isValidAspectRatio(image.naturalWidth, image.naturalHeight)) {
+    if (!isValidAspectRatio(image.naturalWidth, image.naturalHeight) && skippedInARow < cats.length) {
+      skippedInARow += 1;
       updateCat();
       return;
     }
+    skippedInARow = 0;
     image.style.aspectRatio = image.naturalWidth / image.naturalHeight;
   });
 
@@ -124,5 +130,14 @@ export async function showCats(options) {
 
   updateCat();
   leftMenu.appendChild(image);
-  setInterval(updateCat, timeout);
+
+  const intervalId = setInterval(() => {
+    // Баннер мог уехать из DOM вместе с перерисованным меню — держать таймер и качать картинки
+    // в пустоту незачем
+    if (!image.isConnected) {
+      clearInterval(intervalId);
+      return;
+    }
+    updateCat();
+  }, timeout);
 }

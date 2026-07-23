@@ -1,5 +1,8 @@
 import {getGroupIdFromUrl, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
 
+// Своя метка обработанных карточек, а не общая: на тех же карточках канбана работают ещё две фичи
+const PROCESSED_CLASS = 'js-kanban-user-cards-processed';
+
 export function kanbanUserCards(backgroundColor, firstName, lastName) {
   if (!validateHexColor(backgroundColor)) return;
   if (!firstName || !lastName) return;
@@ -19,10 +22,10 @@ export function kanbanUserCards(backgroundColor, firstName, lastName) {
   insertCSS(css);
 
   function highlightCards() {
-    const kanbanCards = kanbanGrid.querySelectorAll('.main-kanban-item[data-id] .tasks-kanban-item:not(.js-processed)');
+    const kanbanCards = kanbanGrid.querySelectorAll(`.main-kanban-item[data-id] .tasks-kanban-item:not(.${PROCESSED_CLASS})`);
 
     kanbanCards.forEach((card) => {
-      card.classList.add('js-processed');
+      card.classList.add(PROCESSED_CLASS);
 
       const responsibleName = card.querySelector('.tasks-kanban-item-responsible .tasks-kanban-item-author-avatar')?.getAttribute('title') || '';
 

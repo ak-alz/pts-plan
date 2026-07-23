@@ -2,7 +2,6 @@
 import {Dialog} from 'primevue';
 import {ref} from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import DecomposeTask from './components/DecomposeTask.vue';
 
 defineProps({
@@ -10,7 +9,7 @@ defineProps({
     type: String,
     required: true,
   },
-  responsiveId: {
+  responsibleId: {
     type: Number,
     required: true,
   },
@@ -44,12 +43,10 @@ const modalOpened = ref(false);
   >
     <DecomposeTask
       :session-id
-      :responsive-id
+      :responsible-id
       :task-title
       :task-id
       @success="modalOpened = false"
     />
   </Dialog>
-
-  <PtsToast group="decompose-task" />
 </template>

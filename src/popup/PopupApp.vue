@@ -3,11 +3,14 @@ import { debounce } from 'lodash-es';
 import { Button, Dialog, IconField, InputIcon, InputText, SelectButton, Toast } from 'primevue';
 import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue';
 
-import options, { groups, optionTypes } from '../js/options.js';
+import { useTheme } from '../js/composables/useTheme.js';
+import options, { getDefaultOptions, groups } from '../js/options.js';
 import { convertKeyboardLayout } from '../js/utils.js';
 import ImportExportContent from './components/ImportExportContent.vue';
 import OptionsTree from './components/OptionsTree.vue';
 import ProfileSettings from './components/ProfileSettings.vue';
+
+const { icon: themeIcon, tooltip: themeTooltip, cycleMode: cycleThemeMode } = useTheme();
 
 const search = ref('');
 const selectedGroup = ref('all');
@@ -51,42 +54,7 @@ const filteredOptions = computed(() => {
     });
 });
 
-function getOptionsMap() {
-  const result = {};
-
-  function recursive(opts) {
-    opts.forEach((option) => {
-      switch (option.type) {
-        case optionTypes.TEXT:
-        case optionTypes.COLOR: {
-          result[option.key] = option.default || '';
-          break;
-        }
-        case optionTypes.NUMBER: {
-          result[option.key] = option.default || null;
-          break;
-        }
-        case optionTypes.MULTISELECT: {
-          result[option.key] = option.default ?? [];
-          break;
-        }
-        default: {
-          result[option.key] = option.default || false;
-        }
-      }
-
-      if (option.options) {
-        recursive(option.options);
-      }
-    });
-  }
-
-  recursive(options);
-
-  return result;
-}
-
-let form = reactive(getOptionsMap());
+let form = reactive(getDefaultOptions());
 const loaded = ref(false);
 
 async function loadSettings() {
@@ -128,13 +96,17 @@ function openScrumGuide() {
   chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?scrum=1') });
 }
 
+function openCallNotificationsGuide() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?calls=1') });
+}
+
 onMounted(() => {
   loadSettings();
 });
 </script>
 
 <template>
-  <main class="w-[600px] h-[500px] p-3 flex flex-col gap-3">
+  <main class="w-[600px] h-[520px] p-3 flex flex-col gap-3">
     <div class="grow min-h-0 flex gap-3 flex-col">
       <div class="flex gap-1 items-center">
         <IconField class="grow">
@@ -177,10 +149,18 @@ onMounted(() => {
           icon="pi pi-info-circle"
           @click="infoModalOpened = true"
         />
+        <Button
+          v-tooltip.left="themeTooltip"
+          size="small"
+          severity="secondary"
+          text
+          :icon="`pi ${themeIcon}`"
+          @click="cycleThemeMode"
+        />
       </div>
 
       <div class="grow min-h-0 flex gap-3">
-        <div class="bg-surface-100 flex flex-col">
+        <div class="bg-surface-100 dark:bg-surface-950 flex flex-col">
           <SelectButton
             v-model="selectedGroup"
             :options="groupOptions"
@@ -212,6 +192,15 @@ onMounted(() => {
               fluid
               @click="openScrumGuide"
             />
+            <Button
+              v-if="form.callNotifications"
+              label="Встречи"
+              size="small"
+              severity="secondary"
+              outlined
+              fluid
+              @click="openCallNotificationsGuide"
+            />
           </div>
         </div>
 
@@ -223,7 +212,7 @@ onMounted(() => {
           />
           <div
             v-else
-            class="grow flex items-center justify-center text-sm text-surface-400"
+            class="grow flex items-center justify-center text-sm text-surface-400 dark:text-surface-500"
           >
             Ничего не найдено
           </div>
@@ -326,7 +315,3 @@ onMounted(() => {
 
   <Toast position="bottom-right" />
 </template>
-
-<style scoped>
-
-</style>

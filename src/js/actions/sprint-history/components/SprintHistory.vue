@@ -1,10 +1,10 @@
 <script setup>
 import dayjs from 'dayjs';
 import { Avatar, Button, Checkbox, Select, ToggleSwitch } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import { getTaskPointsFromName, isHotfixTask } from '../../../utils.js';
@@ -22,13 +22,12 @@ const props = defineProps({
   },
 });
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 function getPrevWeekRange() {
   const today = dayjs();
-  const dow = today.day(); // 0=Sun, 1=Mon … 6=Sat
-  const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+  const dayOfWeek = today.day(); // 0 — воскресенье, 1 — понедельник … 6 — суббота
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const thisMonday = today.subtract(daysSinceMonday, 'day').startOf('day');
   return [
     thisMonday.subtract(7, 'day').toDate(),
@@ -49,12 +48,12 @@ const groupedDataLoaded = ref(false);
 
 const users = computed(() => {
   const map = {};
-  allTasks.value.forEach((t) => {
-    if (!map[t.responsible.id]) {
-      map[t.responsible.id] = {
-        id: t.responsible.id,
-        name: t.responsible.name,
-        photo: t.responsible.icon || null,
+  allTasks.value.forEach((task) => {
+    if (!map[task.responsible.id]) {
+      map[task.responsible.id] = {
+        id: task.responsible.id,
+        name: task.responsible.name,
+        photo: task.responsible.icon || null,
       };
     }
   });
@@ -63,15 +62,15 @@ const users = computed(() => {
 
 const filteredTasks = computed(() => {
   let tasks = allTasks.value;
-  if (excludeHotfixes.value) tasks = tasks.filter((t) => !isHotfixTask(t.title));
-  if (selectedUserId.value) tasks = tasks.filter((t) => t.responsible.id === selectedUserId.value);
+  if (excludeHotfixes.value) tasks = tasks.filter((task) => !isHotfixTask(task.title));
+  if (selectedUserId.value) tasks = tasks.filter((task) => task.responsible.id === selectedUserId.value);
   return tasks;
 });
 
 const allTasksById = computed(() => {
   const map = {};
-  allTasks.value.forEach((t) => {
-    map[String(t.id)] = t;
+  allTasks.value.forEach((task) => {
+    map[String(task.id)] = task;
   });
   return map;
 });
@@ -80,13 +79,13 @@ const groupedRows = computed(() => {
   const groups = {};
 
   filteredTasks.value.forEach((task) => {
-    const pid = String(task.parentId ?? 0);
-    const key = pid !== '0' ? pid : String(task.id);
+    const parentId = String(task.parentId ?? 0);
+    const key = parentId !== '0' ? parentId : String(task.id);
 
     if (!groups[key]) {
-      groups[key] = { key, isOwnRoot: pid === '0', tasks: [] };
+      groups[key] = { key, isOwnRoot: parentId === '0', tasks: [] };
     }
-    if (pid !== '0') groups[key].isOwnRoot = false;
+    if (parentId !== '0') groups[key].isOwnRoot = false;
     groups[key].tasks.push(task);
   });
 
@@ -97,16 +96,16 @@ const groupedRows = computed(() => {
       null;
 
     const responsibles = Object.values(
-      group.tasks.reduce((map, t) => {
-        if (!map[t.responsible.id]) map[t.responsible.id] = t.responsible;
+      group.tasks.reduce((map, task) => {
+        if (!map[task.responsible.id]) map[task.responsible.id] = task.responsible;
         return map;
       }, {}),
     );
 
-    const subtasks = group.tasks.filter((t) => String(t.parentId ?? 0) === group.key);
-    const parentIsInTasks = group.tasks.some((t) => String(t.id) === group.key);
+    const subtasks = group.tasks.filter((task) => String(task.parentId ?? 0) === group.key);
+    const parentIsInTasks = group.tasks.some((task) => String(task.id) === group.key);
     const parentPoints = getTaskPointsFromName(parentData?.title ?? '');
-    const totalTaskPoints = group.tasks.reduce((sum, t) => sum + t.points, 0) + (parentIsInTasks ? 0 : parentPoints);
+    const totalTaskPoints = group.tasks.reduce((sum, task) => sum + task.points, 0) + (parentIsInTasks ? 0 : parentPoints);
 
     const parentTask = parentData ? {
       id: group.key,
@@ -136,23 +135,23 @@ async function fetchGroupedData() {
   const knownIds = new Set(Object.keys(allTasksById.value));
   const parentIds = [...new Set(
     allTasks.value
-      .filter((t) => {
-        const pid = String(t.parentId ?? 0);
-        return pid !== '0' && !knownIds.has(pid);
+      .filter((task) => {
+        const parentId = String(task.parentId ?? 0);
+        return parentId !== '0' && !knownIds.has(parentId);
       })
-      .map((t) => String(t.parentId)),
+      .map((task) => String(task.parentId)),
   )];
 
   const [stagesResult, parentTasksList] = await Promise.all([
     stages.value.length ? Promise.resolve(null) : bitrixApi.getStages(props.groupId),
     parentIds.length ? bitrixApi.searchTasks({ ids: parentIds }) : Promise.resolve([]),
   ]);
-  const fetchedParents = Object.fromEntries(parentTasksList.map((t) => [String(t.id), t]));
+  const fetchedParents = Object.fromEntries(parentTasksList.map((task) => [String(task.id), task]));
 
   if (stagesResult) {
     stages.value = Object.values(stagesResult.data.result)
       .sort((a, b) => a.SORT - b.SORT)
-      .map((s) => ({ id: String(s.ID), name: s.TITLE, color: `#${s.COLOR}` }));
+      .map((stage) => ({ id: String(stage.ID), name: stage.TITLE, color: `#${stage.COLOR}` }));
   }
 
   parentTasksMap.value = fetchedParents;
@@ -176,9 +175,9 @@ async function fetchData() {
       closedDateTo: dateTo,
     });
 
-    allTasks.value = tasks.map((t) => ({
-      ...t,
-      points: getTaskPointsFromName(t.title),
+    allTasks.value = tasks.map((task) => ({
+      ...task,
+      points: getTaskPointsFromName(task.title),
     }));
 
     if (groupByParent.value) {
@@ -186,8 +185,7 @@ async function fetchData() {
     }
   } catch (e) {
     console.warn(e);
-    toast.add({
-      group: 'sprint-history',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: e.message,
@@ -198,15 +196,14 @@ async function fetchData() {
   }
 }
 
-watch(groupByParent, async (val) => {
-  if (val && allTasks.value.length && !isLoading.value && !groupedDataLoaded.value) {
+watch(groupByParent, async (isEnabled) => {
+  if (isEnabled && allTasks.value.length && !isLoading.value && !groupedDataLoaded.value) {
     isLoading.value = true;
     try {
       await fetchGroupedData();
     } catch (e) {
       console.warn(e);
-      toast.add({
-        group: 'sprint-history',
+      showToast({
         severity: 'error',
         summary: 'Ошибка',
         detail: e.message,
@@ -241,7 +238,7 @@ onMounted(() => {
           @click="fetchData"
         />
       </div>
-      <div class="flex items-center gap-4 border-t border-surface-200 pt-3">
+      <div class="flex items-center gap-4 border-t border-surface-200 dark:border-surface-700 pt-3">
         <Select
           v-model="selectedUserId"
           :options="users"
@@ -279,7 +276,7 @@ onMounted(() => {
             Исключить хотфиксы
             <i
               v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
-              class="pi pi-question-circle text-surface-400"
+              class="pi pi-question-circle text-surface-400 dark:text-surface-500"
             />
           </label>
         </div>

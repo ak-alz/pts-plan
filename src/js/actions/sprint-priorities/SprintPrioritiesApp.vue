@@ -2,7 +2,6 @@
 import { Dialog } from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import SprintPriorities from './components/SprintPriorities.vue';
 
 defineProps({
@@ -41,6 +40,4 @@ const modalOpened = ref(false);
       :group-id
     />
   </Dialog>
-
-  <PtsToast group="sprint-priorities" />
 </template>

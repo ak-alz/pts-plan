@@ -14,13 +14,13 @@ function features(...keys) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-6 w-[820px] text-sm text-slate-700 leading-relaxed">
-    <p class="m-0 text-slate-500">
+  <div class="flex flex-col gap-6 w-[820px] text-sm text-surface-700 dark:text-surface-0 leading-relaxed">
+    <p class="m-0 text-surface-500 dark:text-surface-400">
       Это модифицированный Scrum от команды Пиксель Тулс. Вы вправе адаптировать любые правила под свою команду.
     </p>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Как устроен процесс
       </h3>
       <ul class="m-0 pl-5 list-disc flex flex-col gap-1.5">
@@ -28,7 +28,7 @@ function features(...keys) {
         <li>В начале спринта задачи из Backlog распределяются между сотрудниками и переносятся в колонку Спринт. Ориентир — <strong>65 баллов</strong> на человека за спринт. Рекомендуется вести таблицу приоритетов (например, в Google Sheets) — разработчики ориентируются на неё при формировании спринта.</li>
         <li>В конце спринта руководитель подводит итоги: считает выполненные баллы каждого и добавляет один общий комментарий в задачу-архив.</li>
       </ul>
-      <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
+      <div class="rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
           :options="features('sprintPriorities')"
@@ -37,7 +37,7 @@ function features(...keys) {
     </section>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Колонки канбана
       </h3>
       <ul class="m-0 pl-5 list-disc flex flex-col gap-1.5">
@@ -50,7 +50,7 @@ function features(...keys) {
         <li><strong>На выкат</strong> — проверено, готово к публикации.</li>
         <li><strong>Done</strong> — опубликовано. Сюда попадают в том числе выполненные подзадачи, даже если корневая задача ещё не вышла в прод. <strong>Задачу нельзя закрывать до подведения итогов спринта</strong> — закрытые задачи Битрикс автоматически скрывает в канбане. После того как руководитель добавил комментарий с итогами, задачи из «Done» закрываются.</li>
       </ul>
-      <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
+      <div class="rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
           :options="features('scrumPoints')"
@@ -59,10 +59,10 @@ function features(...keys) {
     </section>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Формат названия задачи
       </h3>
-      <p class="m-0 font-mono text-slate-800">
+      <p class="m-0 font-mono text-surface-800 dark:text-surface-0">
         «Место | Название | Баллы»
       </p>
       <p class="m-0">
@@ -74,7 +74,7 @@ function features(...keys) {
         <li><strong>Название</strong> — 3–7 слов, суть задачи.</li>
         <li><strong>Баллы</strong> — оценка сложности: 1, 2, 3, 5, 8, 13, 21. Если оценить сложно — пишите <strong>«?»</strong>, оценка уточняется на планировании. Если задача крупная и ещё не декомпозирована — пишите <strong>«13+»</strong>, <strong>«21+»</strong> или <strong>«100+»</strong>.</li>
       </ul>
-      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-slate-500 italic">
+      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-surface-500 dark:text-surface-400 italic">
         <li>Landing | Вёрстка главного экрана | 8</li>
         <li>API | B | Эндпоинт авторизации через OAuth | 13</li>
         <li>Admin | F | Таблица пользователей с фильтрами | 5</li>
@@ -85,16 +85,16 @@ function features(...keys) {
       <p class="m-0">
         <strong>Хотфиксы</strong> называются по другому шаблону — вместо места пишется «Hotfix»:
       </p>
-      <p class="m-0 font-mono text-slate-800">
+      <p class="m-0 font-mono text-surface-800 dark:text-surface-0">
         «Hotfix | Название | Баллы»
       </p>
-      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-slate-500 italic">
+      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-surface-500 dark:text-surface-400 italic">
         <li>Hotfix | Падает форма авторизации | 2</li>
       </ul>
       <p class="m-0">
         Оценка — только <strong>1, 2 или 3 балла</strong>. Если по факту тянет больше — это уже не хотфикс: перенесите задачу в Backlog и уберите префикс «Hotfix |».
       </p>
-      <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
+      <div class="rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
           :options="features('quickTask', 'editTaskTitle')"
@@ -103,18 +103,18 @@ function features(...keys) {
     </section>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Формат коммитов
       </h3>
       <p class="m-0">
         Берётся полное название задачи, секция с баллами заменяется на ID задачи. Так по коммиту можно мгновенно найти задачу в Битрикс24.
       </p>
-      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-slate-500 italic">
+      <ul class="m-0 pl-5 list-disc flex flex-col gap-1 text-surface-500 dark:text-surface-400 italic">
         <li>Landing | Вёрстка главного экрана | 8 → Landing | Вёрстка главного экрана | 12453</li>
         <li>API | B | Эндпоинт авторизации через OAuth | 13 → API | B | Эндпоинт авторизации через OAuth | 12480</li>
         <li>Hotfix | Падает форма авторизации | 2 → Hotfix | Падает форма авторизации | 12490</li>
       </ul>
-      <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
+      <div class="rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
           :options="features('commitButton', 'kanbanCommitButton')"
@@ -123,7 +123,7 @@ function features(...keys) {
     </section>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Оценка сложности
       </h3>
       <p class="m-0">
@@ -142,7 +142,7 @@ function features(...keys) {
     </section>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Декомпозиция
       </h3>
       <p class="m-0">
@@ -164,7 +164,7 @@ function features(...keys) {
       <p class="m-0">
         <strong>Хак «задача-ждун».</strong> Если задача сделана, но не может выйти в прод, пока тестируется основной функционал — создайте подзадачу с баллами за выполненную работу, а у корневой поставьте 0. Подзадача уйдёт в Done и попадёт в итоги спринта.
       </p>
-      <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
+      <div class="rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
           :options="features('decomposeTask')"
@@ -173,7 +173,7 @@ function features(...keys) {
     </section>
 
     <section class="flex flex-col gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-slate-700 uppercase tracking-wide">
+      <h3 class="m-0 text-[13px] font-semibold text-surface-700 dark:text-surface-0 uppercase tracking-wide">
         Итоги спринта
       </h3>
       <p class="m-0">
@@ -187,7 +187,7 @@ function features(...keys) {
         toggleable
         :collapsed="true"
       >
-        <div class="rounded-lg bg-slate-100 border border-slate-200 px-3 py-2.5 text-[12px] leading-relaxed text-slate-600 flex flex-col gap-1">
+        <div class="rounded-lg bg-surface-100 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2.5 text-[12px] leading-relaxed text-surface-600 dark:text-surface-300 flex flex-col gap-1">
           <p class="m-0">
             TAGALL,
           </p>
@@ -200,41 +200,41 @@ function features(...keys) {
           <p class="m-0">
             <a
               href="#"
-              class="text-blue-600 underline"
+              class="text-blue-600 dark:text-blue-400 underline"
               @click.prevent
             >Иван Иванов</a> — 89 баллов
           </p>
           <p class="m-0">
             <a
               href="#"
-              class="text-blue-600 underline"
+              class="text-blue-600 dark:text-blue-400 underline"
               @click.prevent
             >Пётр Петров</a> — 55 баллов
           </p>
           <p class="m-0">
             <a
               href="#"
-              class="text-blue-600 underline"
+              class="text-blue-600 dark:text-blue-400 underline"
               @click.prevent
             >Мария Сидорова</a> — 34 балла
           </p>
           <p class="m-0">
             <a
               href="#"
-              class="text-blue-600 underline"
+              class="text-blue-600 dark:text-blue-400 underline"
               @click.prevent
             >Алексей Кузнецов</a> — 21 балл
           </p>
           <p class="m-0">
             <a
               href="#"
-              class="text-blue-600 underline"
+              class="text-blue-600 dark:text-blue-400 underline"
               @click.prevent
             >Анна Смирнова</a> — 13 баллов
           </p>
         </div>
       </Panel>
-      <div class="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-2">
+      <div class="rounded-lg bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 px-3 py-2 flex flex-col gap-2">
         <OptionsTree
           v-model="form"
           :options="features('scrumSummary', 'sprintHistory', 'taskAnalysis')"

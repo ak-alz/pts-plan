@@ -20,6 +20,7 @@ defineProps({
     :value="users"
     data-key="id"
     size="small"
+    striped-rows
     sort-field="median"
     :sort-order="-1"
     :default-sort-order="-1"
@@ -82,7 +83,7 @@ defineProps({
           :class="{
             'text-green-400': data.deltaMedian > 0,
             'text-red-400': data.deltaMedian < 0,
-            'text-surface-400': data.deltaMedian === 0,
+            'text-surface-400 dark:text-surface-500': data.deltaMedian === 0,
           }"
         >
           <template v-if="data.deltaMedian > 0">+</template>{{ data.deltaMedian }}
@@ -98,13 +99,13 @@ defineProps({
     >
       <template #body="{data}">
         <template v-if="data.trendDelta !== null">
-          <span class="text-surface-400">{{ data.trendStart }} → {{ data.trendEnd }}</span>
+          <span class="text-surface-400 dark:text-surface-500">{{ data.trendStart }} → {{ data.trendEnd }}</span>
           <span
             class="ml-1 text-sm"
             :class="{
               'text-green-400': data.trendDelta > 0,
               'text-red-400': data.trendDelta < 0,
-              'text-surface-400': data.trendDelta === 0,
+              'text-surface-400 dark:text-surface-500': data.trendDelta === 0,
             }"
           >
             <template v-if="data.trendDelta > 0">+</template>{{ data.trendDelta }}
@@ -113,7 +114,7 @@ defineProps({
         </template>
         <span
           v-else
-          class="text-surface-400"
+          class="text-surface-400 dark:text-surface-500"
         >—</span>
       </template>
     </Column>

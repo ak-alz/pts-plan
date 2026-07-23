@@ -1,16 +1,25 @@
 import options from '../js/options.js';
+import {initToastHost} from '../js/toastHost/index.js';
 
 (() => {
   document.body.classList.add('pts-plan');
 
   // Получаем session id при первой загрузке
-  window.addEventListener('message', async (e) => {
-    if (e?.data?.key !== 'BX_SESSION_ID' || !e?.data?.data) return;
+  window.addEventListener('message', async (event) => {
+    // Сообщение обязано прийти из этого же окна и с этого же origin: слушатель принимает sessid,
+    // который затем ложится в chrome.storage и используется всеми фичами (в том числе в других
+    // вкладках и во всех iframe) — без проверки любой сторонний скрипт или iframe страницы мог бы
+    // подменить его своим значением
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    if (event.data?.key !== 'BX_SESSION_ID' || !event.data?.data) return;
 
-    const sessionId = e.data.data;
+    const sessionId = event.data.data;
 
     await chrome.storage.local.set({
       sessionId,
+      // Домен Bitrix намеренно не хардкодится (расширение работает и на *.bitrix24.ru) — страницы
+      // расширения (попап, «Что нового») берут его отсюда, чтобы обратиться к API без хардкода
+      bitrixOrigin: window.location.origin,
     });
 
     init(sessionId);
@@ -24,8 +33,6 @@ import options from '../js/options.js';
 
     if (!options) return;
 
-    // console.log(options);
-
     Object.keys(options)
       .filter((optionKey) => {
         const optionAction = optionActionsMap.get(optionKey);
@@ -35,10 +42,17 @@ import options from '../js/options.js';
           && (!needs || needs.every((k) => options[k]));
       })
       .forEach((optionKey) => {
-        optionActionsMap.get(optionKey)({
-          sessionId,
-          options,
-        });
+        // Каждая фича запускается изолированно: раньше синхронное исключение в одной обрывало
+        // весь forEach, и все следующие по порядку фичи молча не стартовали. Промис ловим отдельно —
+        // почти все action асинхронные, и их ошибки иначе уходили в unhandled rejection без следов
+        try {
+          Promise.resolve(optionActionsMap.get(optionKey)({
+            sessionId,
+            options,
+          })).catch((error) => console.warn(`[pts-plan] ${optionKey}`, error));
+        } catch (error) {
+          console.warn(`[pts-plan] ${optionKey}`, error);
+        }
       });
   }
 
@@ -78,6 +92,25 @@ import options from '../js/options.js';
   }
 
   injectStyles();
+
+  initToastHost();
+
+  function applyContentTheme(mode) {
+    document.documentElement.classList.toggle('pts-dark', mode === 'dark');
+  }
+
+  async function initTheme() {
+    const { themeMode } = await chrome.storage.local.get(['themeMode']);
+    applyContentTheme(themeMode);
+  }
+
+  initTheme();
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.themeMode) {
+      applyContentTheme(changes.themeMode.newValue);
+    }
+  });
 
   const easterEggImages = [
     `@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@

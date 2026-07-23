@@ -26,6 +26,7 @@ function openTaskList(row) {
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    striped-rows
   >
     <Column
       v-if="multiUser"

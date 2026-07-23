@@ -3,7 +3,7 @@ import {escape} from 'lodash-es';
 
 import {minifyPrompt, pluralize} from '../../utils.js';
 
-const chip = (s) => `<span class="rounded bg-surface-100 font-semibold px-1">${escape(s)}</span>`;
+const chip = (s) => `<span class="rounded bg-surface-100 dark:bg-surface-800 font-semibold px-1">${escape(s)}</span>`;
 const v = (label) => chip(`{ ${label} }`);
 
 function formatDate(d) {
@@ -18,8 +18,8 @@ export function buildPromptPreview(dateRange, extraContext) {
     : v('N дней (начало — конец)');
   const previewContext = extraContext != null ? chip(extraContext) : v('Доп. контекст');
 
-  const note = (s) => `<span class="text-surface-400 text-xs">${escape(s)}</span>`;
-  const previewData = `<span class="rounded bg-surface-100 px-2 py-1 block">${[
+  const note = (s) => `<span class="text-surface-400 dark:text-surface-500 text-xs">${escape(s)}</span>`;
+  const previewData = `<span class="rounded bg-surface-100 dark:bg-surface-800 px-2 py-1 block">${[
     '[{',
     `  исполнитель: "Имя",  ${note('// в мульти-режиме')}`,
     '  баллов_всего: N,',

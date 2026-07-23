@@ -1,4 +1,4 @@
-import {TAGALL_WORD_RE} from '../../patterns.js';
+import {TAGALL_WORD_GLOBAL_RE, TAGALL_WORD_RE} from '../../patterns.js';
 import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
 
 export function tagAllColor(color) {
@@ -28,7 +28,7 @@ export function tagAllColor(color) {
       // где <br> схлопывается без разделителя и "TAGALL4. Текст" не матчится как отдельное слово)
       if (!TAGALL_WORD_RE.test(comment.innerHTML)) return;
 
-      comment.innerHTML = comment.innerHTML.replace(TAGALL_WORD_RE, (match) => `<b class="${className}">${match}</b>`);
+      comment.innerHTML = comment.innerHTML.replace(TAGALL_WORD_GLOBAL_RE, (match) => `<b class="${className}">${match}</b>`);
     });
   }
 

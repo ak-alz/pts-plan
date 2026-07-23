@@ -1,4 +1,5 @@
 import BitrixApi from '../../BitrixApi.js';
+import {showToast} from '../../toastHost/showToast.js';
 import {getTagallCommentText, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 export function tagallButton(sessionId, commentSuffix) {
@@ -40,13 +41,19 @@ function setupKanbanButton(sessionId, commentText) {
         button.setAttribute('disabled', '');
 
         try {
-          await bitrixApi.addComment(taskId, commentText);
+          // Успех — только когда Bitrix вернул ID созданного комментария: 4xx поймает axios, но
+          // отказ может прийти и как 200 с полем error, и тогда кнопка позеленела бы впустую
+          const {data} = await bitrixApi.addComment(taskId, commentText);
+          if (!data?.result) throw new Error(data?.error_description || 'Bitrix не подтвердил публикацию комментария');
+
           button.classList.add('tagall-button--success');
           button.title = 'Комментарий уже опубликован — обновите страницу, чтобы отправить ещё раз';
+          showToast({severity: 'success', summary: 'Комментарий опубликован', detail: commentText, life: 3000});
           return;
         } catch (error) {
           console.warn(error);
           button.classList.add('tagall-button--error');
+          showToast({severity: 'error', summary: 'Не удалось опубликовать комментарий', detail: error.message, life: 5000});
         }
 
         setTimeout(() => {

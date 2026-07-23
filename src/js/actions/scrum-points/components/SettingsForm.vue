@@ -10,10 +10,11 @@ import {
   InputNumber,
   MultiSelect,
   Select,
+  ToggleSwitch,
 } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, reactive, ref, toRaw } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 import { defaultSortColumn } from '../variables.js';
 
@@ -50,8 +51,6 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-const toast = useToast();
-
 const isLoading = ref(false);
 
 const form = reactive({
@@ -63,6 +62,7 @@ const form = reactive({
   showCopyButton: props.initial.showCopyButton ? toRaw(props.initial.showCopyButton) : [],
   showPostButton: props.initial.showPostButton ? toRaw(props.initial.showPostButton) : [],
   summaryTaskId: props.initial.summaryTaskId ?? null,
+  hideUserAvatar: props.initial.hideUserAvatar ?? false,
 });
 
 async function saveSettings() {
@@ -73,8 +73,7 @@ async function saveSettings() {
       [props.settingsStorageKey]: toRaw(form),
     });
 
-    toast.add({
-      group: 'scrum-points',
+    showToast({
       severity: 'success',
       summary: 'Сохранено',
       detail: 'Настройки успешно сохранены.',
@@ -311,6 +310,18 @@ const sortableColumns = computed(() => {
                 placeholder="Не указан"
               />
             </FormField>
+
+            <div class="flex gap-2 items-center self-end">
+              <ToggleSwitch
+                v-model="form.hideUserAvatar"
+                input-id="settings_hide_user_avatar"
+                size="small"
+              />
+              <label
+                for="settings_hide_user_avatar"
+                class="text-sm cursor-pointer"
+              >Скрывать аватар исполнителя</label>
+            </div>
           </div>
         </AccordionContent>
       </AccordionPanel>

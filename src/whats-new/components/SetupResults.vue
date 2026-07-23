@@ -23,15 +23,15 @@ defineEmits(['toggle', 'enable-all']);
       v-if="!features.length"
       class="flex flex-col items-center gap-2 py-10 text-center"
     >
-      <i class="pi pi-check-circle text-3xl text-slate-300" />
-      <p class="m-0 text-sm text-slate-500">
+      <i class="pi pi-check-circle text-3xl text-surface-300 dark:text-surface-600" />
+      <p class="m-0 text-sm text-surface-500 dark:text-surface-400">
         Под ваши ответы новых функций не нашлось — похоже, нужное уже включено.
       </p>
     </div>
 
     <template v-else>
       <div class="flex items-center justify-between gap-3">
-        <p class="m-0 text-sm text-slate-600">
+        <p class="m-0 text-sm text-surface-600 dark:text-surface-300">
           Включите нужные функции:
         </p>
         <Button

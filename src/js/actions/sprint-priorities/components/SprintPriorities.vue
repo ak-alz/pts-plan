@@ -1,11 +1,14 @@
 <script setup>
 import dayjs from 'dayjs';
 import { Avatar, Button, Column, DataTable, Dialog, InputText, MultiSelect, SplitButton } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 
+import { backgroundFetch } from '../../../backgroundFetch.js';
 import BitrixApi from '../../../BitrixApi.js';
+import { showToast } from '../../../toastHost/showToast.js';
 import { getTaskIdFromUrl, getTaskPointsFromName, getTaskUrl, simplifyColumnName } from '../../../utils.js';
+import SettingsForm from './SettingsForm.vue';
+import TeamPoints from './TeamPoints.vue';
 
 const props = defineProps({
   sessionId: {
@@ -17,8 +20,6 @@ const props = defineProps({
     required: true,
   },
 });
-import SettingsForm from './SettingsForm.vue';
-import TeamPoints from './TeamPoints.vue';
 
 // Первые 3 колонки всегда видимы, не выносятся в настройки
 const LOCKED_COLUMN_KEYS = ['priority', 'title', 'stage'];
@@ -34,10 +35,9 @@ const ALL_COLUMNS = [
 ];
 
 // Только настраиваемые колонки передаются в SettingsForm
-const CONFIGURABLE_COLUMNS = ALL_COLUMNS.filter((c) => !LOCKED_COLUMN_KEYS.includes(c.key));
+const CONFIGURABLE_COLUMNS = ALL_COLUMNS.filter((column) => !LOCKED_COLUMN_KEYS.includes(column.key));
 const DEFAULT_HIDDEN_COLUMNS = ['changedDate', 'createdBy'];
 
-const toast = useToast();
 const bitrixApi = new BitrixApi(props.sessionId);
 
 const settingsStorageKey = computed(() => `sprint-priorities-settings-${props.groupId}`);
@@ -73,7 +73,7 @@ const markedRowTaskId = ref(null);
 
 const visibleColumnKeys = computed(() => {
   const configured = settings.value?.visibleColumns
-    ?? CONFIGURABLE_COLUMNS.map((c) => c.key).filter((k) => !DEFAULT_HIDDEN_COLUMNS.includes(k));
+    ?? CONFIGURABLE_COLUMNS.map((column) => column.key).filter((key) => !DEFAULT_HIDDEN_COLUMNS.includes(key));
   return [...LOCKED_COLUMN_KEYS, ...configured];
 });
 
@@ -132,6 +132,7 @@ const selectedUserStageTasks = computed(() => {
       title: task.title,
       url: getTaskUrl(props.groupId, task.id),
       points: getTaskPointsFromName(task.title),
+      isRootTask: String(task.parentId ?? 0) === '0',
     }))
     .sort((a, b) => b.points - a.points);
 });
@@ -223,11 +224,13 @@ async function parseSheetRows() {
   const spreadsheetId = idMatch[1];
   const gid = gidMatch ? gidMatch[1] : '0';
 
+  // Через service worker, а не прямым fetch: контент-скрипт ходит от имени страницы Bitrix, и
+  // доступ к docs.google.com ему даёт только CORS-политика Google, а не host_permissions расширения.
+  // Query собираем строкой — «tqx=out:json» Google ждёт именно с двоеточием, без процентной кодировки
   const fetchUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&gid=${gid}`;
-  const response = await fetch(fetchUrl);
-  if (!response.ok) throw new Error(`Ошибка загрузки таблицы: ${response.status}`);
+  const text = await backgroundFetch('GET', fetchUrl, {responseType: 'text', throwOnHttpError: true});
 
-  const text = await response.text();
+  // Ответ gviz — JSON, завёрнутый в вызов функции: /*O_o*/google.visualization.Query.setResponse({…});
   const jsonText = text.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, '');
   const data = JSON.parse(jsonText);
 
@@ -264,7 +267,7 @@ async function fetchTasksData() {
 
   // Запрашиваем только поля для видимых колонок
   const visibleKeys = visibleColumnKeys.value;
-  const selectFields = ['ID', 'TITLE', 'GROUP_ID', 'STAGE_ID'];
+  const selectFields = ['ID', 'TITLE', 'GROUP_ID', 'STAGE_ID', 'PARENT_ID'];
   if (visibleKeys.includes('responsible')) selectFields.push('RESPONSIBLE_ID');
   if (visibleKeys.includes('createdBy')) selectFields.push('CREATED_BY');
   if (visibleKeys.includes('createdDate')) selectFields.push('CREATED_DATE');
@@ -277,8 +280,8 @@ async function fetchTasksData() {
     const groupIds = [...new Set(Object.values(tasksMap).map((task) => task.groupId).filter(Boolean))];
     const userIds = [
       ...new Set([
-        ...(visibleKeys.includes('responsible') ? Object.values(tasksMap).map((t) => t.responsibleId) : []),
-        ...(visibleKeys.includes('createdBy') ? Object.values(tasksMap).map((t) => t.createdBy) : []),
+        ...(visibleKeys.includes('responsible') ? Object.values(tasksMap).map((task) => task.responsibleId) : []),
+        ...(visibleKeys.includes('createdBy') ? Object.values(tasksMap).map((task) => task.createdBy) : []),
       ].filter(Boolean)),
     ];
 
@@ -303,6 +306,7 @@ async function fetchTasksData() {
         taskId,
         taskUrl: getTaskUrl(task.groupId, taskId),
         title: task.title,
+        isRootTask: String(task.parentId ?? 0) === '0',
         stage: stage ? { name: stage.TITLE, color: stage.COLOR ? `#${stage.COLOR}` : null } : null,
         stageName: stage?.TITLE ?? null,
         responsible: responsible ? { name: responsible.name, url: `/company/personal/user/${responsible.id}/`, photo: responsible.avatar || null } : null,
@@ -318,8 +322,7 @@ async function fetchTasksData() {
     dateUpdated.value = `Обновлено: ${dayjs().format('HH:mm:ss')}`;
   } catch (error) {
     console.warn(error);
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'error',
       summary: 'Ошибка',
       detail: error.message,
@@ -338,42 +341,7 @@ async function fetchTeamPoints() {
 
   isTeamLoading.value = true;
   try {
-    const PAGE_SIZE = 50;
-    const firstPageRequests = stageIds.map((stageId, index) => ({
-      key: `ts_${index}`,
-      stageId,
-      start: 0,
-    }));
-
-    const firstResponses = await bitrixApi.getTasksBatch(firstPageRequests, props.groupId);
-
-    let tasks = [];
-    const remainingRequests = [];
-
-    firstResponses.forEach((response) => {
-      const { result, result_total } = response.data.result;
-      Object.entries(result).forEach(([key, stageResult]) => {
-        tasks = tasks.concat(stageResult.tasks ?? []);
-        const total = result_total?.[key] ?? 0;
-        if (total > PAGE_SIZE) {
-          const stageIndex = parseInt(key.slice('ts_'.length));
-          const stageId = stageIds[stageIndex];
-          const pageCount = Math.ceil(total / PAGE_SIZE);
-          for (let page = 1; page < pageCount; page++) {
-            remainingRequests.push({ key: `ts_${stageIndex}_p${page}`, stageId, start: page * PAGE_SIZE });
-          }
-        }
-      });
-    });
-
-    if (remainingRequests.length) {
-      const remainingResponses = await bitrixApi.getTasksBatch(remainingRequests, props.groupId);
-      remainingResponses.forEach((response) => {
-        Object.values(response.data.result.result).forEach((stageResult) => {
-          tasks = tasks.concat(stageResult.tasks ?? []);
-        });
-      });
-    }
+    let tasks = await bitrixApi.getAllTasksByStages(stageIds, props.groupId);
 
     const selectedUserIds = new Set(settings.value?.teamUsers ?? []);
     if (selectedUserIds.size) {
@@ -412,8 +380,7 @@ async function fetchTeamPoints() {
     teamRows.value = Object.values(usersMap).sort((a, b) => b.totalPoints - a.totalPoints);
   } catch (error) {
     console.warn(error);
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'error',
       summary: 'Ошибка загрузки баллов',
       detail: error.message,
@@ -433,8 +400,7 @@ async function fetchSheetRows() {
     await fetchTasksData();
   } catch (error) {
     console.warn(error);
-    toast.add({
-      group: 'sprint-priorities',
+    showToast({
       severity: 'error',
       summary: 'Ошибка загрузки таблицы',
       detail: error.message,
@@ -547,6 +513,7 @@ onMounted(async () => {
       :rows="teamRows"
       :selected-stages="teamSelectedStages"
       :loading="isTeamLoading"
+      :hide-user-avatar="settings.hideUserAvatar"
       class="mb-4"
       @cell-click="onTeamCellClick"
     />
@@ -589,6 +556,8 @@ onMounted(async () => {
       :loading="isLoading"
       data-key="taskId"
       size="small"
+      row-hover
+      striped-rows
       removable-sort
       sort-field="priority"
       :sort-order="1"
@@ -632,12 +601,18 @@ onMounted(async () => {
         sortable
       >
         <template #body="{ data }">
-          <a
-            v-if="data.taskUrl"
-            class="pts-blur"
-            :href="data.taskUrl"
-            target="_top"
-          >{{ data.title }}</a>
+          <template v-if="data.taskUrl">
+            <i
+              v-if="data.isRootTask"
+              v-tooltip.top="'Корневая задача'"
+              class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
+            />
+            <a
+              class="pts-blur"
+              :href="data.taskUrl"
+              target="_top"
+            >{{ data.title }}</a>
+          </template>
           <span v-else>—</span>
         </template>
       </Column>
@@ -677,7 +652,7 @@ onMounted(async () => {
             class="flex gap-2 items-center"
           >
             <Avatar
-              v-if="data.responsible.photo"
+              v-if="data.responsible.photo && !settings.hideUserAvatar"
               :image="data.responsible.photo"
               shape="circle"
             />
@@ -753,6 +728,7 @@ onMounted(async () => {
         :value="selectedUserStageTasks"
         data-key="id"
         size="small"
+        striped-rows
         sort-field="points"
         :sort-order="-1"
         style="min-width: 400px;"
@@ -763,6 +739,11 @@ onMounted(async () => {
           sortable
         >
           <template #body="{ data }">
+            <i
+              v-if="data.isRootTask"
+              v-tooltip.top="'Корневая задача'"
+              class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
+            />
             <a
               class="pts-blur"
               :href="data.url"

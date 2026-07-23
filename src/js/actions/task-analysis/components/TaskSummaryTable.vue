@@ -1,12 +1,13 @@
 <script setup>
-import {marked} from 'marked';
 import {Button, Column, DataTable, Dialog, InputGroup, Password, Textarea} from 'primevue';
-import {useToast} from 'primevue/usetoast';
 import {computed, nextTick, onMounted, ref} from 'vue';
 
 import {useAiJob} from '../../../composables/useAiJob.js';
+import {useContentTheme} from '../../../composables/useContentTheme.js';
 import {PixelToolsApi} from '../../../PixelToolsApi.js';
-import {colors} from '../../../utils.js';
+import {renderAiMarkdown} from '../../../renderAiMarkdown.js';
+import {showToast} from '../../../toastHost/showToast.js';
+import {colors, downloadBlob, escapeCsvCell} from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 
 const props = defineProps({
@@ -36,7 +37,14 @@ const props = defineProps({
   },
 });
 
-const indigoShades = Object.values(colors.indigo);
+const {isDark} = useContentTheme();
+
+const indigoShades = computed(() => {
+  const shades = Object.values(colors.indigo);
+  // На тёмном фоне таблицы бледные оттенки (50-300) теряются — в тёмной теме отбрасываем их,
+  // но направление сохраняем: чем больше баллов, тем темнее оттенок, как и в светлой теме
+  return isDark.value ? shades.slice(4) : shades;
+});
 
 const pointColorMap = computed(() => {
   const allPoints = [...new Set(
@@ -45,7 +53,7 @@ const pointColorMap = computed(() => {
       ...(row.prevPointDistribution ?? []).map((s) => s.points),
     ]),
   )].sort((a, b) => a - b);
-  return new Map(allPoints.map((p, i) => [p, indigoShades[i % indigoShades.length]]));
+  return new Map(allPoints.map((p, i) => [p, indigoShades.value[i % indigoShades.value.length]]));
 });
 
 function getPointColor(points) {
@@ -96,8 +104,6 @@ function buildRows() {
   return {headers, dataRows};
 }
 
-const toast = useToast();
-
 const AI_CONTEXT_MAX_LENGTH = 1000;
 const aiContextStorageKey = computed(() => `task-analysis-ai-context-${props.groupId}`);
 const aiContext = ref('');
@@ -139,14 +145,13 @@ async function onAiContextInput(e) {
 }
 
 const aiResult = ref('');
-const aiResultHtml = computed(() => aiResult.value ? marked(aiResult.value) : '');
+const aiResultHtml = computed(() => renderAiMarkdown(aiResult.value));
 const aiResultElement = ref(null);
 
 const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
 
 const aiJob = useAiJob(() => `task-analysis-ai-job-${props.groupId}`, {
-  group: 'task-analysis',
   onAuthError: () => { isApiKeyModalOpened.value = true; },
 });
 const aiLoading = aiJob.loading;
@@ -189,7 +194,7 @@ async function aiAnalyze() {
     let prompt = buildSystemPrompt(buildAiData(), props.dateRange, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      toast.add({ group: 'task-analysis', severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
+      showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
     }
 
     return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
@@ -231,15 +236,9 @@ async function copyToClipboard() {
 function exportCsv() {
   const {headers, dataRows} = buildRows();
   const csv = [headers, ...dataRows]
-    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(props.csvSeparator))
+    .map((row) => row.map(escapeCsvCell).join(props.csvSeparator))
     .join('\n');
-  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'task-summary.csv';
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(new Blob([csv], {type: 'text/csv;charset=utf-8;'}), 'task-summary.csv');
 }
 </script>
 
@@ -298,6 +297,7 @@ function exportCsv() {
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    striped-rows
   >
     <Column
       v-if="multiUser"
@@ -315,7 +315,7 @@ function exportCsv() {
         <span
           v-if="data.deltaTotal !== null"
           class="text-sm"
-          :class="{'text-green-400': data.deltaTotal > 0, 'text-red-400': data.deltaTotal < 0, 'text-surface-400': data.deltaTotal === 0}"
+          :class="{'text-green-400': data.deltaTotal > 0, 'text-red-400': data.deltaTotal < 0, 'text-surface-400 dark:text-surface-500': data.deltaTotal === 0}"
         ><template v-if="data.deltaTotal > 0">+</template>{{ data.deltaTotal }}</span>
       </template>
     </Column>
@@ -329,7 +329,7 @@ function exportCsv() {
         <span
           v-if="data.deltaTotalTasks !== null"
           class="text-sm"
-          :class="{'text-green-400': data.deltaTotalTasks > 0, 'text-red-400': data.deltaTotalTasks < 0, 'text-surface-400': data.deltaTotalTasks === 0}"
+          :class="{'text-green-400': data.deltaTotalTasks > 0, 'text-red-400': data.deltaTotalTasks < 0, 'text-surface-400 dark:text-surface-500': data.deltaTotalTasks === 0}"
         ><template v-if="data.deltaTotalTasks > 0">+</template>{{ data.deltaTotalTasks }}</span>
       </template>
     </Column>
@@ -343,7 +343,7 @@ function exportCsv() {
         <span
           v-if="data.deltaTotalRoots !== null"
           class="text-sm"
-          :class="{'text-green-400': data.deltaTotalRoots > 0, 'text-red-400': data.deltaTotalRoots < 0, 'text-surface-400': data.deltaTotalRoots === 0}"
+          :class="{'text-green-400': data.deltaTotalRoots > 0, 'text-red-400': data.deltaTotalRoots < 0, 'text-surface-400 dark:text-surface-500': data.deltaTotalRoots === 0}"
         ><template v-if="data.deltaTotalRoots > 0">+</template>{{ data.deltaTotalRoots }}</span>
       </template>
     </Column>
@@ -358,7 +358,7 @@ function exportCsv() {
         {{ data.decompRatio }}
         <span
           v-if="data.deltaDecompRatio !== null"
-          class="text-sm text-surface-400"
+          class="text-sm text-surface-400 dark:text-surface-500"
         ><template v-if="data.deltaDecompRatio > 0">+</template>{{ data.deltaDecompRatio }}</span>
       </template>
     </Column>
@@ -372,7 +372,7 @@ function exportCsv() {
         <span
           v-if="data.deltaAvgPointsPerTask !== null"
           class="text-sm"
-          :class="{'text-green-400': data.deltaAvgPointsPerTask > 0, 'text-red-400': data.deltaAvgPointsPerTask < 0, 'text-surface-400': data.deltaAvgPointsPerTask === 0}"
+          :class="{'text-green-400': data.deltaAvgPointsPerTask > 0, 'text-red-400': data.deltaAvgPointsPerTask < 0, 'text-surface-400 dark:text-surface-500': data.deltaAvgPointsPerTask === 0}"
         ><template v-if="data.deltaAvgPointsPerTask > 0">+</template>{{ data.deltaAvgPointsPerTask }}</span>
       </template>
     </Column>
@@ -386,7 +386,7 @@ function exportCsv() {
         <span
           v-if="data.deltaAvgPoints !== null"
           class="text-sm"
-          :class="{'text-green-400': data.deltaAvgPoints > 0, 'text-red-400': data.deltaAvgPoints < 0, 'text-surface-400': data.deltaAvgPoints === 0}"
+          :class="{'text-green-400': data.deltaAvgPoints > 0, 'text-red-400': data.deltaAvgPoints < 0, 'text-surface-400 dark:text-surface-500': data.deltaAvgPoints === 0}"
         ><template v-if="data.deltaAvgPoints > 0">+</template>{{ data.deltaAvgPoints }}</span>
       </template>
     </Column>
@@ -420,12 +420,12 @@ function exportCsv() {
     ref="aiResultElement"
     class="mt-4 max-w-[1000px]"
   >
-    <div class="flex items-center gap-1 mb-2 text-sm text-surface-400">
+    <div class="flex items-center gap-1 mb-2 text-sm text-surface-400 dark:text-surface-500">
       <i class="pi pi-sparkles" />
       <span>Результат AI анализа</span>
     </div>
     <div
-      class="pts-ai-result p-3 rounded border border-surface-200 text-sm leading-relaxed"
+      class="pts-ai-result p-3 rounded border border-surface-200 dark:border-surface-700 text-sm leading-relaxed"
       v-html="aiResultHtml"
     />
   </div>
@@ -447,7 +447,7 @@ function exportCsv() {
         placeholder="Введите API ключ"
         :input-props="{autocomplete: 'new-password'}"
       />
-      <p class="text-xs text-surface-400 mt-1 mb-3">
+      <p class="text-xs text-surface-400 dark:text-surface-500 mt-1 mb-3">
         <a
           href="https://tools.pixelplus.ru/"
           target="_blank"
@@ -471,7 +471,7 @@ function exportCsv() {
     modal
     :style="{width: '480px'}"
   >
-    <p class="text-sm text-surface-500 mb-3">
+    <p class="text-sm text-surface-500 dark:text-surface-400 mb-3">
       Дополнительная информация для AI: особенности команды, периода, что учесть при анализе.
     </p>
     <div class="relative">
@@ -483,7 +483,7 @@ function exportCsv() {
         placeholder="Например: Иван junior-разработчик, Мария совмещает разработку и аналитику, в марте команда онбордила двух новых сотрудников..."
         @input="onAiContextInput"
       />
-      <span class="absolute bottom-2 right-2 text-xs text-surface-400 pointer-events-none">
+      <span class="absolute bottom-2 right-2 text-xs text-surface-400 dark:text-surface-500 pointer-events-none">
         {{ aiContext.length }} / {{ AI_CONTEXT_MAX_LENGTH }}
       </span>
     </div>
@@ -500,7 +500,7 @@ function exportCsv() {
       class="text-xs font-mono whitespace-pre-wrap break-words max-h-[60vh] overflow-y-auto overflow-x-hidden"
       v-html="promptPreview"
     />
-    <div class="text-right text-xs text-surface-400 mt-2">
+    <div class="text-right text-xs text-surface-400 dark:text-surface-500 mt-2">
       {{ promptPreview.length }} символов
     </div>
   </Dialog>

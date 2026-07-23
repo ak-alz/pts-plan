@@ -2,7 +2,6 @@
 import {Button, Dialog} from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import ScrumPoints from './components/ScrumPoints.vue';
 
 defineProps({
@@ -38,7 +37,7 @@ const isInfoModalOpened = ref(false);
   >
     <template #header>
       <div class="flex items-center gap-1">
-        <span class="p-dialog-title">Спринт</span>
+        <span class="p-dialog-title">Баллы за спринт</span>
         <Button
           v-tooltip="'Как это работает'"
           size="small"
@@ -67,7 +66,5 @@ const isInfoModalOpened = ref(false);
       <p>Если в вашей команде используется другой формат названий задач, создайте Pull Request и добавьте опцию переключения логики в настройках виджета.</p>
     </div>
   </Dialog>
-
-  <PtsToast group="scrum-points" />
 </template>
 

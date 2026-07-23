@@ -57,6 +57,7 @@ const modalTasks = computed(() => {
     :sort-order="-1"
     :default-sort-order="-1"
     size="small"
+    striped-rows
     :paginator="rows.length > 25"
     :rows="25"
     :rows-per-page-options="[10, 25, 50, 100]"

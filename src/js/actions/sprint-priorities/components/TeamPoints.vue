@@ -18,6 +18,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  hideUserAvatar: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 defineEmits(['cell-click']);
@@ -29,6 +33,7 @@ defineEmits(['cell-click']);
     :loading="loading"
     data-key="id"
     size="small"
+    striped-rows
     sort-field="totalPoints"
     :sort-order="-1"
     removable-sort
@@ -41,7 +46,7 @@ defineEmits(['cell-click']);
       <template #body="{ data }">
         <div class="flex items-center gap-2">
           <Avatar
-            v-if="data.photo"
+            v-if="data.photo && !hideUserAvatar"
             :image="data.photo"
             shape="circle"
           />

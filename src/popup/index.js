@@ -9,14 +9,14 @@ import ToastService from 'primevue/toastservice';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
-import primeVueOptions from '../js/primeVueOptions.js';
+import {createPrimeVueOptions} from '../js/primeVueOptions.js';
 import PopupApp from './PopupApp.vue';
 
 dayjs.extend(localizedFormat);
 dayjs.locale('ru', ru);
 
 const app = createApp(PopupApp);
-app.use(PrimeVue, primeVueOptions);
+app.use(PrimeVue, createPrimeVueOptions({darkModeSelector: '.dark'}));
 app.use(ToastService);
 app.directive('tooltip', Tooltip);
 app.directive('ripple', Ripple);

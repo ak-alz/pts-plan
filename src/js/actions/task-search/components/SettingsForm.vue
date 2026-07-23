@@ -1,8 +1,8 @@
 <script setup>
 import { Button, InputText, MultiSelect, Select, ToggleSwitch } from 'primevue';
-import { useToast } from 'primevue/usetoast';
 import { reactive, ref, toRaw } from 'vue';
 
+import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
 const props = defineProps({
@@ -44,7 +44,6 @@ const HIDDEN_FILTER_OPTIONS = [
   { label: 'Исключить хотфиксы', value: 'excludeHotfixes' },
 ];
 
-const toast = useToast();
 const isLoading = ref(false);
 
 const form = reactive({
@@ -62,7 +61,7 @@ async function saveSettings() {
   isLoading.value = true;
   try {
     await chrome.storage.local.set({ 'task-search-settings': toRaw(form) });
-    toast.add({ group: 'task-search', severity: 'success', summary: 'Сохранено', life: 3000 });
+    showToast({ severity: 'success', summary: 'Сохранено', life: 3000 });
     emit('success', toRaw(form));
   } catch (e) {
     console.warn('[task-search] saveSettings failed:', e);
@@ -146,7 +145,7 @@ async function saveSettings() {
           />
         </FormField>
         <FormField
-          label="Исключить из названия по умолчанию"
+          label="Исключить по умолчанию"
           tip="Предзаполняет фильтр «Исключить из названия» при открытии поиска, например «hotfix»"
         >
           <InputText

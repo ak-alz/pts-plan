@@ -33,7 +33,7 @@ function stopPreview() {
 
 <template>
   <div
-    class="group flex gap-3 rounded-lg border border-slate-200 p-3"
+    class="group flex gap-3 rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-0 dark:bg-surface-800 p-3"
     @mouseenter="startPreview"
     @mouseleave="stopPreview"
   >
@@ -51,22 +51,22 @@ function stopPreview() {
       />
       <div
         v-else
-        class="w-full aspect-[2/1] rounded-md bg-slate-100 flex items-center justify-center"
+        class="w-full aspect-[2/1] rounded-md bg-surface-100 dark:bg-surface-800 flex items-center justify-center"
       >
-        <i class="pi pi-image text-3xl text-slate-300" />
+        <i class="pi pi-image text-3xl text-surface-300 dark:text-surface-600" />
       </div>
     </div>
 
     <div class="grow min-w-0 flex flex-col gap-1.5">
       <div class="flex items-start justify-between gap-2">
-        <span class="text-sm font-medium text-slate-800">{{ feature.name }}</span>
+        <span class="text-sm font-medium text-surface-800 dark:text-surface-0">{{ feature.name }}</span>
         <ToggleSwitch
           :model-value="enabled"
           @update:model-value="$emit('update:enabled', $event)"
         />
       </div>
       <div
-        class="setup-feature-tip m-0 text-[13px] leading-snug text-slate-500"
+        class="setup-feature-tip m-0 text-[13px] leading-snug text-surface-500 dark:text-surface-400"
         v-html="feature.tip"
       />
     </div>

@@ -2,7 +2,6 @@
 import { Dialog } from 'primevue';
 import { ref } from 'vue';
 
-import PtsToast from '../../ui/PtsToast.vue';
 import SprintHistoryMain from './components/SprintHistory.vue';
 
 defineProps({
@@ -40,6 +39,4 @@ const modalOpened = ref(false);
       :group-id
     />
   </Dialog>
-
-  <PtsToast group="sprint-history" />
 </template>

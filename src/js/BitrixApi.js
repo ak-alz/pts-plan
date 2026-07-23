@@ -1,8 +1,19 @@
 import axios from 'axios';
 
 export default class BitrixApi {
-  constructor(sessionId) {
+  /**
+   * @param {string} sessionId - `BX_SESSION_ID` страницы Bitrix (см. content-scripts/main.js).
+   * @param {string} [baseUrl] - Origin Bitrix. Нужен только страницам расширения (попап,
+   * «Что нового»): у них свой origin (`chrome-extension://…`), поэтому относительный путь ушёл бы
+   * не на сайт, а внутрь расширения. Домен нигде не хардкодится — его сохраняет контент-скрипт в
+   * `chrome.storage.local.bitrixOrigin`, так что расширение остаётся универсальным для любого
+   * Bitrix из manifest.matches. Контент-скриптам параметр не нужен: у них origin уже правильный.
+   */
+  constructor(sessionId, baseUrl = '') {
     this.sessionId = sessionId;
+    // withCredentials — cookie сессии Bitrix при кросс-origin запросе со страницы расширения
+    // (для контент-скрипта запрос свой же, cookie идут и без этого)
+    this.http = baseUrl ? axios.create({baseURL: baseUrl, withCredentials: true}) : axios;
   }
 
   /**
@@ -11,7 +22,7 @@ export default class BitrixApi {
    * @return {Promise<axios.AxiosResponse<any>>}
    */
   getStages(groupId) {
-    return axios.postForm('/rest/task.stages.get.json', {
+    return this.http.postForm('/rest/task.stages.get.json', {
       sessid: this.sessionId,
       entityId: groupId,
     });
@@ -74,7 +85,7 @@ export default class BitrixApi {
         cmd[`t${chunkIndex * CHUNK_SIZE + i}`] = `tasks.task.add?${params.toString()}`;
       });
 
-      return axios.postForm('/rest/batch.json', {
+      return this.http.postForm('/rest/batch.json', {
         sessid: this.sessionId,
         halt: false,
         cmd,
@@ -88,7 +99,7 @@ export default class BitrixApi {
    * @return {Promise<any[]>}
    */
   getGroupUsers(groupId) {
-    return axios.postForm('/rest/sonet_group.user.get.json', {
+    return this.http.postForm('/rest/sonet_group.user.get.json', {
       sessid: this.sessionId,
       ID: groupId,
     }).then(({data}) => {
@@ -98,7 +109,7 @@ export default class BitrixApi {
       const params = new URLSearchParams({sessid: this.sessionId});
       memberIds.forEach((id) => params.append('filter[ID][]', id));
 
-      return axios.post('/rest/user.get.json', params)
+      return this.http.post('/rest/user.get.json', params)
         .then(({data: usersData}) => usersData?.result ?? []);
     });
   }
@@ -128,18 +139,65 @@ export default class BitrixApi {
           start,
         });
         // Только нужные поля — исключаем description, auditorsData, accomplicesData и т.д.
-        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL'].forEach((field) => {
+        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL', 'PARENT_ID'].forEach((field) => {
           params.append('select[]', field);
         });
         cmd[key] = `tasks.task.list?${params.toString()}`;
       });
 
-      return axios.postForm('/rest/batch.json', {
+      return this.http.postForm('/rest/batch.json', {
         sessid: this.sessionId,
         halt: false,
         cmd,
       });
     }));
+  }
+
+  /**
+   * Все незавершённые задачи указанных колонок канбана, со всеми страницами.
+   * Первым batch-запросом берёт по первой странице каждой колонки, из ответа узнаёт общее число
+   * задач (`result_total`) и вторым запросом добирает недостающие страницы — виджетам нужен готовый
+   * плоский список, а не постраничная выдача.
+   * @param {Array<string|number>} stageIds - ID колонок канбана.
+   * @param {string} groupId
+   * @return {Promise<any[]>} Задачи всех колонок одним массивом.
+   */
+  async getAllTasksByStages(stageIds, groupId) {
+    if (!stageIds.length) return [];
+
+    const PAGE_SIZE = 50;
+    const firstPageRequests = stageIds.map((stageId, index) => ({key: `s${index}`, stageId, start: 0}));
+    const firstResponses = await this.getTasksBatch(firstPageRequests, groupId);
+
+    const tasks = [];
+    const remainingRequests = [];
+
+    firstResponses.forEach((response) => {
+      const {result, result_total: resultTotal} = response.data?.result ?? {};
+      Object.entries(result ?? {}).forEach(([key, stageResult]) => {
+        tasks.push(...(stageResult.tasks ?? []));
+
+        const total = resultTotal?.[key] ?? 0;
+        if (total <= PAGE_SIZE) return;
+
+        const stageId = stageIds[Number(key.slice(1))];
+        const pageCount = Math.ceil(total / PAGE_SIZE);
+        for (let page = 1; page < pageCount; page++) {
+          remainingRequests.push({key: `${key}p${page}`, stageId, start: page * PAGE_SIZE});
+        }
+      });
+    });
+
+    if (remainingRequests.length) {
+      const remainingResponses = await this.getTasksBatch(remainingRequests, groupId);
+      remainingResponses.forEach((response) => {
+        Object.values(response.data?.result?.result ?? {}).forEach((stageResult) => {
+          tasks.push(...(stageResult.tasks ?? []));
+        });
+      });
+    }
+
+    return tasks;
   }
 
   completeTasksBatch(taskIds) {
@@ -155,7 +213,36 @@ export default class BitrixApi {
         cmd[`t${i}`] = `tasks.task.complete?taskId=${id}`;
       });
 
-      return axios.postForm('/rest/batch.json', {
+      return this.http.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      });
+    }));
+  }
+
+  /**
+   * Batch-возврат завершённых задач в работу — tasks.task.renew. Отменяет completeTasksBatch:
+   * переводит задачи из статуса «Завершена» в статус «Ждёт выполнения» — под тем же STAGE_ID,
+   * поэтому они снова попадают под фильтр getTasksBatch (`!STATUS: 5`) и возвращаются в прежнюю
+   * колонку канбана.
+   * @param {Array<string|number>} taskIds
+   * @return {Promise<axios.AxiosResponse<any>[]>}
+   */
+  renewTasksBatch(taskIds) {
+    const CHUNK_SIZE = 50;
+    const chunks = [];
+    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
+      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
+    }
+
+    return Promise.all(chunks.map((chunk) => {
+      const cmd = {};
+      chunk.forEach((id, i) => {
+        cmd[`t${i}`] = `tasks.task.renew?taskId=${id}`;
+      });
+
+      return this.http.postForm('/rest/batch.json', {
         sessid: this.sessionId,
         halt: false,
         cmd,
@@ -184,7 +271,7 @@ export default class BitrixApi {
         cmd[`t${i}`] = `tasks.task.approve?taskId=${id}`;
       });
 
-      return axios.postForm('/rest/batch.json', {
+      return this.http.postForm('/rest/batch.json', {
         sessid: this.sessionId,
         halt: false,
         cmd,
@@ -234,7 +321,7 @@ export default class BitrixApi {
       chunk.forEach((taskId) => {
         cmd[`c${taskId}`] = `task.commentitem.getlist?TASKID=${taskId}&ORDER[POST_DATE]=asc`;
       });
-      return axios.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
+      return this.http.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
     })).then((responses) => {
       const result = {};
       responses.forEach((response) => {
@@ -258,7 +345,7 @@ export default class BitrixApi {
       chunk.forEach((id, i) => {
         cmd[`a${i}`] = `disk.attachedObject.get?id=${id}`;
       });
-      return axios.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
+      return this.http.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
     })).then((responses) => responses.flatMap(
       ({data}) => Object.values(data?.result?.result ?? {}).filter(Boolean),
     ));
@@ -283,7 +370,7 @@ export default class BitrixApi {
       chunk.forEach((id, i) => {
         cmd[`f${i}`] = `disk.file.get?id=${id}`;
       });
-      return axios.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
+      return this.http.postForm('/rest/batch.json', { sessid: this.sessionId, halt: false, cmd });
     })).then((responses) => responses.flatMap(
       ({data}) => Object.values(data?.result?.result ?? {}).filter(Boolean),
     ));
@@ -292,11 +379,11 @@ export default class BitrixApi {
   getTask(taskId, select = []) {
     const params = new URLSearchParams({sessid: this.sessionId, taskId});
     select.forEach((field) => params.append('select[]', field));
-    return axios.post('/rest/tasks.task.get.json', params);
+    return this.http.post('/rest/tasks.task.get.json', params);
   }
 
   removeNotifications(ids) {
-    return axios.postForm('/rest/im.notify.delete.json', {
+    return this.http.postForm('/rest/im.notify.delete.json', {
       sessid: this.sessionId,
       id: ids,
     });
@@ -316,18 +403,18 @@ export default class BitrixApi {
     Object.entries(fields).forEach(([key, value]) => {
       params.set(`fields[${key}]`, value);
     });
-    return axios.post('/rest/tasks.task.update.json', params);
+    return this.http.post('/rest/tasks.task.update.json', params);
   }
 
   favoriteTask(taskId) {
-    return axios.postForm('/rest/tasks.task.favorite.add.json', {
+    return this.http.postForm('/rest/tasks.task.favorite.add.json', {
       sessid: this.sessionId,
       taskId,
     });
   }
 
   unfavoriteTask(taskId) {
-    return axios.postForm('/rest/tasks.task.favorite.remove.json', {
+    return this.http.postForm('/rest/tasks.task.favorite.remove.json', {
       sessid: this.sessionId,
       taskId,
     });
@@ -341,6 +428,7 @@ export default class BitrixApi {
    * @param {boolean} params.smartTitleSearch - разбивать title по пробелам и искать каждое слово через AND
    * @param {'active'|'closed'|null} params.status - 'active' = не завершённые, 'closed' = завершённые, null = все
    * @param {'all'|'root'|'subtask'} params.parentType - 'root' = только корневые задачи, 'subtask' = только подзадачи, 'all' = все
+   * @param {Array<string|number>|null} params.parentIds - прямые дети конкретных задач (для обхода дерева подзадач по уровням); не сочетается с parentType
    * @param {string|null} params.groupId - ID группы (null = глобальный поиск)
    * @param {string|number|null} params.createdBy - ID постановщика
    * @param {string|number|null} params.responsibleId - ID исполнителя
@@ -363,6 +451,7 @@ export default class BitrixApi {
                       excludeTitle,
                       status,
                       parentType,
+                      parentIds,
                       groupId,
                       createdBy,
                       responsibleId,
@@ -410,6 +499,7 @@ export default class BitrixApi {
     if (status === 'closed') filter['STATUS'] = 5;
     if (parentType === 'root') filter['PARENT_ID'] = 0;
     if (parentType === 'subtask') filter['!PARENT_ID'] = 0;
+    if (parentIds?.length) filter['PARENT_ID'] = parentIds;
     if (groupId) filter['GROUP_ID'] = groupId;
     if (createdBy) filter['CREATED_BY'] = createdBy;
     if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
@@ -448,7 +538,7 @@ export default class BitrixApi {
 
     const firstParams = buildParams(0);
     firstParams.set('sessid', this.sessionId);
-    const {data: firstData} = await axios.post('/rest/tasks.task.list.json', firstParams);
+    const {data: firstData} = await this.http.post('/rest/tasks.task.list.json', firstParams);
     const tasks = firstData?.result?.tasks ?? [];
     const total = firstData?.total ?? 0;
     const effectiveTotal = limit ? Math.min(total, limit) : total;
@@ -469,7 +559,7 @@ export default class BitrixApi {
         chunk.forEach((start) => {
           cmd[`p${start}`] = `tasks.task.list?${buildParams(start).toString()}`;
         });
-        return axios.postForm('/rest/batch.json', {
+        return this.http.postForm('/rest/batch.json', {
           sessid: this.sessionId,
           halt: false,
           cmd,
@@ -495,11 +585,11 @@ export default class BitrixApi {
         params.set(`fields[${key}]`, value);
       }
     });
-    return axios.post('/rest/tasks.task.add.json', params);
+    return this.http.post('/rest/tasks.task.add.json', params);
   }
 
   getCurrentUser() {
-    return axios.postForm('https://plan.pixelplus.ru/rest/user.current.json', {
+    return this.http.postForm('/rest/user.current.json', {
       sessid: this.sessionId,
     }).then(({data}) => data?.result ?? null);
   }
@@ -516,11 +606,11 @@ export default class BitrixApi {
       TASKID: taskId,
       'FIELDS[POST_MESSAGE]': text,
     });
-    return axios.post('/rest/task.commentitem.add.json', params);
+    return this.http.post('/rest/task.commentitem.add.json', params);
   }
 
   searchTasksByFulltext(query) {
-    return axios.postForm(
+    return this.http.postForm(
       '/bitrix/services/main/ajax.php?action=tasks.task.search',
       {searchQuery: query},
       {
@@ -551,7 +641,7 @@ export default class BitrixApi {
         select.forEach((f) => params.append('select[]', f));
         cmd[`t${ci * CHUNK_SIZE + i}`] = `tasks.task.get?${params.toString()}`;
       });
-      return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd});
+      return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd});
     })).then((responses) => {
       const result = {};
       responses.forEach((response) => {
@@ -575,7 +665,7 @@ export default class BitrixApi {
     groupIds.forEach((id) => {
       cmd[`s${id}`] = `task.stages.get?entityId=${id}`;
     });
-    return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
+    return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
       .then(({data}) => {
         const stages = {};
         Object.values(data?.result?.result ?? {}).forEach((val) => {
@@ -598,7 +688,7 @@ export default class BitrixApi {
     groupIds.forEach((id) => {
       cmd[`g${id}`] = `sonet_group.get?FILTER[ID]=${id}&select[]=ID&select[]=NAME`;
     });
-    return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
+    return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
       .then(({data}) => {
         const groups = {};
         Object.entries(data?.result?.result ?? {}).forEach(([key, val]) => {
@@ -619,7 +709,7 @@ export default class BitrixApi {
    * @return {Promise<string|null>}
    */
   getGroupNameFromTaskPage(userId, taskId) {
-    return axios.get(`/company/personal/user/${userId}/tasks/task/view/${taskId}/`).then(({data}) => {
+    return this.http.get(`/company/personal/user/${userId}/tasks/task/view/${taskId}/`).then(({data}) => {
       const parser = new DOMParser();
       const html = parser.parseFromString(data, 'text/html');
       return html.querySelector(`#task-${taskId}-group-value`)?.textContent?.trim() || null;
@@ -638,7 +728,7 @@ export default class BitrixApi {
     userIds.forEach((id) => {
       cmd[`u${id}`] = `im.user.get?ID=${id}`;
     });
-    return axios.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
+    return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
       .then(({data}) => {
         const users = {};
         Object.values(data?.result?.result ?? {}).forEach((val) => {

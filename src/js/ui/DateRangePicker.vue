@@ -17,11 +17,12 @@ dayjs.extend(customParseFormat);
 
 const monthLabel = {1: '1 месяц', 2: '2 месяца', 3: '3 месяца', 6: '6 месяцев', 12: '12 месяцев'};
 const months = [1, 2, 3, 6, 12];
+const monthPreset = (monthCount, type) => ({label: monthLabel[monthCount], months: monthCount, type});
 
 const PRESET_GROUPS = {
   full: [
-    {label: 'Текущий', presets: months.map((m) => ({label: monthLabel[m], months: m, type: 'current'}))},
-    {label: 'Предыдущий', presets: months.map((m) => ({label: monthLabel[m], months: m, type: 'prev'}))},
+    {label: 'Текущий', presets: months.map((monthCount) => monthPreset(monthCount, 'current'))},
+    {label: 'Предыдущий', presets: months.map((monthCount) => monthPreset(monthCount, 'prev'))},
   ],
   current: [
     {
@@ -29,7 +30,7 @@ const PRESET_GROUPS = {
       presets: [
         {label: '1 неделя', weeks: 1, type: 'current'},
         {label: '2 недели', weeks: 2, type: 'current'},
-        ...months.map((m) => ({label: monthLabel[m], months: m, type: 'current'})),
+        ...months.map((monthCount) => monthPreset(monthCount, 'current')),
       ],
     },
   ],
@@ -52,14 +53,14 @@ function getPresetRange(preset) {
 }
 
 function presetDateLabel(preset) {
-  const [s, e] = getPresetRange(preset);
-  return `${dayjs(s).format('DD.MM.YY')} – ${dayjs(e).format('DD.MM.YY')}`;
+  const [start, end] = getPresetRange(preset);
+  return `${dayjs(start).format('DD.MM.YY')} – ${dayjs(end).format('DD.MM.YY')}`;
 }
 
 function isActivePreset(preset) {
   if (!model.value?.[0] || !model.value?.[1]) return false;
-  const [ps, pe] = getPresetRange(preset);
-  return dayjs(model.value[0]).isSame(ps, 'day') && dayjs(model.value[1]).isSame(pe, 'day');
+  const [presetStart, presetEnd] = getPresetRange(preset);
+  return dayjs(model.value[0]).isSame(presetStart, 'day') && dayjs(model.value[1]).isSame(presetEnd, 'day');
 }
 
 function applyPreset(preset) {
@@ -69,29 +70,29 @@ function applyPreset(preset) {
 
 const displayValue = computed(() => {
   if (!model.value?.[0]) return '';
-  const s = dayjs(model.value[0]).format('DD.MM.YY');
-  const e = model.value[1] ? dayjs(model.value[1]).format('DD.MM.YY') : '...';
-  return `${s} – ${e}`;
+  const start = dayjs(model.value[0]).format('DD.MM.YY');
+  const end = model.value[1] ? dayjs(model.value[1]).format('DD.MM.YY') : '...';
+  return `${start} – ${end}`;
 });
 
 const inputValue = ref(displayValue.value);
 
-watch(displayValue, (val) => {
-  inputValue.value = val;
+watch(displayValue, (value) => {
+  inputValue.value = value;
 });
 
-function parseDate(str) {
-  const d = dayjs(str.trim(), 'DD.MM.YY', true);
-  return d.isValid() ? d.toDate() : null;
+function parseDate(value) {
+  const parsed = dayjs(value.trim(), 'DD.MM.YY', true);
+  return parsed.isValid() ? parsed.toDate() : null;
 }
 
 function applyInput() {
-  const val = inputValue.value.trim();
-  if (!val) {
+  const value = inputValue.value.trim();
+  if (!value) {
     model.value = null;
     return;
   }
-  const parts = val.split('–').map((s) => s.trim());
+  const parts = value.split('–').map((part) => part.trim());
   if (parts.length === 2) {
     const start = parseDate(parts[0]);
     const end = parseDate(parts[1]);
@@ -105,8 +106,8 @@ function applyInput() {
 
 const eventDateSet = computed(() => {
   const set = new Set();
-  props.eventDates.forEach((d) => {
-    const day = dayjs(d);
+  props.eventDates.forEach((eventDate) => {
+    const day = dayjs(eventDate);
     set.add(`${day.year()}-${day.month()}-${day.date()}`);
   });
   return set;
@@ -118,15 +119,15 @@ function hasEvent(date) {
 
 function openPopover(event) {
   localRange.value = model.value
-    ? model.value.map((d) => (d instanceof Date ? d : (d ? new Date(d) : null)))
+    ? model.value.map((date) => (date instanceof Date ? date : (date ? new Date(date) : null)))
     : null;
   popoverRef.value?.show(event);
 }
 
-function onDateSelect(val) {
-  localRange.value = val;
-  if (val?.[0] && val?.[1]) {
-    model.value = val;
+function onDateSelect(range) {
+  localRange.value = range;
+  if (range?.[0] && range?.[1]) {
+    model.value = range;
     popoverRef.value?.hide();
   }
 }
@@ -154,7 +155,7 @@ function onDateSelect(val) {
           >
             <div
               v-if="presetGroups.length > 1"
-              class="text-xs text-surface-400 mb-1.5 tracking-wide"
+              class="text-xs text-surface-400 dark:text-surface-500 mb-1.5 tracking-wide"
             >
               {{ group.label }}
             </div>
@@ -169,12 +170,12 @@ function onDateSelect(val) {
                 @click="applyPreset(preset)"
               >
                 <span>{{ preset.label }}</span>
-                <span class="text-xs text-surface-400 tabular-nums">{{ presetDateLabel(preset) }}</span>
+                <span class="text-xs text-surface-400 dark:text-surface-500 tabular-nums">{{ presetDateLabel(preset) }}</span>
               </Button>
             </div>
           </div>
         </div>
-        <div class="border-l border-surface-200 pl-4">
+        <div class="border-l border-surface-200 dark:border-surface-700 pl-4">
           <DatePicker
             :model-value="localRange"
             :number-of-months="2"
