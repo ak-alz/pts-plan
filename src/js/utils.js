@@ -852,6 +852,45 @@ export function pluralize(n, titles) {
     ];
 }
 
+const RU_TO_EN_TRANSLIT_MAP = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y',
+  'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f',
+  'х': 'h', 'ц': 'c', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+};
+
+/**
+ * Транслитерирует русский текст в латиницу (побуквенно, по таблице RU→EN).
+ * Регистр сохраняется, символы вне таблицы остаются без изменений.
+ * @param {string} text
+ * @returns {string}
+ */
+export function transliterate(text) {
+  if (!text) return '';
+  return [...text].map((character) => {
+    const lowerCaseCharacter = character.toLowerCase();
+    const transliterated = RU_TO_EN_TRANSLIT_MAP[lowerCaseCharacter];
+    if (transliterated === undefined) return character;
+    if (character === lowerCaseCharacter) return transliterated;
+    return transliterated.charAt(0).toUpperCase() + transliterated.slice(1);
+  }).join('');
+}
+
+/**
+ * Строит slug для имени файла: транслитерация RU→EN (латиница остаётся как есть),
+ * нижний регистр, пробелы и дефисы → `_`, остальные небезопасные для имени файла
+ * символы отбрасываются.
+ * @param {string} text
+ * @returns {string} slug (может быть пустой строкой, если в тексте нет подходящих символов)
+ */
+export function slugify(text) {
+  return transliterate(text)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^A-Za-z0-9_]/g, '')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 const RU_TO_EN_LAYOUT_MAP = {
   'й': 'q', 'ц': 'w', 'у': 'e', 'к': 'r', 'е': 't', 'н': 'y', 'г': 'u', 'ш': 'i', 'щ': 'o', 'з': 'p', 'х': '[', 'ъ': ']',
   'ф': 'a', 'ы': 's', 'в': 'd', 'а': 'f', 'п': 'g', 'р': 'h', 'о': 'j', 'л': 'k', 'д': 'l', 'ж': ';', 'э': '\'',

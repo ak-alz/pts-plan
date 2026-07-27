@@ -1,13 +1,16 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Button, Message, SelectButton, Skeleton, Textarea, ToggleSwitch } from 'primevue';
+import { Button, Dialog, IconField, InputIcon, InputText, Message, SelectButton, Skeleton, Textarea, ToggleSwitch } from 'primevue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { DISK_FILE_INLINE_RE } from '../../../patterns.js';
 import { showToast } from '../../../toastHost/showToast.js';
+import { translateRuToEn } from '../../../translateRuToEn.js';
 import FormField from '../../../ui/FormField.vue';
-import { bbcodeToMarkdown, downloadBlob, estimateTokenCount, isSystemComment, minifyPrompt, pluralize, TASK_STATUS_LABELS } from '../../../utils.js';
+import { bbcodeToMarkdown, downloadBlob, estimateTokenCount, isSystemComment, minifyPrompt, pluralize, slugify, TASK_STATUS_LABELS } from '../../../utils.js';
+import { ARCHIVE_NAME_SLUG_PLACEHOLDER, DEFAULT_ARCHIVE_NAME_TEMPLATE, getTaskTitleText, renderArchiveName, withZipExtension } from '../variables.js';
+import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
   sessionId: {
@@ -48,6 +51,10 @@ const includeSubtasks = ref(false);
 const textFormat = ref('bbcode'); // формат самого текста (описание/комментарии) — независим от exportAsJson
 const exportAsJson = ref(false); // оборачивает результат в JSON-структуру вместо плоского текста
 const downloadingZip = ref(false);
+const archiveNameTemplate = ref(DEFAULT_ARCHIVE_NAME_TEMPLATE);
+const archiveName = ref('');
+const translatingSlug = ref(false);
+const isSettingsOpened = ref(false);
 const attachmentDiskIdMap = ref(new Map()); // ATTACHMENT_ID → "n{OBJECT_ID}"
 const diskFileByObjectId = ref(new Map()); // "n{OBJECT_ID}" → { name, url } — все известные файлы Диска (вложения + инлайн-картинки в тексте)
 
@@ -64,8 +71,9 @@ const extraContextStorageKey = computed(() => `export-task-context-${groupId.val
 
 let isInitializing = true;
 let authorLoaded = false;
+let translatedTaskSlug = null;
 
-watch([includeTitle, includeDescription, includeComments, includeSubtasks, textFormat, exportAsJson], () => {
+watch([includeTitle, includeDescription, includeComments, includeSubtasks, textFormat, exportAsJson, archiveNameTemplate], () => {
   if (isInitializing) return;
   chrome.storage.local.set({
     [SETTINGS_STORAGE_KEY]: {
@@ -75,6 +83,7 @@ watch([includeTitle, includeDescription, includeComments, includeSubtasks, textF
       includeSubtasks: includeSubtasks.value,
       textFormat: textFormat.value,
       exportAsJson: exportAsJson.value,
+      archiveNameTemplate: archiveNameTemplate.value,
     },
   });
 });
@@ -552,6 +561,7 @@ onMounted(async () => {
       includeSubtasks.value = settings.includeSubtasks ?? false;
       textFormat.value = settings.textFormat ?? 'bbcode';
       exportAsJson.value = settings.exportAsJson ?? false;
+      archiveNameTemplate.value = settings.archiveNameTemplate || DEFAULT_ARCHIVE_NAME_TEMPLATE;
     }
 
     const [taskResponse] = await Promise.all([
@@ -567,6 +577,8 @@ onMounted(async () => {
     taskStatus.value = task.status ?? '';
     taskAuthorId.value = String(task.createdBy ?? '');
     groupId.value = String(task.groupId ?? '');
+
+    refreshArchiveName();
 
     if (exportAsJson.value) await loadTaskAuthor();
 
@@ -597,13 +609,57 @@ onMounted(async () => {
     }
 
     await resolveInlineDiskFiles(extractInlineDiskFileIds(taskDescription.value));
-  } catch {
+  } catch (error) {
+    console.error(error);
     showToast({ severity: 'error', summary: 'Ошибка загрузки данных задачи', life: 3000 });
   } finally {
     isInitializing = false;
     loading.value = false;
   }
 });
+
+// Перевод названия задачи выполняется один раз за сеанс окна: он может занять время (Chrome
+// докачивает языковой пакет), а название задачи в открытом окне не меняется.
+async function getTranslatedTaskSlug() {
+  if (translatedTaskSlug !== null) return translatedTaskSlug;
+
+  translatingSlug.value = true;
+  try {
+    translatedTaskSlug = slugify(await translateRuToEn(getTaskTitleText(taskTitle.value)) ?? '');
+    if (!translatedTaskSlug) {
+      showToast({
+        severity: 'warn',
+        summary: 'Перевод названия недоступен',
+        detail: 'В названии архива использована транслитерация.',
+        life: 5000,
+      });
+    }
+    return translatedTaskSlug;
+  } finally {
+    translatingSlug.value = false;
+  }
+}
+
+// Название сразу заполняется по шаблону с транслитерацией названия задачи, а перевод
+// подставляется, когда придёт — и только если пользователь не успел поправить название руками.
+async function refreshArchiveName() {
+  const nameWithTransliteratedSlug = renderArchiveName(archiveNameTemplate.value, props.taskId, slugify(getTaskTitleText(taskTitle.value)));
+  archiveName.value = nameWithTransliteratedSlug;
+
+  if (!archiveNameTemplate.value.includes(ARCHIVE_NAME_SLUG_PLACEHOLDER) || !taskTitle.value) return;
+
+  const translatedSlug = await getTranslatedTaskSlug();
+  if (!translatedSlug || archiveName.value !== nameWithTransliteratedSlug) return;
+
+  archiveName.value = renderArchiveName(archiveNameTemplate.value, props.taskId, translatedSlug);
+}
+
+function onSaveSettings({ archiveNameTemplate: template }) {
+  archiveNameTemplate.value = template;
+  refreshArchiveName();
+  isSettingsOpened.value = false;
+  showToast({ severity: 'success', summary: 'Настройки сохранены', life: 3000 });
+}
 
 async function copyToClipboard() {
   try {
@@ -625,7 +681,7 @@ async function downloadZip() {
   try {
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
-    zip.file(`task.${exportFileExtension.value}`, buildOutput(true));
+    zip.file(`description.${exportFileExtension.value}`, buildOutput(true));
 
     const attachmentFiles = collectAttachmentFiles();
     if (attachmentFiles.length) {
@@ -639,7 +695,8 @@ async function downloadZip() {
       );
     }
 
-    downloadBlob(await zip.generateAsync({ type: 'blob' }), `task-${props.taskId}.zip`);
+    const fileName = withZipExtension(archiveName.value.trim() || renderArchiveName(archiveNameTemplate.value, props.taskId));
+    downloadBlob(await zip.generateAsync({ type: 'blob' }), fileName);
 
     showToast({ severity: 'success', summary: 'Архив скачан!', life: 2000 });
   } catch (error) {
@@ -665,6 +722,16 @@ async function downloadZip() {
     v-else
     class="flex flex-col gap-4 py-1"
   >
+    <Button
+      label="Настройки"
+      icon="pi pi-cog"
+      severity="secondary"
+      variant="text"
+      size="small"
+      class="self-start"
+      @click="isSettingsOpened = true"
+    />
+
     <FormField label="Формат текста">
       <SelectButton
         v-model="textFormat"
@@ -776,6 +843,26 @@ async function downloadZip() {
       </label>
     </div>
 
+    <FormField
+      id="export-task-archive-name"
+      label="Название архива"
+      tip="Формируется по шаблону из настроек, можно изменить перед скачиванием"
+    >
+      <IconField>
+        <InputText
+          id="export-task-archive-name"
+          v-model="archiveName"
+          fluid
+          size="small"
+        />
+        <InputIcon
+          v-if="translatingSlug"
+          v-tooltip="'Название задачи переводится на английский'"
+          class="pi pi-spinner pi-spin"
+        />
+      </IconField>
+    </FormField>
+
     <Message
       severity="info"
       size="small"
@@ -817,4 +904,16 @@ async function downloadZip() {
       </span>
     </div>
   </div>
+
+  <Dialog
+    v-model:visible="isSettingsOpened"
+    header="Настройки"
+    dismissable-mask
+    modal
+  >
+    <SettingsForm
+      :initial="{ archiveNameTemplate }"
+      @success="onSaveSettings"
+    />
+  </Dialog>
 </template>
