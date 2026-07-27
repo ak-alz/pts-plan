@@ -1,10 +1,12 @@
 import {MEETING_TIME_RE} from '../../patterns.js';
 import {pluralize} from '../../utils.js';
 import {
+  AT_START_GRACE_MS,
   MEETING_STATUS,
   MEETING_TYPE,
   MEETINGS_MAX_AGE_DAYS,
   PRESENCE_TTL_MS,
+  REMINDER_AT_START,
   SHOWN_REMINDERS_MAX_AGE_DAYS,
 } from './variables.js';
 
@@ -16,11 +18,27 @@ export function toPlainMeetings(meetings) {
 }
 
 export function getTriggerWindowStart(triggerTime, offsetMinutes) {
-  return triggerTime - offsetMinutes * 60_000;
+  return triggerTime - Math.max(offsetMinutes, 0) * 60_000;
 }
 
-export function isWithinTriggerWindow(triggerTime, now, offsetMinutes) {
-  return now >= getTriggerWindowStart(triggerTime, offsetMinutes) && now < triggerTime;
+/**
+ * Отключена ли встреча тумблером в списке встреч (напоминания по ней не срабатывают).
+ * @param {object} meeting - Встреча.
+ * @returns {boolean} `true`, если напоминания по встрече включены.
+ */
+export function isMeetingEnabled(meeting) {
+  return meeting?.enabled !== false;
+}
+
+/**
+ * Сколько времени после начала встречи напоминание ещё актуально.
+ * @param {object} settings - Настройки фичи (`reminderMinutes`, `lateReminderMinutes`).
+ * @returns {number} Длительность окна после начала в миллисекундах.
+ */
+export function getGraceMs(settings) {
+  const graceMs = (settings.lateReminderMinutes ?? 0) * 60_000;
+  if (settings.reminderMinutes !== REMINDER_AT_START) return graceMs;
+  return Math.max(graceMs, AT_START_GRACE_MS);
 }
 
 // Дедуп-ключ регулярной встречи привязан к календарной дате её вхождения по местному времени
@@ -110,6 +128,7 @@ function normalizeImportedMeeting(raw) {
     id: typeof raw.id === 'string' && raw.id ? raw.id : crypto.randomUUID(),
     title,
     link: typeof raw.link === 'string' ? raw.link.trim() : '',
+    enabled: raw.enabled !== false,
   };
 
   if (raw.type === MEETING_TYPE.ONCE) {
@@ -173,27 +192,21 @@ export function selectLeaderTabId(presence, now, ttlMs = PRESENCE_TTL_MS) {
 }
 
 // Единая точка входа для одного конкретного момента триггера (разовая встреча или сегодняшнее
-// вхождение регулярной): до начала — обычный офсет "напомнить за" (0 — заранее не напоминать);
-// после начала и в пределах lateReminderMinutes — один финальный шанс догнать (офсет условно "0"),
-// даже если "напомнить за" — "не напоминать" или сам офсет уже не успел сработать
+// вхождение регулярной). Окно показа целиком задают два независимых селекта настроек: "напоминать
+// за" — начало окна (отрицательный офсет и 0 равно означают "не заранее", окно стартует с самого
+// начала встречи), "напоминать после начала" (graceMs) — конец окна. Оба выключены — окно пустое,
+// напоминаний по встрече нет вообще
 function findReminder(reminderMinutes, triggerTime, nowTime, shownMap, meetingId, graceMs, dateKey) {
-  if (nowTime >= triggerTime) {
-    if (nowTime >= triggerTime + graceMs) return null;
-
-    const reminderKey = getReminderShownKey(meetingId, dateKey);
-    if (shownMap[reminderKey]) return null;
-
-    return {reminderKey, elapsedMinutes: Math.round((nowTime - triggerTime) / 60_000)};
-  }
-
-  if (!isWithinTriggerWindow(triggerTime, nowTime, reminderMinutes)) return null;
+  if (nowTime < getTriggerWindowStart(triggerTime, reminderMinutes) || nowTime >= triggerTime + graceMs) return null;
 
   const reminderKey = getReminderShownKey(meetingId, dateKey);
   if (shownMap[reminderKey]) return null;
 
   // Фактический остаток до начала, а не настроенный офсет: встречу могли создать уже внутри окна
   // напоминания (например, за 4 минуты при офсете 10) — тогда честнее показать реальные 4 минуты
-  return {reminderKey, remainingMinutes: Math.ceil((triggerTime - nowTime) / 60_000)};
+  if (nowTime < triggerTime) return {reminderKey, remainingMinutes: Math.ceil((triggerTime - nowTime) / 60_000)};
+
+  return {reminderKey, elapsedMinutes: Math.round((nowTime - triggerTime) / 60_000)};
 }
 
 const MEETING_TYPE_LABELS = {
@@ -223,20 +236,26 @@ export function getReminderTitle(meeting, {remainingMinutes, elapsedMinutes}) {
 export function evaluateMeetings({meetings, shownMap, settings, now}) {
   const nowTime = now.getTime();
   const reminderMinutes = settings.reminderMinutes;
-  const graceMs = (settings.lateReminderMinutes ?? 0) * 60_000;
+  const graceMs = getGraceMs(settings);
 
   const toShow = [];
   const meetingUpdates = new Map();
   let nextShownMap = shownMap;
 
   for (const meeting of meetings) {
+    const enabled = isMeetingEnabled(meeting);
+
     if (meeting.type === MEETING_TYPE.ONCE) {
       if (meeting.status !== MEETING_STATUS.PENDING) continue;
 
+      // Статус доводим до "пропущена" и у отключённой встречи — иначе она навсегда осела бы
+      // в ожидающих: pruneStaleMeetings чистит только завершённые
       if (nowTime >= meeting.dateTime + graceMs) {
         meetingUpdates.set(meeting.id, {status: MEETING_STATUS.MISSED});
         continue;
       }
+
+      if (!enabled) continue;
 
       const found = findReminder(reminderMinutes, meeting.dateTime, nowTime, nextShownMap, meeting.id, graceMs);
       if (!found) continue;
@@ -247,6 +266,8 @@ export function evaluateMeetings({meetings, shownMap, settings, now}) {
     }
 
     if (meeting.type === MEETING_TYPE.RECURRING) {
+      if (!enabled) continue;
+
       for (const {triggerTime, dateKey} of getRecurringTriggers(meeting, now)) {
         const found = findReminder(reminderMinutes, triggerTime, nowTime, nextShownMap, meeting.id, graceMs, dateKey);
         if (!found) continue;

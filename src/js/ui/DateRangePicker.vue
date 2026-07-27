@@ -9,6 +9,7 @@ const props = defineProps({
   minDate: {type: Date, default: null},
   maxDate: {type: Date, default: null},
   eventDates: {type: Array, default: () => []},
+  disabled: {type: Boolean, default: false},
 });
 
 const model = defineModel({type: Array});
@@ -21,12 +22,12 @@ const monthPreset = (monthCount, type) => ({label: monthLabel[monthCount], month
 
 const PRESET_GROUPS = {
   full: [
-    {label: 'Текущий', presets: months.map((monthCount) => monthPreset(monthCount, 'current'))},
-    {label: 'Предыдущий', presets: months.map((monthCount) => monthPreset(monthCount, 'prev'))},
+    {label: 'От сегодня', presets: months.map((monthCount) => monthPreset(monthCount, 'current'))},
+    {label: 'Ранее', presets: months.map((monthCount) => monthPreset(monthCount, 'prev'))},
   ],
   current: [
     {
-      label: 'Текущий',
+      label: 'От сегодня',
       presets: [
         {label: '1 неделя', weeks: 1, type: 'current'},
         {label: '2 недели', weeks: 2, type: 'current'},
@@ -118,6 +119,7 @@ function hasEvent(date) {
 }
 
 function openPopover(event) {
+  if (props.disabled) return;
   localRange.value = model.value
     ? model.value.map((date) => (date instanceof Date ? date : (date ? new Date(date) : null)))
     : null;
@@ -134,13 +136,19 @@ function onDateSelect(range) {
 </script>
 
 <template>
-  <div class="w-full">
+  <!-- p-inputwrapper — служебный класс PrimeVue: по нему InputGroup дотягивается до вложенного поля и
+       убирает лишние скругления, иначе внутри группы стык с addon выглядел бы разорванным. flex здесь
+       обязателен: правило `.p-inputgroup .p-inputtext { flex: 1 1 auto; width: 1% }` вложенное, поэтому
+       достаёт и сам InputMask — в блочной обёртке он схлопнулся бы до 1% ширины, а во флекс-контейнере
+       его растягивает flex-grow. Так же устроены собственные обёртки PrimeVue (.p-datepicker) -->
+  <div class="w-full p-inputwrapper flex">
     <InputMask
       v-model="inputValue"
       mask="99.99.99 – 99.99.99"
       fluid
       size="small"
       placeholder="Выбрать"
+      :disabled="disabled"
       @focus="openPopover"
       @blur="applyInput"
       @keydown.enter.prevent="applyInput"
@@ -187,11 +195,11 @@ function onDateSelect(range) {
             @update:model-value="onDateSelect"
           >
             <template #date="{ date }">
-              <span class="flex flex-col items-center leading-none gap-0.5">
+              <span class="relative flex items-center justify-center w-full h-full">
                 {{ date.day }}
                 <span
-                  class="w-1 h-1 rounded-full"
-                  :class="hasEvent(date) ? 'bg-primary-400' : ''"
+                  v-if="hasEvent(date)"
+                  class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary-400"
                 />
               </span>
             </template>

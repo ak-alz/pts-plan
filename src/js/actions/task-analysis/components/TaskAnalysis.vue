@@ -6,17 +6,27 @@ import {
   Button,
   Checkbox,
   Dialog,
+  InputGroup,
+  InputGroupAddon,
   MultiSelect,
   Select,
   Skeleton,
 } from 'primevue';
-import {computed, onMounted, reactive, ref} from 'vue';
+import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import {getDistinctLineStyleIndexes, getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
+import {
+  computeDefaultCompareRange,
+  getCompareRequestRange,
+  getDistinctLineStyleIndexes,
+  getTaskPointsFromName,
+  getTaskUrl,
+  isHotfixTask,
+  stringToPastelColor,
+} from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 import TaskAnalysisTabs from './TaskAnalysisTabs.vue';
 
@@ -57,15 +67,35 @@ function getDefaults() {
   let userIds = props.options?.userId ? [String(props.options.userId)] : [];
   if (savedSettings.defaultUserIds?.length) userIds = savedSettings.defaultUserIds;
   else if (savedSettings.defaultUserId != null) userIds = [savedSettings.defaultUserId];
+  const dateRange = [dayjs().subtract(months, 'month').toDate(), dayjs().toDate()];
   return {
-    dateRange: [dayjs().subtract(months, 'month').toDate(), dayjs().toDate()],
+    dateRange,
+    compareDateRange: computeDefaultCompareRange(dateRange),
+    compareEnabled: savedSettings.defaultCompareEnabled ?? true,
     selectedUserIds: userIds,
-    compareWithPrev: savedSettings.defaultCompareWithPrev ?? false,
-    excludeHotfixes: savedSettings.defaultExcludeHotfixes ?? false,
+    includeHotfixes: savedSettings.defaultIncludeHotfixes ?? true,
   };
 }
 
 const form = reactive({...getDefaults(), groupFilter: 'current'});
+
+// «Сравнить с» подстраивается под «Период», пока пользователь не выбрал диапазон сравнения вручную
+const compareRangeTouched = ref(false);
+
+watch(() => form.dateRange, (newRange) => {
+  if (compareRangeTouched.value) return;
+  form.compareDateRange = computeDefaultCompareRange(newRange);
+});
+
+function onCompareDateRangeUpdate(value) {
+  form.compareDateRange = value;
+  compareRangeTouched.value = true;
+}
+
+function applyDefaults() {
+  Object.assign(form, getDefaults());
+  compareRangeTouched.value = false;
+}
 
 const users = ref([]);
 const visibleUsers = computed(() => {
@@ -78,51 +108,60 @@ const isLoading = ref(false);
 const rows = ref([]);
 const prevRows = ref([]);
 const allUserTasksPerUser = ref([]);
+const prevUserTasksPerUser = ref([]);
 const fetchedDateRange = ref(null);
+const fetchedCompareRange = ref(null);
 const MIN_POINTS = 1;
 const filteredRows = computed(() => rows.value.filter((row) => row.totalPoints >= MIN_POINTS));
 
-const displayRows = computed(() => {
-  if (!form.excludeHotfixes) return filteredRows.value;
-  return filteredRows.value
+function stripHotfixes(rowsList) {
+  return rowsList
     .map((row) => {
       const tasks = row.tasks.filter((task) => !isHotfixTask(task.title));
       const totalPoints = tasks.reduce((sum, task) => sum + task.points, 0);
       return {...row, tasks, totalPoints};
     })
     .filter((row) => row.totalPoints >= MIN_POINTS);
-});
+}
 
+const displayRows = computed(() => (form.includeHotfixes ? filteredRows.value : stripHotfixes(filteredRows.value)));
+
+// Галку «Сравнить с» сняли — дельты убираем сразу, не дожидаясь повторной загрузки
 const displayPrevRows = computed(() => {
-  if (!form.excludeHotfixes) return prevRows.value.filter((row) => row.totalPoints >= MIN_POINTS);
-  return prevRows.value
-    .map((row) => {
-      const tasks = row.tasks.filter((task) => !isHotfixTask(task.title));
-      const totalPoints = tasks.reduce((sum, task) => sum + task.points, 0);
-      return {...row, tasks, totalPoints};
-    })
-    .filter((row) => row.totalPoints >= MIN_POINTS);
+  if (!form.compareEnabled) return [];
+  return form.includeHotfixes
+    ? prevRows.value.filter((row) => row.totalPoints >= MIN_POINTS)
+    : stripHotfixes(prevRows.value);
 });
 
 const displayUserTasksPerUser = computed(() => {
-  if (!form.excludeHotfixes) return allUserTasksPerUser.value;
+  if (form.includeHotfixes) return allUserTasksPerUser.value;
   return allUserTasksPerUser.value.map(({userId, tasks}) => ({
     userId,
     tasks: tasks.filter((task) => !isHotfixTask(task.title)),
   }));
 });
 
+function countHotfixesByUser(userTasksList) {
+  const counts = new Map();
+  userTasksList.forEach(({userId, tasks}) => {
+    counts.set(userId, tasks.filter((task) => isHotfixTask(task.title)).length);
+  });
+  return counts;
+}
+
 const summaryTableData = computed(() => {
-  if (!displayRows.value.length || !fetchedDateRange.value?.[0]) return null;
+  if (!filteredRows.value.length || !fetchedDateRange.value?.[0]) return null;
 
   const start = dayjs(fetchedDateRange.value[0]);
   const end = dayjs(fetchedDateRange.value[1] ?? fetchedDateRange.value[0]);
   const periodLength = Math.max(1, end.diff(start, 'month', true));
 
+  // Задач всего/Баллов всего/Корневые/средние — зависят от галки «Учитывать хотфиксы в данных»
   const byUser = {};
   displayRows.value.forEach((row) => {
     if (!byUser[row.userId]) {
-      byUser[row.userId] = {userId: row.userId, userName: row.userName, totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}, rootTasks: []};
+      byUser[row.userId] = {totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}, rootTasks: []};
     }
     const userSummary = byUser[row.userId];
     userSummary.totalPoints += row.totalPoints;
@@ -145,10 +184,20 @@ const summaryTableData = computed(() => {
     });
   });
 
+  // Хотфиксы считаются по полному списку закрытых задач — всегда, независимо от галки выше
+  const hotfixesByUser = countHotfixesByUser(allUserTasksPerUser.value);
+  const hasPrevHotfixData = form.compareEnabled && prevUserTasksPerUser.value.length > 0;
+  const prevHotfixesByUser = countHotfixesByUser(prevUserTasksPerUser.value);
+
+  const userIds = new Set([...Object.keys(byUser), ...[...hotfixesByUser.entries()].filter(([, count]) => count > 0).map(([userId]) => userId)]);
+
   return {
-    rows: Object.values(byUser).map((userSummary) => {
+    rows: [...userIds].map((userId) => {
+      const userSummary = byUser[userId] ?? {totalPoints: 0, totalTasks: 0, totalRoots: 0, pointCounts: {}, rootTasks: []};
+      const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
+      const totalHotfixes = hotfixesByUser.get(userId) ?? 0;
       const avgPoints = Math.round((userSummary.totalPoints / periodLength) * 10) / 10;
-      const previousSummary = prevByUser[userSummary.userId];
+      const previousSummary = prevByUser[userId];
       const totalWithPoints = Object.values(userSummary.pointCounts).reduce((a, b) => a + b, 0);
       const pointDistribution = Object.entries(userSummary.pointCounts)
         .map(([pts, count]) => ({points: Number(pts), count, pct: totalWithPoints ? Math.round((count / totalWithPoints) * 100) : 0}))
@@ -160,11 +209,12 @@ const summaryTableData = computed(() => {
       const decompRatio = userSummary.totalRoots ? Math.round((userSummary.totalTasks / userSummary.totalRoots) * 10) / 10 : 0;
       const prevDecompRatio = previousSummary?.totalRoots ? previousSummary.totalTasks / previousSummary.totalRoots : 0;
       return {
-        userId: userSummary.userId,
-        userName: userSummary.userName,
+        userId,
+        userName,
         totalPoints: userSummary.totalPoints,
         totalTasks: userSummary.totalTasks,
         totalRoots: userSummary.totalRoots,
+        totalHotfixes,
         decompRatio,
         avgPoints,
         avgPointsPerTask: userSummary.totalTasks ? Math.round((userSummary.totalPoints / userSummary.totalTasks) * 10) / 10 : 0,
@@ -173,14 +223,83 @@ const summaryTableData = computed(() => {
         deltaTotal: previousSummary != null ? userSummary.totalPoints - previousSummary.totalPoints : null,
         deltaTotalTasks: previousSummary != null ? userSummary.totalTasks - previousSummary.totalTasks : null,
         deltaTotalRoots: previousSummary != null ? userSummary.totalRoots - previousSummary.totalRoots : null,
+        deltaTotalHotfixes: hasPrevHotfixData ? totalHotfixes - (prevHotfixesByUser.get(userId) ?? 0) : null,
         deltaDecompRatio: previousSummary != null ? Math.round((decompRatio - prevDecompRatio) * 10) / 10 : null,
         deltaAvgPointsPerTask: previousSummary != null ? Math.round(((userSummary.totalTasks ? userSummary.totalPoints / userSummary.totalTasks : 0) - (previousSummary.totalTasks ? previousSummary.totalPoints / previousSummary.totalTasks : 0)) * 10) / 10 : null,
         deltaAvgPoints: previousSummary != null ? Math.round((avgPoints - Math.round((previousSummary.totalPoints / periodLength) * 10) / 10) * 10) / 10 : null,
         topTasks: [...userSummary.rootTasks].sort((a, b) => b.points - a.points).slice(0, 5),
       };
     }),
+    total: buildSummaryTotal(byUser, prevByUser, hotfixesByUser, prevHotfixesByUser, hasPrevHotfixData, periodLength),
   };
 });
+
+function sumBy(summaries, key) {
+  return summaries.reduce((sum, summary) => sum + summary[key], 0);
+}
+
+function sumCounts(countsByUser) {
+  return [...countsByUser.values()].reduce((sum, count) => sum + count, 0);
+}
+
+function buildPointDistribution(pointCounts) {
+  const totalWithPoints = Object.values(pointCounts).reduce((a, b) => a + b, 0);
+  return Object.entries(pointCounts)
+    .map(([pts, count]) => ({points: Number(pts), count, pct: totalWithPoints ? Math.round((count / totalWithPoints) * 100) : 0}))
+    .sort((a, b) => a.points - b.points);
+}
+
+function buildSummaryTotal(byUser, prevByUser, hotfixesByUser, prevHotfixesByUser, hasPrevHotfixData, periodLength) {
+  const userSummaries = Object.values(byUser);
+  const totalPoints = sumBy(userSummaries, 'totalPoints');
+  const totalTasks = sumBy(userSummaries, 'totalTasks');
+  const totalRoots = sumBy(userSummaries, 'totalRoots');
+  const totalHotfixes = sumCounts(hotfixesByUser);
+  const totalPointCounts = {};
+  userSummaries.forEach((summary) => {
+    Object.entries(summary.pointCounts).forEach(([points, count]) => {
+      totalPointCounts[points] = (totalPointCounts[points] || 0) + count;
+    });
+  });
+  const decompRatio = totalRoots ? Math.round((totalTasks / totalRoots) * 10) / 10 : 0;
+  const avgPointsPerTask = totalTasks ? Math.round((totalPoints / totalTasks) * 10) / 10 : 0;
+  const avgPoints = Math.round((totalPoints / periodLength) * 10) / 10;
+
+  const prevSummaries = Object.values(prevByUser);
+  const hasPrev = prevSummaries.length > 0;
+  const prevTotalPoints = sumBy(prevSummaries, 'totalPoints');
+  const prevTotalTasks = sumBy(prevSummaries, 'totalTasks');
+  const prevTotalRoots = sumBy(prevSummaries, 'totalRoots');
+  const prevTotalHotfixes = sumCounts(prevHotfixesByUser);
+  const prevDecompRatio = prevTotalRoots ? prevTotalTasks / prevTotalRoots : 0;
+  const prevAvgPointsPerTask = prevTotalTasks ? prevTotalPoints / prevTotalTasks : 0;
+  const prevAvgPoints = prevTotalPoints / periodLength;
+  const prevPointCounts = {};
+  prevSummaries.forEach((summary) => {
+    Object.entries(summary.pointCounts).forEach(([points, count]) => {
+      prevPointCounts[points] = (prevPointCounts[points] || 0) + count;
+    });
+  });
+
+  return {
+    totalPoints,
+    totalTasks,
+    totalRoots,
+    totalHotfixes,
+    decompRatio,
+    avgPointsPerTask,
+    avgPoints,
+    pointDistribution: buildPointDistribution(totalPointCounts),
+    prevPointDistribution: hasPrev ? buildPointDistribution(prevPointCounts) : null,
+    deltaTotal: hasPrev ? totalPoints - prevTotalPoints : null,
+    deltaTotalTasks: hasPrev ? totalTasks - prevTotalTasks : null,
+    deltaTotalRoots: hasPrev ? totalRoots - prevTotalRoots : null,
+    deltaTotalHotfixes: hasPrevHotfixData ? totalHotfixes - prevTotalHotfixes : null,
+    deltaDecompRatio: hasPrev ? Math.round((decompRatio - prevDecompRatio) * 10) / 10 : null,
+    deltaAvgPointsPerTask: hasPrev ? Math.round((avgPointsPerTask - prevAvgPointsPerTask) * 10) / 10 : null,
+    deltaAvgPoints: hasPrev ? Math.round((avgPoints - prevAvgPoints) * 10) / 10 : null,
+  };
+}
 
 const topTasksData = computed(() => {
   if (!displayRows.value.length || !fetchedDateRange.value?.[0]) return null;
@@ -299,7 +418,7 @@ async function loadUsers() {
 
 function onSaveSettings(newSettings) {
   settings.value = newSettings;
-  Object.assign(form, getDefaults());
+  applyDefaults();
   isSettingsOpened.value = false;
 }
 
@@ -395,7 +514,9 @@ async function fetchData() {
   rows.value = [];
   allUserTasksPerUser.value = [];
   prevRows.value = [];
+  prevUserTasksPerUser.value = [];
   fetchedDateRange.value = [...form.dateRange];
+  fetchedCompareRange.value = null;
 
   try {
     const dateFrom = dayjs(form.dateRange[0]).format('YYYY-MM-DD 00:00:00');
@@ -415,16 +536,20 @@ async function fetchData() {
       ['desc'],
     );
 
-    if (form.compareWithPrev && form.dateRange[1]) {
-      const durationDays = dayjs(form.dateRange[1]).diff(dayjs(form.dateRange[0]), 'day');
-      const prevEndDay = dayjs(form.dateRange[0]).subtract(1, 'day');
-      const prevStartDay = prevEndDay.subtract(durationDays, 'day');
+    const compareRequestRange = form.compareEnabled
+      ? getCompareRequestRange(form.compareDateRange, form.dateRange)
+      : null;
+    fetchedCompareRange.value = compareRequestRange;
+    if (compareRequestRange) {
+      const compareDateFrom = dayjs(compareRequestRange[0]).format('YYYY-MM-DD 00:00:00');
+      const compareDateTo = dayjs(compareRequestRange[1]).format('YYYY-MM-DD 23:59:59');
       const prevResults = await Promise.all(
         form.selectedUserIds.map((userId) => {
           const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
-          return fetchUserData(userId, userName, prevStartDay.format('YYYY-MM-DD 00:00:00'), prevEndDay.format('YYYY-MM-DD 23:59:59'), form.groupFilter);
+          return fetchUserData(userId, userName, compareDateFrom, compareDateTo, form.groupFilter);
         }),
       );
+      prevUserTasksPerUser.value = prevResults.map((result) => ({userId: result.userId, tasks: result.tasks}));
       prevRows.value = prevResults.flatMap((result) => result.rows);
     }
   } catch (e) {
@@ -447,7 +572,7 @@ onMounted(async () => {
   ]);
   if (stored[settingsStorageKey]) {
     settings.value = stored[settingsStorageKey];
-    Object.assign(form, getDefaults());
+    applyDefaults();
   }
   isInitialLoading.value = false;
   fetchData();
@@ -479,9 +604,29 @@ onMounted(async () => {
         />
       </div>
       <div class="flex flex-col gap-3 mb-3">
-        <div class="grid grid-cols-3 gap-3 items-end">
+        <div class="grid grid-cols-4 gap-3 items-end">
           <FormField label="Период">
             <DateRangePicker v-model="form.dateRange" />
+          </FormField>
+
+          <FormField
+            label="Сравнить с"
+            tip="По умолчанию — предыдущий период такой же длины, подстраивается под «Период». Можно выбрать любой диапазон вручную. Снимите галку, чтобы не загружать сравнительный период: тогда дельты не показываются, а загрузка идёт вдвое быстрее."
+          >
+            <InputGroup>
+              <InputGroupAddon>
+                <Checkbox
+                  v-model="form.compareEnabled"
+                  binary
+                  size="small"
+                />
+              </InputGroupAddon>
+              <DateRangePicker
+                :model-value="form.compareDateRange"
+                :disabled="!form.compareEnabled"
+                @update:model-value="onCompareDateRangeUpdate"
+              />
+            </InputGroup>
           </FormField>
 
           <FormField label="Исполнители">
@@ -524,18 +669,6 @@ onMounted(async () => {
         </div>
 
         <div class="flex gap-3 items-center flex-wrap">
-          <div class="flex gap-2 items-center">
-            <Checkbox
-              v-model="form.compareWithPrev"
-              binary
-              input-id="task-analysis-compare-with-prev"
-            />
-            <label
-              for="task-analysis-compare-with-prev"
-              class="text-sm cursor-pointer"
-            >Сравнить с пред. периодом</label>
-          </div>
-
           <Button
             label="Загрузить"
             :loading="isLoading"
@@ -548,17 +681,17 @@ onMounted(async () => {
 
       <div class="flex gap-2 items-center mb-4 border-t border-surface-200 dark:border-surface-700 pt-3">
         <Checkbox
-          v-model="form.excludeHotfixes"
+          v-model="form.includeHotfixes"
           binary
-          input-id="task-analysis-exclude-hotfixes"
+          input-id="task-analysis-include-hotfixes"
         />
         <label
-          for="task-analysis-exclude-hotfixes"
+          for="task-analysis-include-hotfixes"
           class="text-sm cursor-pointer"
         >
-          Исключить хотфиксы
+          Учитывать хотфиксы в данных
           <i
-            v-tooltip="'Скрывает задачи, название которых начинается с «Hotfix»'"
+            v-tooltip="'Учитывает задачи с «Hotfix» в названии в общих показателях — «Задач всего», «Баллов всего», «Корневые», средние и коэф. декомпозиции — на всех вкладках.\nКолонка «Хотфиксы» на «Сводке» считается отдельно и не зависит от этой настройки.'"
             class="pi pi-question-circle text-surface-400 dark:text-surface-500"
           />
         </label>
@@ -579,6 +712,7 @@ onMounted(async () => {
         :default-tab="settings.defaultTab ?? 'summary'"
         :group-id="groupId"
         :date-range="fetchedDateRange"
+        :compare-date-range="form.compareEnabled ? fetchedCompareRange : null"
         class="mb-4"
       />
     </template>

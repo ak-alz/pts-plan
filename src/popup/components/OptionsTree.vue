@@ -234,6 +234,11 @@ watch(
         v-if="option.new"
         class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-surface-500 dark:text-surface-400"
       >new</span>
+      <span
+        v-if="option.beta"
+        v-tooltip.top="'Функция уже работает, но ещё дорабатывается — возможны шероховатости. Замечания приветствуются.'"
+        class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-amber-600 dark:text-amber-400 cursor-help"
+      >beta</span>
       <OptionHint
         v-if="option.tip"
         :tip="option.tip"

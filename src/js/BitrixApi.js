@@ -1,5 +1,140 @@
 import axios from 'axios';
 
+// Паузы перед повторами, когда Bitrix просит сбавить темп. Длинные не случайно:
+// QUERY_LIMIT_EXCEEDED (503) — слишком частые запросы, OPERATION_TIME_LIMIT (429) — исчерпан лимит
+// ресурсоёмкости, после которого метод блокируется на 10 минут, так что короткий повтор бесполезен.
+const RATE_LIMIT_RETRY_DELAYS = [3000, 10000, 30000];
+
+const RATE_LIMIT_ERROR_CODES = ['QUERY_LIMIT_EXCEEDED', 'OPERATION_TIME_LIMIT'];
+
+/** Текст для пользователя, когда повторы кончились: из «Request failed with status code 503» непонятно, что делать. */
+const RATE_LIMIT_ERROR_MESSAGE = 'Bitrix ограничил частоту запросов и не отдал данные. Подождите несколько минут и повторите — или сузьте период.';
+
+function delay(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+/**
+ * Похож ли ответ (или ошибка axios) на ограничение интенсивности запросов Bitrix.
+ * @param {any} data - Тело ответа Bitrix (`{error, error_description}`) либо элемент result_error батча.
+ * @param {number} [status] - HTTP-статус ответа.
+ * @returns {boolean}
+ */
+function isRateLimitResponse(data, status) {
+  if (status === 503 || status === 429) return true;
+  // У ответа метода код лежит в `error` строкой, у элемента result_error батча — объектом с тем же полем
+  const rawError = data?.error;
+  const code = String((rawError && typeof rawError === 'object' ? rawError.error : rawError) ?? '');
+  return RATE_LIMIT_ERROR_CODES.includes(code);
+}
+
+const DEFAULT_TASK_SELECT_FIELDS = [
+  'ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE',
+  'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID',
+];
+
+/**
+ * Собирает объект `filter` для tasks.task.list из именованных параметров поиска задач.
+ * Вынесен из searchTasks, чтобы тем же фильтром пользовался countTasksBatch.
+ * @param {Object} params - те же параметры, что принимает searchTasks (см. его JSDoc).
+ * @returns {Record<string, any>} Объект фильтра в терминах Bitrix.
+ */
+function buildTasksFilter({
+  ids,
+  favorite,
+  title,
+  smartTitleSearch,
+  excludeTitle,
+  status,
+  parentType,
+  parentIds,
+  groupId,
+  createdBy,
+  responsibleId,
+  stageIds,
+  createdDateFrom,
+  createdDateTo,
+  changedDateFrom,
+  changedDateTo,
+  closedDateFrom,
+  closedDateTo,
+}) {
+  const filter = {};
+  if (ids?.length) filter['ID'] = ids;
+  if (favorite) filter['::SUBFILTER-PARAMS'] = {FAVORITE: 'Y'};
+  if (title) {
+    const words = smartTitleSearch ? title.trim().split(/\s+/).filter(Boolean) : [];
+    if (words.length > 1) {
+      filter['::LOGIC'] = 'AND';
+      words.forEach((word, i) => {
+        filter[`::SUBFILTER-w${i}`] = {'%TITLE': word};
+      });
+    } else {
+      filter['%TITLE'] = title;
+    }
+  }
+
+  const excludeWords = excludeTitle ? excludeTitle.trim().split(/\s+/).filter(Boolean) : [];
+  if (excludeWords.length) {
+    if (!filter['::LOGIC']) filter['::LOGIC'] = 'AND';
+    if (filter['%TITLE']) {
+      filter['::SUBFILTER-title'] = {'%TITLE': filter['%TITLE']};
+      delete filter['%TITLE'];
+    }
+    excludeWords.forEach((word, i) => {
+      filter[`::SUBFILTER-ex${i}`] = {'!%TITLE': word};
+    });
+  }
+  if (status === 'active') filter['!STATUS'] = 5;
+  if (status === 'closed') filter['STATUS'] = 5;
+  if (parentType === 'root') filter['PARENT_ID'] = 0;
+  if (parentType === 'subtask') filter['!PARENT_ID'] = 0;
+  if (parentIds?.length) filter['PARENT_ID'] = parentIds;
+  if (groupId) filter['GROUP_ID'] = groupId;
+  if (createdBy) filter['CREATED_BY'] = createdBy;
+  if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
+  if (stageIds?.length) filter['STAGE_ID'] = stageIds;
+  if (createdDateFrom) filter['>=CREATED_DATE'] = createdDateFrom;
+  if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
+  if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
+  if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
+  if (closedDateFrom) filter['>=CLOSED_DATE'] = closedDateFrom;
+  if (closedDateTo) filter['<=CLOSED_DATE'] = closedDateTo;
+
+  return filter;
+}
+
+/**
+ * Превращает фильтр и набор полей в query-параметры одного вызова tasks.task.list.
+ * @param {Record<string, any>} filter - Результат buildTasksFilter.
+ * @param {Object} params
+ * @param {number} params.start - Смещение страницы (страница всегда 50 записей).
+ * @param {string[]} params.selectFields - Поля `select[]`.
+ * @param {{field: string, direction: 'ASC'|'DESC'}|null} [params.order] - Сортировка на сервере.
+ * @returns {URLSearchParams}
+ */
+function buildTaskListParams(filter, {start, selectFields, order = null}) {
+  const params = new URLSearchParams({start});
+
+  const appendFilter = (keyPath, value) => {
+    if (Array.isArray(value)) {
+      value.forEach((v) => params.append(`${keyPath}[]`, v));
+    } else if (value && typeof value === 'object') {
+      Object.entries(value).forEach(([k, v]) => appendFilter(`${keyPath}[${k}]`, v));
+    } else {
+      params.set(keyPath, value);
+    }
+  };
+
+  Object.entries(filter).forEach(([key, value]) => {
+    appendFilter(`filter[${key}]`, value);
+  });
+  selectFields.forEach((field) => params.append('select[]', field));
+  if (order?.field) params.set(`order[${order.field}]`, order.direction ?? 'ASC');
+
+  return params;
+}
+
 export default class BitrixApi {
   /**
    * @param {string} sessionId - `BX_SESSION_ID` страницы Bitrix (см. content-scripts/main.js).
@@ -441,107 +576,37 @@ export default class BitrixApi {
    * @param {string|null} params.closedDateTo - дата закрытия до
    * @param {{field: string, direction: 'ASC'|'DESC'}|null} params.order - сортировка результата на сервере (например {field: 'CREATED_DATE', direction: 'DESC'}); по умолчанию не задаётся
    * @param {string[]} params.extraSelectFields - дополнительные поля `select[]` сверх базового набора (например ['DESCRIPTION']) — не добавляются в общий набор, чтобы не утяжелять остальных вызывающих
+   * @param {string[]|null} params.selectFields - полная замена базового набора `select[]`: аналитике нужны свои поля (COMMENTS_COUNT, ACTIVITY_DATE) и не нужны базовые (FAVORITE, CHANGED_DATE), а на тысячах задач лишние поля — это лишние мегабайты
+   * @param {((progress: {loaded: number, total: number}) => void)|null} params.onProgress - вызывается после первой страницы и после каждого батча: выгрузка больших диапазонов идёт десятки секунд, и вызывающему нужно чем-то показать процент
    * @return {Promise<any[]>}
    */
   async searchTasks({
-                      ids,
-                      favorite,
-                      title,
-                      smartTitleSearch,
-                      excludeTitle,
-                      status,
-                      parentType,
-                      parentIds,
-                      groupId,
-                      createdBy,
-                      responsibleId,
-                      stageIds,
-                      createdDateFrom,
-                      createdDateTo,
-                      changedDateFrom,
-                      changedDateTo,
-                      closedDateFrom,
-                      closedDateTo,
                       order = null,
                       extraSelectFields = [],
+                      selectFields = null,
+                      onProgress = null,
                       limit = null,
+                      ...filterParams
                     }) {
     const PAGE_SIZE = 50;
-    const BATCH_SIZE = 50;
 
-    const filter = {};
-    if (ids?.length) filter['ID'] = ids;
-    if (favorite) filter['::SUBFILTER-PARAMS'] = {FAVORITE: 'Y'};
-    if (title) {
-      const words = smartTitleSearch ? title.trim().split(/\s+/).filter(Boolean) : [];
-      if (words.length > 1) {
-        filter['::LOGIC'] = 'AND';
-        words.forEach((word, i) => {
-          filter[`::SUBFILTER-w${i}`] = {'%TITLE': word};
-        });
-      } else {
-        filter['%TITLE'] = title;
-      }
-    }
-
-    const excludeWords = excludeTitle ? excludeTitle.trim().split(/\s+/).filter(Boolean) : [];
-    if (excludeWords.length) {
-      if (!filter['::LOGIC']) filter['::LOGIC'] = 'AND';
-      if (filter['%TITLE']) {
-        filter['::SUBFILTER-title'] = {'%TITLE': filter['%TITLE']};
-        delete filter['%TITLE'];
-      }
-      excludeWords.forEach((word, i) => {
-        filter[`::SUBFILTER-ex${i}`] = {'!%TITLE': word};
-      });
-    }
-    if (status === 'active') filter['!STATUS'] = 5;
-    if (status === 'closed') filter['STATUS'] = 5;
-    if (parentType === 'root') filter['PARENT_ID'] = 0;
-    if (parentType === 'subtask') filter['!PARENT_ID'] = 0;
-    if (parentIds?.length) filter['PARENT_ID'] = parentIds;
-    if (groupId) filter['GROUP_ID'] = groupId;
-    if (createdBy) filter['CREATED_BY'] = createdBy;
-    if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
-    if (stageIds?.length) filter['STAGE_ID'] = stageIds;
-    if (createdDateFrom) filter['>=CREATED_DATE'] = createdDateFrom;
-    if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
-    if (changedDateFrom) filter['>=CHANGED_DATE'] = changedDateFrom;
-    if (changedDateTo) filter['<=CHANGED_DATE'] = changedDateTo;
-    if (closedDateFrom) filter['>=CLOSED_DATE'] = closedDateFrom;
-    if (closedDateTo) filter['<=CLOSED_DATE'] = closedDateTo;
-
-    const selectFields = [
-      'ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE',
-      'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID', ...extraSelectFields,
-    ];
-
-    const appendFilter = (params, keyPath, value) => {
-      if (Array.isArray(value)) {
-        value.forEach((v) => params.append(`${keyPath}[]`, v));
-      } else if (value && typeof value === 'object') {
-        Object.entries(value).forEach(([k, v]) => appendFilter(params, `${keyPath}[${k}]`, v));
-      } else {
-        params.set(keyPath, value);
-      }
-    };
-
-    const buildParams = (start) => {
-      const params = new URLSearchParams({start});
-      Object.entries(filter).forEach(([key, value]) => {
-        appendFilter(params, `filter[${key}]`, value);
-      });
-      selectFields.forEach((f) => params.append('select[]', f));
-      if (order?.field) params.set(`order[${order.field}]`, order.direction ?? 'ASC');
-      return params;
-    };
+    const filter = buildTasksFilter(filterParams);
+    const fields = [...(selectFields ?? DEFAULT_TASK_SELECT_FIELDS), ...extraSelectFields];
+    const buildParams = (start) => buildTaskListParams(filter, {start, selectFields: fields, order});
 
     const firstParams = buildParams(0);
     firstParams.set('sessid', this.sessionId);
-    const {data: firstData} = await this.http.post('/rest/tasks.task.list.json', firstParams);
+    const {data: firstData} = await this.requestWithRateLimitRetry(
+      () => this.http.post('/rest/tasks.task.list.json', firstParams),
+    );
     const tasks = firstData?.result?.tasks ?? [];
     const total = firstData?.total ?? 0;
     const effectiveTotal = limit ? Math.min(total, limit) : total;
+    const reportProgress = (extraLoaded = 0) => onProgress?.({
+      loaded: Math.min(tasks.length + extraLoaded, effectiveTotal),
+      total: effectiveTotal,
+    });
+    reportProgress();
 
     if (effectiveTotal > PAGE_SIZE) {
       const remainingStarts = [];
@@ -549,31 +614,123 @@ export default class BitrixApi {
         remainingStarts.push(start);
       }
 
-      const chunks = [];
-      for (let i = 0; i < remainingStarts.length; i += BATCH_SIZE) {
-        chunks.push(remainingStarts.slice(i, i + BATCH_SIZE));
+      const {pageTasks, failedStarts} = await this.fetchTaskPages(remainingStarts, buildParams, reportProgress);
+      tasks.push(...pageTasks);
+
+      if (failedStarts.length) {
+        // Часть страниц отвалилась внутри батча (обычно лимит интенсивности) — добираем их отдельным
+        // проходом: без этого в выборке молча не хватило бы задач, а графики выглядели бы правдоподобно
+        await delay(RATE_LIMIT_RETRY_DELAYS[0]);
+        const retry = await this.fetchTaskPages(failedStarts, buildParams, reportProgress);
+        tasks.push(...retry.pageTasks);
+        if (retry.failedStarts.length) {
+          throw new Error(`Bitrix ограничил число запросов: не удалось загрузить ${retry.failedStarts.length * PAGE_SIZE} задач. Сузьте период и повторите через несколько минут.`);
+        }
       }
-
-      const batchResponses = await Promise.all(chunks.map((chunk) => {
-        const cmd = {};
-        chunk.forEach((start) => {
-          cmd[`p${start}`] = `tasks.task.list?${buildParams(start).toString()}`;
-        });
-        return this.http.postForm('/rest/batch.json', {
-          sessid: this.sessionId,
-          halt: false,
-          cmd,
-        });
-      }));
-
-      batchResponses.forEach((response) => {
-        Object.values(response.data?.result?.result ?? {}).forEach((pageResult) => {
-          tasks.push(...(pageResult.tasks ?? []));
-        });
-      });
     }
 
     return limit ? tasks.slice(0, limit) : tasks;
+  }
+
+  /**
+   * Повторяет запрос, когда Bitrix отвечает ограничением интенсивности (503 QUERY_LIMIT_EXCEEDED)
+   * или ресурсоёмкости (429 OPERATION_TIME_LIMIT), с растущими паузами. Остальные ошибки пробрасывает.
+   * Когда повторы кончились, тоже бросает: ограничение приходит и со статусом 200, и молча вернуть
+   * такой ответ значило бы показать пустую выборку вместо ошибки.
+   * @param {() => Promise<axios.AxiosResponse<any>>} sendRequest
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  async requestWithRateLimitRetry(sendRequest) {
+    for (let attempt = 0; ; attempt++) {
+      const canRetry = attempt < RATE_LIMIT_RETRY_DELAYS.length;
+      let response;
+
+      try {
+        response = await sendRequest();
+      } catch (e) {
+        if (!isRateLimitResponse(e.response?.data, e.response?.status)) throw e;
+        if (!canRetry) throw new Error(RATE_LIMIT_ERROR_MESSAGE, {cause: e});
+        await delay(RATE_LIMIT_RETRY_DELAYS[attempt]);
+        continue;
+      }
+
+      if (!isRateLimitResponse(response.data, response.status)) return response;
+      if (!canRetry) throw new Error(RATE_LIMIT_ERROR_MESSAGE);
+      await delay(RATE_LIMIT_RETRY_DELAYS[attempt]);
+    }
+  }
+
+  /**
+   * Выгружает страницы tasks.task.list батчами по 50 команд, **последовательно**: на длинном диапазоне
+   * это сотни вызовов метода, и одновременная отправка всех батчей упирается в лимиты Bitrix.
+   * @param {number[]} starts - Смещения страниц.
+   * @param {(start: number) => URLSearchParams} buildParams - Параметры одного вызова по смещению.
+   * @param {((loadedInThisCall: number) => void)|null} [onChunkLoaded] - Вызывается после каждого батча с числом уже выгруженных здесь задач (для прогресса).
+   * @return {Promise<{pageTasks: any[], failedStarts: number[]}>} Задачи и смещения страниц, ответ по которым не пришёл.
+   */
+  async fetchTaskPages(starts, buildParams, onChunkLoaded = null) {
+    const BATCH_SIZE = 50;
+    const pageTasks = [];
+    const failedStarts = [];
+
+    for (let i = 0; i < starts.length; i += BATCH_SIZE) {
+      const chunk = starts.slice(i, i + BATCH_SIZE);
+      const cmd = {};
+      chunk.forEach((start) => {
+        cmd[`p${start}`] = `tasks.task.list?${buildParams(start).toString()}`;
+      });
+
+      const response = await this.requestWithRateLimitRetry(() => this.http.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      }));
+
+      const {result, result_error: resultError} = response.data?.result ?? {};
+      Object.values(result ?? {}).forEach((pageResult) => {
+        pageTasks.push(...(pageResult?.tasks ?? []));
+      });
+      Object.keys(resultError ?? {}).forEach((key) => {
+        failedStarts.push(Number(key.slice(1)));
+      });
+
+      onChunkLoaded?.(pageTasks.length);
+    }
+
+    return {pageTasks, failedStarts};
+  }
+
+  /**
+   * Число задач по каждому набору фильтров, без выгрузки самих задач. Нужно для предварительной оценки
+   * объёма («будет загружено ~N задач») перед тяжёлой выгрузкой; всё уходит одним батчем, потому что
+   * прикидок обычно несколько, а по отдельности они лишь задерживают старт загрузки.
+   * @param {Object[]} paramsList - Наборы параметров фильтрации (те же, что у searchTasks).
+   * @return {Promise<number[]>} Количества в том же порядке, что наборы.
+   */
+  async countTasksBatch(paramsList) {
+    const BATCH_SIZE = 50;
+    const counts = [];
+
+    for (let i = 0; i < paramsList.length; i += BATCH_SIZE) {
+      const chunk = paramsList.slice(i, i + BATCH_SIZE);
+      const cmd = {};
+      chunk.forEach((params, index) => {
+        const listParams = buildTaskListParams(buildTasksFilter(params), {start: 0, selectFields: ['ID']});
+        cmd[`c${index}`] = `tasks.task.list?${listParams.toString()}`;
+      });
+
+      const response = await this.requestWithRateLimitRetry(() => this.http.postForm('/rest/batch.json', {
+        sessid: this.sessionId,
+        halt: false,
+        cmd,
+      }));
+
+      // Общее количество под фильтром батч отдаёт отдельным полем result_total, по имени команды
+      const totals = response.data?.result?.result_total ?? {};
+      chunk.forEach((_, index) => counts.push(Number(totals[`c${index}`] ?? 0)));
+    }
+
+    return counts;
   }
 
   addTask(fields) {

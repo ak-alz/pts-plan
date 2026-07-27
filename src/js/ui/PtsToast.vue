@@ -11,6 +11,10 @@ import {Toast} from 'primevue';
  * @param {string} [position] - позиция на экране (проп `position` у PrimeVue `Toast`).
  * @param {number} [baseZIndex] - базовый z-index (проп `baseZIndex` у PrimeVue `Toast`) — приподнят
  * над `zIndex.modal` из `primeVueOptions.js`, чтобы тост не терялся под полноэкранными панелями Bitrix.
+ * z-index корневого элемента дополнительно зафиксирован через `pt.root.style` (см. `<template>`):
+ * `ZIndexUtils` PrimeVue выставляет его сам, но только при enter-переходе `TransitionGroup`, а
+ * первое сообщение при монтировании хоста иногда попадает в самый первый рендер списка, для
+ * которого enter не запускается — тогда z-index так и остаётся `auto`.
  */
 defineProps({
   group: {
@@ -52,6 +56,7 @@ function keepAliveOnHover() {}
     :group
     :position
     :base-z-index="baseZIndex"
+    :pt="{ root: { style: { zIndex: 9999 } } }"
     :on-mouse-enter="keepAliveOnHover"
     :on-mouse-leave="keepAliveOnHover"
     @close="$emit('close', $event)"

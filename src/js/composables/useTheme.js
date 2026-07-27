@@ -5,9 +5,9 @@ const MODES = ['auto', 'light', 'dark'];
 
 const ICONS = {auto: 'pi-desktop', light: 'pi-sun', dark: 'pi-moon'};
 const TOOLTIPS = {
-  auto: 'Тема: авто (по системе)',
+  auto: 'Тема: авто (по системе, кроме виджетов)',
   light: 'Тема: светлая',
-  dark: 'Тема: тёмная',
+  dark: 'Тема: тёмная (+ виджеты)',
 };
 
 const darkMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');

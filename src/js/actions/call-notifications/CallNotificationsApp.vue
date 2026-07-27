@@ -9,6 +9,7 @@ import {
   getReminderKeyFromDismissedKey,
   getReminderTitle,
   getToastDismissedKey,
+  isMeetingEnabled,
   isToastDismissedKey,
   selectLeaderTabId,
   toPlainMeetings,
@@ -91,11 +92,12 @@ function onPageHide() {
   presenceChannel.postMessage({type: 'bye', tabId});
 }
 
-// Напоминание в очереди «живо», пока встреча существует и (для разовой) ещё ожидает — так модалка
-// сама закроется, если встречу приняли/удалили в другой вкладке или разовая ушла в пропущенные
+// Напоминание в очереди «живо», пока встреча существует, включена и (для разовой) ещё ожидает —
+// так окно само закроется, если встречу приняли/удалили/отключили в другой вкладке или разовая
+// ушла в пропущенные
 function isReminderValid(reminder) {
   const meeting = meetings.value.find((item) => item.id === reminder.meetingId);
-  if (!meeting) return false;
+  if (!meeting || !isMeetingEnabled(meeting)) return false;
   return meeting.type !== MEETING_TYPE.ONCE || meeting.status === MEETING_STATUS.PENDING;
 }
 

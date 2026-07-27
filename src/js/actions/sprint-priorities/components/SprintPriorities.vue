@@ -227,7 +227,9 @@ async function parseSheetRows() {
   // Через service worker, а не прямым fetch: контент-скрипт ходит от имени страницы Bitrix, и
   // доступ к docs.google.com ему даёт только CORS-политика Google, а не host_permissions расширения.
   // Query собираем строкой — «tqx=out:json» Google ждёт именно с двоеточием, без процентной кодировки
-  const fetchUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&gid=${gid}`;
+  // headers=0 отключает автоопределение заголовка самим Google — иначе оно иногда само вырезает
+  // первую строку из table.rows ещё до нашего hasHeaders, и rows.slice(1) ниже режет уже настоящие данные
+  const fetchUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:json&gid=${gid}&headers=0`;
   const text = await backgroundFetch('GET', fetchUrl, {responseType: 'text', throwOnHttpError: true});
 
   // Ответ gviz — JSON, завёрнутый в вызов функции: /*O_o*/google.visualization.Query.setResponse({…});

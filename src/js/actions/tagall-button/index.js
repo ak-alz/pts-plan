@@ -2,30 +2,75 @@ import BitrixApi from '../../BitrixApi.js';
 import {showToast} from '../../toastHost/showToast.js';
 import {getTagallCommentText, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
-export function tagallButton(sessionId, commentSuffix) {
-  const commentText = getTagallCommentText(commentSuffix);
+/**
+ * Имя пользователя по ID. Кэш нужен канбану — там имена постановщиков повторяются от карточки
+ * к карточке; для одиночного вызова его можно не передавать.
+ */
+async function resolveUserName(bitrixApi, userId, userNameCache = new Map()) {
+  if (userNameCache.has(userId)) return userNameCache.get(userId);
 
-  setupKanbanButton(sessionId, commentText);
-  setupTaskCommentButton(commentText);
+  const users = await bitrixApi.getImUsersBatch([userId]);
+  const user = users[userId];
+  const userName = user?.name || [user?.first_name, user?.last_name].filter(Boolean).join(' ') || userId;
+  userNameCache.set(userId, userName);
+  return userName;
 }
 
-function setupKanbanButton(sessionId, commentText) {
+export function tagallButton(sessionId, options) {
+  const bitrixApi = new BitrixApi(sessionId);
+  const commentSuffix = options?.tagallButtonSuffix;
+  const authorOnly = options?.tagallButtonAuthorOnly;
+
+  if (options?.tagallButtonKanban) {
+    setupKanbanButton(bitrixApi, commentSuffix, authorOnly);
+  }
+  setupTaskCommentButton(bitrixApi, commentSuffix, authorOnly);
+}
+
+function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
   const kanbanGrid = document.querySelector('.main-kanban-grid');
   if (!kanbanGrid) return;
 
-  const bitrixApi = new BitrixApi(sessionId);
+  const userNameCache = new Map();
 
-  function addKanbanButtons() {
-    const kanbanItems = kanbanGrid.querySelectorAll('.main-kanban-item[data-id]:not([data-tagall-processed])');
+  async function addKanbanButtons() {
+    const items = [...kanbanGrid.querySelectorAll('.main-kanban-item[data-id]:not([data-tagall-processed])')];
+    if (!items.length) return;
 
-    kanbanItems.forEach((item) => {
+    // Помечаем сразу, синхронно — до await, иначе повторный вызов rehydrateOnChanges (например,
+    // от собственной подгрузки карточек) успеет обработать те же карточки ещё раз
+    items.forEach((item) => {
       item.dataset.tagallProcessed = '1';
+    });
 
+    let createdByByTaskId = {};
+    if (authorOnly) {
+      try {
+        const taskIds = items.map((item) => item.dataset.id).filter(Boolean);
+        const tasks = await bitrixApi.getTasksByIdsBatch(taskIds, ['ID', 'CREATED_BY']);
+        createdByByTaskId = Object.fromEntries(taskIds.map((taskId) => [taskId, tasks[taskId]?.createdBy]));
+
+        const unresolvedUserIds = [...new Set(Object.values(createdByByTaskId).filter(Boolean))];
+        await Promise.all(unresolvedUserIds.map((userId) => resolveUserName(bitrixApi, userId, userNameCache)));
+      } catch (error) {
+        console.warn(error);
+      }
+    }
+
+    items.forEach((item) => {
       const taskId = item.dataset.id;
       if (!taskId) return;
 
       const control = item.querySelector('.tasks-kanban-item-control');
       if (!control) return;
+
+      const createdBy = createdByByTaskId[taskId];
+      // Постановщик не определён (ошибка запроса или задача без CREATED_BY) — тегать некого
+      if (authorOnly && !createdBy) return;
+
+      const commentText = authorOnly
+        ? getTagallCommentText(commentSuffix, `[USER=${createdBy}]${userNameCache.get(createdBy)}[/USER]`)
+        : getTagallCommentText(commentSuffix);
 
       const button = Object.assign(document.createElement('button'), {
         className: 'tagall-button',
@@ -83,12 +128,29 @@ function insertTextIntoEditor(form, text) {
   iframeDocument.execCommand('insertText', false, text);
 }
 
-function setupTaskCommentButton(commentText) {
+async function setupTaskCommentButton(bitrixApi, commentSuffix, authorOnly) {
   const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const commentsBlock = document.querySelector('.feed-comments-block');
   if (!commentsBlock) return;
+
+  let commentText;
+  if (authorOnly) {
+    try {
+      const {data} = await bitrixApi.getTask(ids.taskId, ['CREATED_BY']);
+      const createdBy = data?.result?.task?.createdBy;
+      if (!createdBy) return; // постановщик неизвестен — вставлять нечего
+
+      const userName = await resolveUserName(bitrixApi, createdBy);
+      commentText = getTagallCommentText(commentSuffix, `[USER=${createdBy}]${userName}[/USER]`);
+    } catch (error) {
+      console.warn(error);
+      return;
+    }
+  } else {
+    commentText = getTagallCommentText(commentSuffix);
+  }
 
   function addCommentButtons() {
     // .bx-b-pixeplus-tag-all — нативная кнопка тегания всех участников в тулбаре редактора комментария,

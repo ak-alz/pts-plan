@@ -19,8 +19,8 @@ const steps = [
     features: ['decomposeTask', 'editTaskTitle', 'showComments', 'statusMarkers', 'invisibleMentions', 'fixLinks', 'worktimeEnd', 'callNotifications'],
     options: [
       { label: 'Разработчик', value: 'developer', description: 'Пишете код, работаете с git', features: ['commitButton', 'kanbanCommitButton', 'tagallButton', 'exportTask'] },
-      { label: 'Руководитель / аналитик', value: 'management', description: 'Ставите задачи, следите за спринтами и метриками команды', features: ['exportGroupTasks'] },
-      { label: 'И то, и другое', value: 'both', description: 'И разработка, и планирование с аналитикой', features: ['commitButton', 'kanbanCommitButton', 'tagallButton', 'exportTask', 'exportGroupTasks'] },
+      { label: 'Руководитель / аналитик', value: 'management', description: 'Ставите задачи, следите за спринтами и метриками команды', features: ['exportGroupTasks', 'taskDynamics'] },
+      { label: 'И то, и другое', value: 'both', description: 'И разработка, и планирование с аналитикой', features: ['commitButton', 'kanbanCommitButton', 'tagallButton', 'exportTask', 'exportGroupTasks', 'taskDynamics'] },
       { label: 'Просто работаю с задачами', value: 'basic', description: 'Ведёте свои задачи: комментарии, статусы, подзадачи', features: [] },
     ],
   },
@@ -32,7 +32,7 @@ const steps = [
     default: ['notifications'],
     options: [
       { label: 'Канбан-доска', value: 'kanban', description: 'Доска задач с колонками по стадиям', features: ['taskSearch', 'quickTask', 'kanbanCommitButton', 'tagallButton'] },
-      { label: 'Панель уведомлений', value: 'notifications', description: 'Колокольчик и всплывающие оповещения Битрикса', features: ['notificationDetails', 'removeSystemNotifications', 'closeNotifications', 'removeNotifications', 'browserNotifications'] },
+      { label: 'Панель уведомлений', value: 'notifications', description: 'Колокольчик, всплывающие оповещения Битрикса и страница всех уведомлений', features: ['notificationDetails', 'removeSystemNotifications', 'closeNotifications', 'removeNotifications', 'browserNotifications', 'alertPage'] },
       { label: 'Работа с задачами и комментариями', value: 'automation', description: 'Автовыбор при упоминании через «+», наблюдатели по умолчанию при создании задачи, автоподстановка названия подзадачи, исправление багов Bitrix, действия в новой вкладке, название группы во вкладке браузера', features: ['autoChoiceUser', 'autoAuditor', 'autoTaskTitle', 'bitrixBugfixes', 'openInNewTab', 'groupTitle'] },
     ],
   },

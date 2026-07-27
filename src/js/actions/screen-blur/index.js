@@ -9,6 +9,8 @@ const selectors = [
   '.ui-toolbar-title-item',
   '.pts-blur',
   '.ui-notification-manager-browser-text',
+  // Ответ AI — свободный текст, в котором модель называет и людей, и задачи
+  '.pts-ai-result',
 ];
 
 (() => {

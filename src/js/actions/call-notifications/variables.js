@@ -17,8 +17,14 @@ export const MEETING_STATUS = {
   MISSED: 'missed',
 };
 
+// «Напоминать за»: два особых значения вместо минут — не напоминать заранее и напомнить ровно
+// в момент начала встречи. Вместе с «напоминать после начала» эти два селекта полностью задают
+// окно показа: первый — его начало, второй — конец, ничего не срабатывает «само по себе» помимо них
+export const REMINDER_DISABLED = -1;
+export const REMINDER_AT_START = 0;
+
 export const DEFAULT_SETTINGS = {
-  reminderMinutes: 1,
+  reminderMinutes: REMINDER_AT_START,
   lateReminderMinutes: 10,
   browserNotificationEnabled: true,
   browserNotificationSilent: true,
@@ -31,7 +37,7 @@ export const DEFAULT_SETTINGS = {
 
 export const LATE_REMINDER_MINUTES_OPTIONS = [0, 5, 10, 15, 30];
 
-export const REMINDER_MINUTES_OPTIONS = [0, 1, 2, 3, 5, 10, 15, 30, 45, 60];
+export const REMINDER_MINUTES_OPTIONS = [REMINDER_DISABLED, REMINDER_AT_START, 1, 2, 3, 5, 10, 15, 30, 45, 60];
 
 export const RINGTONE_MAX_MINUTES_OPTIONS = [1, 2, 3, 5, 10];
 
@@ -42,6 +48,11 @@ export const SHOWN_REMINDERS_MAX_AGE_DAYS = 7;
 export const MEETINGS_MAX_AGE_DAYS = 30;
 
 export const POLL_INTERVAL_MS = 30_000;
+
+// «В момент встречи» не может сработать в математически точный момент начала — движок просыпается
+// раз в POLL_INTERVAL_MS. Поэтому у такого напоминания всегда есть минимальное окно после начала,
+// даже когда «ещё напоминать после начала» выключено, иначе оно не сработало бы никогда
+export const AT_START_GRACE_MS = POLL_INTERVAL_MS * 2;
 
 // Выбор «ведущей» вкладки: на несколько открытых вкладок Bitrix напоминание показывает только
 // одна (приоритет — видимой), чтобы не звенело сразу в нескольких. Вкладки знают друг о друге через

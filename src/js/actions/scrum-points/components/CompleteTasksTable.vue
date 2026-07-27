@@ -185,6 +185,7 @@ async function undoSelectedTasks() {
       :always-show-paginator="false"
       :loading="isLoading"
       striped-rows
+      show-gridlines
     >
       <template #header>
         <div class="flex items-center gap-3">
@@ -245,6 +246,10 @@ async function undoSelectedTasks() {
         header="Обновление"
         sortable
       />
+
+      <template #empty>
+        Нет данных
+      </template>
     </DataTable>
 
     <DataTable
@@ -253,7 +258,12 @@ async function undoSelectedTasks() {
       :value="completedTasks"
       data-key="id"
       size="small"
+      paginator
+      :rows="15"
+      :rows-per-page-options="[15, 30, 50, 100]"
+      :always-show-paginator="false"
       striped-rows
+      show-gridlines
     >
       <template #header>
         <div class="flex items-center gap-3">

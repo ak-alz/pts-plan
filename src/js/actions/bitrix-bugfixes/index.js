@@ -1,4 +1,4 @@
-import {getTaskIdFromUrl, insertCSS, waitForElement} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, waitForElement} from '../../utils.js';
 
 async function redirectAfterTaskCreate() {
   const url = new URL(window.location.href);
@@ -43,6 +43,59 @@ function scrollUserLists() {
   `, 'pts-scroll-user-lists');
 }
 
+// Окно «Редактирование рабочего дня» Bitrix позиционирует до того, как в него дорисуются
+// циферблаты, поэтому оно уезжает за край экрана и обрезается. Событие resize заставляет
+// BX.PopupWindow пересчитать положение по итоговым размерам
+const TIMEMAN_POPUP_SELECTOR = '[id^="timeman_edit_popup"]';
+
+function fixTimemanPopupPosition() {
+  const positionedPopups = new WeakSet();
+
+  function repositionPopup() {
+    const popups = document.querySelectorAll(TIMEMAN_POPUP_SELECTOR);
+    if (!popups.length) return;
+
+    let needsResize = false;
+
+    for (const popup of popups) {
+      const {width, height} = popup.getBoundingClientRect();
+
+      // Закрытое окно даёт нулевые размеры — снимаем метку, чтобы починить его при следующем показе
+      if (!width || !height) {
+        positionedPopups.delete(popup);
+        continue;
+      }
+
+      // Пересчёт меняет style окна, что снова разбудит наблюдатель — метка гасит цикл
+      if (positionedPopups.has(popup)) continue;
+
+      positionedPopups.add(popup);
+      needsResize = true;
+    }
+
+    if (!needsResize) return;
+
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  rehydrateOnChanges(repositionPopup, document.body, {
+    attributes: ['class', 'style'],
+    // Кэшированное окно Bitrix открывает повторно сменой style/class, а не вставкой в DOM,
+    // поэтому смотрим и на атрибуты — но только у самого окна
+    filterMutation: (mutation) => {
+      if (mutation.type === 'attributes') {
+        return !!mutation.target.matches?.(TIMEMAN_POPUP_SELECTOR);
+      }
+
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE && node.matches(TIMEMAN_POPUP_SELECTOR)) return true;
+      }
+
+      return false;
+    },
+  });
+}
+
 export function bitrixBugfixes(options = {}) {
   if (options.bitrixBugfixesRedirectAfterTaskCreate) {
     redirectAfterTaskCreate();
@@ -50,5 +103,9 @@ export function bitrixBugfixes(options = {}) {
 
   if (options.bitrixBugfixesScrollUserLists) {
     scrollUserLists();
+  }
+
+  if (options.bitrixBugfixesTimemanPopupPosition) {
+    fixTimemanPopupPosition();
   }
 }

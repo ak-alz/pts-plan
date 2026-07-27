@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import {Button, DatePicker, Dialog, InputMask, InputText, Message, MultiSelect, SelectButton} from 'primevue';
 import {computed, reactive, watch} from 'vue';
 
+import {isMeetingEnabled} from '../../js/actions/call-notifications/meetingsEngine.js';
 import {MEETING_STATUS, MEETING_TYPE, WEEKDAY_LABELS} from '../../js/actions/call-notifications/variables.js';
 import {MEETING_TIME_RE} from '../../js/patterns.js';
 import FormField from '../../js/ui/FormField.vue';
@@ -102,6 +103,8 @@ function onSubmit() {
     type: form.type,
     title: form.title.trim(),
     link: form.link.trim(),
+    // Правка не должна включать встречу обратно: отключённой она и остаётся, пока не вернут тумблером
+    enabled: isMeetingEnabled(props.meeting ?? {}),
   };
 
   const meeting = form.type === MEETING_TYPE.ONCE

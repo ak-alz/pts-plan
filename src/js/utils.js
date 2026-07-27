@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import {throttle, toUpper} from 'lodash-es';
 
 import {
@@ -113,16 +114,17 @@ export function getCommitMessage(title, taskId) {
 }
 
 /**
- * Строит текст комментария вида «TAGALL, <suffix>». TAGALL всегда хардкодится заглавными буквами —
- * настраивается только часть после него. Если пользователь уже начал `suffix` со своего TAGALL
- * (в любом регистре) и/или запятой с пробелами, они срезаются и подставляются заново — чтобы не задваивать.
- * @param {string} [suffix] - текст после «TAGALL, »; если пустой (или содержит только запятые/пробелы), подставляется «на проде»
+ * Строит текст комментария вида «<mention>, <suffix>». Если пользователь уже начал `suffix` со
+ * своего TAGALL (в любом регистре) и/или запятой с пробелами, они срезаются и подставляются заново —
+ * чтобы не задваивать.
+ * @param {string} [suffix] - текст после упоминания; если пустой (или содержит только запятые/пробелы), подставляется «на проде»
+ * @param {string} [mention] - кого тегнуть в начале комментария; по умолчанию `TAGALL_TOKEN` (все участники задачи), но может быть тег конкретного пользователя (`[USER=ID]Имя[/USER]`)
  * @returns {string}
  */
-export function getTagallCommentText(suffix) {
+export function getTagallCommentText(suffix, mention = TAGALL_TOKEN) {
   const withoutLeadingTagall = (suffix ?? '').trim().replace(TAGALL_LEADING_RE, '');
   const normalizedSuffix = withoutLeadingTagall.trim().replace(/^[,\s]+/, '') || 'на проде';
-  return `TAGALL, ${normalizedSuffix}`;
+  return `${mention}, ${normalizedSuffix}`;
 }
 
 /**
@@ -157,6 +159,37 @@ export function getTaskPointsFromName(taskName) {
   } else {
     return 0;
   }
+}
+
+/**
+ * Диапазон сравнения по умолчанию — предыдущий период такой же длины; его конец стыкуется с началом
+ * основного периода так же, как это делают пресеты «От сегодня»/«Ранее» в DateRangePicker.
+ * @param {[Date, Date]|null} dateRange - Основной период.
+ * @returns {[Date, Date]|null} Диапазон сравнения, либо `null`, если основной период не задан.
+ */
+export function computeDefaultCompareRange(dateRange) {
+  if (!dateRange?.[0]) return null;
+  const durationDays = dateRange[1] ? dayjs(dateRange[1]).diff(dayjs(dateRange[0]), 'day') : 0;
+  const previousEnd = dayjs(dateRange[0]);
+  const previousStart = previousEnd.subtract(durationDays, 'day');
+  return [previousStart.toDate(), previousEnd.toDate()];
+}
+
+/**
+ * Границы сравнительного периода для запроса к API. Если конец диапазона сравнения стыкуется с началом
+ * основного периода день-в-день (как у пресетов DateRangePicker), день стыка исключается — иначе задача,
+ * закрытая в этот день, попадёт сразу в оба периода и задвоится в дельтах.
+ * @param {[Date, Date]|null} compareDateRange - Диапазон сравнения.
+ * @param {[Date, Date]|null} dateRange - Основной период.
+ * @returns {[Date, Date]|null} Скорректированный диапазон, либо `null`, если сравнение не выбрано.
+ */
+export function getCompareRequestRange(compareDateRange, dateRange) {
+  if (!compareDateRange?.[0]) return null;
+  const compareEnd = dayjs(compareDateRange[1] ?? compareDateRange[0]);
+  const adjustedEnd = dateRange?.[0] && compareEnd.isSame(dayjs(dateRange[0]), 'day')
+    ? compareEnd.subtract(1, 'day')
+    : compareEnd;
+  return [dayjs(compareDateRange[0]).toDate(), adjustedEnd.toDate()];
 }
 
 /**

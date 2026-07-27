@@ -19,7 +19,7 @@ export function sprintPriorities(sessionId) {
 
   const appContainer = Object.assign(document.createElement('div'), {
     className: 'js-sprint-priorities pts-actions-bar-btn',
-    style: 'order: 6;',
+    style: 'order: 7;',
   });
 
   buttonsContainer.appendChild(appContainer);

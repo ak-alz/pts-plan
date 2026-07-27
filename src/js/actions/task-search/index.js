@@ -19,7 +19,7 @@ export function taskSearch(sessionId) {
 
   const appContainer = Object.assign(document.createElement('div'), {
     className: 'js-task-search pts-actions-bar-btn',
-    style: 'order: 5;',
+    style: 'order: 6;',
   });
 
   buttonsContainer.appendChild(appContainer);

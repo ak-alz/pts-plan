@@ -79,6 +79,14 @@ export function createPrimeVueOptions({darkModeSelector = '.pts-dark'} = {}) {
           },
         },
       },
+      inputgroupaddon: {
+        root: {
+          style: {
+            padding: '0.375rem',
+            minWidth: 'unset',
+          },
+        },
+      },
     },
   };
 }

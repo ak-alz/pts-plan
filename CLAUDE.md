@@ -58,9 +58,18 @@ Each feature lives in `src/js/actions/<feature-name>/`. The central registry is 
 
 Simple features do direct DOM manipulation; complex ones (e.g., `scrum-points`, `scrum-summary`) mount full Vue 3 apps into injected DOM nodes.
 
+Two badge flags on a feature entry, both rendered by `OptionsTree.vue` next to the feature name (so they show up in the popup and on the whats-new page alike): `new: true` — recently added, also drives the «Новые» filter in the popup; `beta: true` — shipped deliberately unpolished, rendered in amber with a tooltip saying so. Drop `beta` once the feature settles.
+
 ### Vue file conventions
 
 In `.vue` files, `<script setup>` always comes before `<template>`.
+
+### PrimeVue component conventions
+
+- **`size="small"` on every PrimeVue input/control** — `Button`, `Select`, `MultiSelect`, `InputText`, `DatePicker`, `ToggleSwitch`, `DataTable`, etc. The default (medium) size doesn't match the rest of the UI; every existing widget uses `small` — don't leave a new control at the default size. **`Checkbox` is the exception** — it stays at its default size, which already lines up with the `text-sm` label next to it; pass `size="small"` only when it sits inside an `InputGroupAddon` and has to match the height of the group's other controls (see `task-dynamics`/`task-analysis`, the «Сравнить с» field).
+- **`DataTable`: always add a `#empty` slot.** Without it, an empty table falls back to PrimeVue's default (unstyled, English) placeholder. Convention across the codebase is a plain `Нет данных` (see `scrum-points/components/ColumnTable.vue`, `TotalTable.vue`) — a more specific message is fine when it helps (e.g. "Настройте таблицу…"), but never leave the slot out.
+- **`DataTable`: add `show-gridlines`** for a consistent bordered-cell look across widgets.
+- **`DataTable`: paginate any table whose row count can grow unbounded** (a full task list, a session-accumulated log, etc.) — `paginator :rows="15" :rows-per-page-options="[15, 30, 50, 100]" :always-show-paginator="false"`. A table capped to a handful of rows by construction (e.g. one row per kanban stage) doesn't need one.
 
 ### Comments
 
@@ -118,7 +127,7 @@ Also: give every "card"-like container its own explicit background class — don
 ### Critical constraints
 
 - **Do not use `<style>` blocks in Vue components used inside content scripts.** The CRXJS build pipeline injects these into `document.head`, which breaks content script isolation. Use Tailwind utility classes or `src/css/content-styles.css` instead. `<style>` blocks work fine in popup and whats-new components.
-- **Global CSS:** `src/css/content-styles.css` — for content scripts; `src/css/app.css` — for the popup and whats-new pages. Avoid `insertCSS` from `utils.js` for static styles — it's for dynamic/runtime cases only. For PrimeVue overrides that PT can't reach (e.g. pseudo-elements), add a class via `:pt="{ root: { class: '...' } }"` and target it in a `<style>` block (popup/whats-new) or in `content-styles.css` (content scripts).
+- **Global CSS:** `src/css/content-styles.css` — for content scripts; `src/css/app.css` — for the popup and whats-new pages. `insertCSS` from `utils.js` is an equally valid way to ship **any** CSS, static included — it's the natural fit for a vanilla-JS feature whose styles only make sense next to the code that injects the markup (pass an `id` so repeated calls dedupe); see `alert-page` for the pattern. Reach for the global stylesheets when the rules are shared between features or need the Tailwind pipeline. For PrimeVue overrides that PT can't reach (e.g. pseudo-elements), add a class via `:pt="{ root: { class: '...' } }"` and target it in a `<style>` block (popup/whats-new) or in `content-styles.css` (content scripts).
 - **Tailwind CSS is compiled separately** (`build-css` script). New Tailwind utility classes won't hot-reload; run `npm run build-css` after adding new classes.
 - **Update version in `package.json`** before publishing (CRXJS reads it for `manifest.json`).
 - **Always `toRaw()` a `ref`/`reactive` value before passing it to `chrome.storage.local.set()`.** `ref([])`/`reactive({...})` wraps arrays and objects in a reactive `Proxy`. `chrome.storage` doesn't serialize a `Proxy`-wrapped array as a real array (Chrome's internal converter checks the native array type, which a `Proxy` doesn't have) — it comes back on the next load as a plain object (e.g. `{0: 'a', 1: 'b'}`), silently breaking `Array.isArray()` checks and any array method call downstream (symptom seen in practice: PrimeVue `MultiSelect`/`Listbox` throwing `(this.d_value || []).some is not a function` because the restored "array" isn't one). Wrap with `toRaw(...)` (or spread into a new plain array/object, e.g. `[...myRef.value]`) right before the `chrome.storage.local.set()` call — see the `toRaw` usage in most `SettingsForm.vue` files for the established pattern.

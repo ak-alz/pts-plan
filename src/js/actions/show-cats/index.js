@@ -37,6 +37,22 @@ const providers = {
     },
   },
 
+  aicats: {
+    async fetch() {
+      const url = new URL('https://api.ai-cats.net/v2/cats/random/bulk');
+      url.searchParams.append('size', '256');
+      url.searchParams.append('type', 'Image');
+      url.searchParams.append('limit', '10');
+      const {data} = await axios.get(url.toString());
+
+      return data.map((cat) => {
+        const fullUrl = new URL(cat.url);
+        fullUrl.searchParams.delete('size');
+        return {url: cat.url, fullUrl: fullUrl.toString()};
+      });
+    },
+  },
+
   httpcat: {
     fetch() {
       const allCodes = [

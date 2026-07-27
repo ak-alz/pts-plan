@@ -1,6 +1,6 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Avatar, Button, Checkbox, Select, ToggleSwitch } from 'primevue';
+import { Avatar, Button, Checkbox, Dialog, MultiSelect, Select, ToggleSwitch } from 'primevue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
@@ -8,7 +8,9 @@ import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
 import { getTaskPointsFromName, isHotfixTask } from '../../../utils.js';
+import { getPeriodRange, ROOT_STATUS_OPTIONS } from '../variables.js';
 import GroupedTasksTable from './GroupedTasksTable.vue';
+import SettingsForm from './SettingsForm.vue';
 import TaskTable from './TaskTable.vue';
 
 const props = defineProps({
@@ -23,21 +25,16 @@ const props = defineProps({
 });
 
 const bitrixApi = new BitrixApi(props.sessionId);
+const SETTINGS_KEY = `sprint-history-settings-${props.groupId}`;
 
-function getPrevWeekRange() {
-  const today = dayjs();
-  const dayOfWeek = today.day(); // 0 — воскресенье, 1 — понедельник … 6 — суббота
-  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  const thisMonday = today.subtract(daysSinceMonday, 'day').startOf('day');
-  return [
-    thisMonday.subtract(7, 'day').toDate(),
-    thisMonday.subtract(1, 'day').toDate(),
-  ];
-}
+const settings = ref({});
+const isSettingsModalOpened = ref(false);
 
-const dateRange = ref(getPrevWeekRange());
+const dateRange = ref(getPeriodRange('prevWeek'));
 const selectedUserId = ref(null);
 const excludeHotfixes = ref(false);
+const selectedStageIds = ref([]);
+const rootStatusFilter = ref('all');
 const isLoading = ref(false);
 const allTasks = ref([]);
 
@@ -45,6 +42,27 @@ const groupByParent = ref(false);
 const stages = ref([]);
 const parentTasksMap = ref({});
 const groupedDataLoaded = ref(false);
+
+function applyDefaults() {
+  dateRange.value = getPeriodRange(settings.value.defaultPeriod ?? 'prevWeek');
+  selectedUserId.value = settings.value.defaultResponsibleId ?? null;
+  excludeHotfixes.value = settings.value.defaultExcludeHotfixes ?? false;
+  groupByParent.value = settings.value.defaultGroupByParent ?? false;
+  selectedStageIds.value = settings.value.defaultStageIds ?? [];
+  rootStatusFilter.value = settings.value.defaultRootStatus ?? 'all';
+}
+
+async function loadSettings() {
+  const stored = await chrome.storage.local.get(SETTINGS_KEY);
+  settings.value = stored[SETTINGS_KEY] ?? {};
+}
+
+function onSettingsSaved(newSettings) {
+  settings.value = newSettings;
+  isSettingsModalOpened.value = false;
+  applyDefaults();
+  fetchData();
+}
 
 const users = computed(() => {
   const map = {};
@@ -64,6 +82,11 @@ const filteredTasks = computed(() => {
   let tasks = allTasks.value;
   if (excludeHotfixes.value) tasks = tasks.filter((task) => !isHotfixTask(task.title));
   if (selectedUserId.value) tasks = tasks.filter((task) => task.responsible.id === selectedUserId.value);
+  // Только в режиме группировки: там же и стоит сам мультиселект — иначе сохранённые в настройках
+  // колонки резали бы список без всякого контрола на экране
+  if (groupByParent.value && selectedStageIds.value.length) {
+    tasks = tasks.filter((task) => selectedStageIds.value.includes(String(task.stageId)));
+  }
   return tasks;
 });
 
@@ -131,6 +154,23 @@ const groupedRows = computed(() => {
   });
 });
 
+const filteredGroupedRows = computed(() => {
+  if (rootStatusFilter.value === 'all') return groupedRows.value;
+  const wantClosed = rootStatusFilter.value === 'closed';
+  return groupedRows.value.filter((row) => !!row.parentClosedDate === wantClosed);
+});
+
+async function fetchStages() {
+  try {
+    const { data } = await bitrixApi.getStages(props.groupId);
+    stages.value = Object.values(data.result)
+      .sort((a, b) => a.SORT - b.SORT)
+      .map((stage) => ({ id: String(stage.ID), name: stage.TITLE, color: `#${stage.COLOR}` }));
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
 async function fetchGroupedData() {
   const knownIds = new Set(Object.keys(allTasksById.value));
   const parentIds = [...new Set(
@@ -142,19 +182,8 @@ async function fetchGroupedData() {
       .map((task) => String(task.parentId)),
   )];
 
-  const [stagesResult, parentTasksList] = await Promise.all([
-    stages.value.length ? Promise.resolve(null) : bitrixApi.getStages(props.groupId),
-    parentIds.length ? bitrixApi.searchTasks({ ids: parentIds }) : Promise.resolve([]),
-  ]);
-  const fetchedParents = Object.fromEntries(parentTasksList.map((task) => [String(task.id), task]));
-
-  if (stagesResult) {
-    stages.value = Object.values(stagesResult.data.result)
-      .sort((a, b) => a.SORT - b.SORT)
-      .map((stage) => ({ id: String(stage.ID), name: stage.TITLE, color: `#${stage.COLOR}` }));
-  }
-
-  parentTasksMap.value = fetchedParents;
+  const parentTasksList = parentIds.length ? await bitrixApi.searchTasks({ ids: parentIds }) : [];
+  parentTasksMap.value = Object.fromEntries(parentTasksList.map((task) => [String(task.id), task]));
   groupedDataLoaded.value = true;
 }
 
@@ -215,13 +244,27 @@ watch(groupByParent, async (isEnabled) => {
   }
 });
 
-onMounted(() => {
-  fetchData();
+onMounted(async () => {
+  await loadSettings();
+  applyDefaults();
+  await fetchStages();
+  await fetchData();
 });
 </script>
 
 <template>
   <div class="min-w-[640px]">
+    <div class="mb-3">
+      <Button
+        icon="pi pi-cog"
+        size="small"
+        severity="secondary"
+        text
+        label="Настройки"
+        @click="isSettingsModalOpened = true"
+      />
+    </div>
+
     <div class="flex flex-col items-start gap-3 mb-4">
       <div class="flex items-end gap-3">
         <FormField label="Период">
@@ -244,7 +287,7 @@ onMounted(() => {
           :options="users"
           option-label="name"
           option-value="id"
-          placeholder="Все"
+          placeholder="Все исполнители"
           show-clear
           :disabled="!allTasks.length"
           size="small"
@@ -293,12 +336,36 @@ onMounted(() => {
             Группировать по задаче
           </label>
         </div>
+        <template v-if="groupByParent">
+          <MultiSelect
+            v-model="selectedStageIds"
+            :options="stages"
+            option-label="name"
+            option-value="id"
+            placeholder="Все колонки"
+            filter
+            filter-placeholder="Поиск"
+            show-clear
+            size="small"
+            fluid
+            input-class="min-w-[160px]"
+          />
+          <Select
+            v-model="rootStatusFilter"
+            :options="ROOT_STATUS_OPTIONS"
+            option-label="label"
+            option-value="value"
+            size="small"
+            fluid
+            input-class="min-w-[160px]"
+          />
+        </template>
       </div>
     </div>
 
     <GroupedTasksTable
       v-if="groupByParent"
-      :rows="groupedRows"
+      :rows="filteredGroupedRows"
       :group-id="groupId"
       :stages="stages"
       :loading="isLoading"
@@ -310,5 +377,19 @@ onMounted(() => {
       :group-id="groupId"
       :loading="isLoading"
     />
+
+    <Dialog
+      v-model:visible="isSettingsModalOpened"
+      modal
+      header="Настройки истории спринта"
+    >
+      <SettingsForm
+        :session-id="sessionId"
+        :group-id="groupId"
+        :stages="stages"
+        :initial="settings"
+        @success="onSettingsSaved"
+      />
+    </Dialog>
   </div>
 </template>

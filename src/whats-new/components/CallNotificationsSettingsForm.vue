@@ -1,14 +1,26 @@
 <script setup>
 import {Dialog, InputNumber, Select, Slider, ToggleSwitch} from 'primevue';
 
-import {LATE_REMINDER_MINUTES_OPTIONS, REMINDER_MINUTES_OPTIONS, RINGTONE_MAX_MINUTES_OPTIONS} from '../../js/actions/call-notifications/variables.js';
+import {
+  LATE_REMINDER_MINUTES_OPTIONS,
+  REMINDER_AT_START,
+  REMINDER_DISABLED,
+  REMINDER_MINUTES_OPTIONS,
+  RINGTONE_MAX_MINUTES_OPTIONS,
+} from '../../js/actions/call-notifications/variables.js';
 import FormField from '../../js/ui/FormField.vue';
 
 const visible = defineModel('visible', {type: Boolean, required: true});
 const settings = defineModel('settings', {type: Object, required: true});
 
+function getReminderLabel(minutes) {
+  if (minutes === REMINDER_DISABLED) return 'Не напоминать';
+  if (minutes === REMINDER_AT_START) return 'В момент встречи';
+  return `${minutes} мин`;
+}
+
 const REMINDER_OPTIONS = REMINDER_MINUTES_OPTIONS.map((minutes) => ({
-  label: minutes === 0 ? 'Не напоминать' : `${minutes} мин`,
+  label: getReminderLabel(minutes),
   value: minutes,
 }));
 const LATE_REMINDER_OPTIONS = LATE_REMINDER_MINUTES_OPTIONS.map((minutes) => ({
@@ -33,7 +45,7 @@ const RINGTONE_MAX_MINUTES_SELECT_OPTIONS = RINGTONE_MAX_MINUTES_OPTIONS.map((mi
     <div class="flex flex-col gap-4">
       <FormField
         label="Напоминать за"
-        tip="«Не напоминать» — заранее не напомнит, но сработает разовый шанс догнать в момент начала встречи (см. ниже)."
+        tip="«В момент встречи» — напомнит, когда она начнётся, а не заранее. «Не напоминать» — заранее напоминаний не будет, останется только напоминание после начала (см. ниже)."
       >
         <Select
           v-model="settings.reminderMinutes"
@@ -45,8 +57,8 @@ const RINGTONE_MAX_MINUTES_SELECT_OPTIONS = RINGTONE_MAX_MINUTES_OPTIONS.map((mi
         />
       </FormField>
       <FormField
-        label="Ещё напоминать после начала"
-        tip="Если не успели среагировать до начала встречи — даёт ещё один шанс напомнить в течение этого времени после старта. «Не напоминать» — сразу считать пропущенной."
+        label="Напоминать после начала"
+        tip="Сколько времени после начала встречи напоминание ещё актуально: если до начала не напомнили или вы не среагировали, оно придёт в течение этого времени. «Не напоминать» — сразу считать встречу пропущенной."
       >
         <Select
           v-model="settings.lateReminderMinutes"
@@ -86,7 +98,7 @@ const RINGTONE_MAX_MINUTES_SELECT_OPTIONS = RINGTONE_MAX_MINUTES_OPTIONS.map((mi
           class="text-sm cursor-pointer"
         >Без звука</label>
         <i
-          v-tooltip="'Показывает браузерное уведомление без стандартного звука браузера/ОС.'"
+          v-tooltip="'Показывает браузерное уведомление без стандартного звука браузера/ОС. Звук может всё равно звучать в зависимости от настроек уведомлений вашей операционной системы.'"
           class="pi pi-question-circle text-surface-500 dark:text-surface-400 text-xs"
         />
       </div>

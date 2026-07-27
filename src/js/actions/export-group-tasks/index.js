@@ -19,7 +19,7 @@ export function exportGroupTasks(sessionId) {
 
   const appContainer = Object.assign(document.createElement('div'), {
     className: 'js-export-group-tasks pts-actions-bar-btn',
-    style: 'order: 7;',
+    style: 'order: 8;',
   });
 
   buttonsContainer.appendChild(appContainer);

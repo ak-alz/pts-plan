@@ -34,7 +34,7 @@ const chartData = computed(() => {
         label: multiUser ? name : 'Задач',
         data: labels.map((l) => counts[l]),
         backgroundColor: stringToPastelColor(name) + 'bb',
-        borderRadius: 4,
+        borderRadius: 2,
         minBarLength: 4,
       };
     }),

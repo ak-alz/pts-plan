@@ -20,14 +20,27 @@ const resetConfirm = ref(false);
 const PRIVATE_STORAGE_KEYS = ['sessionId', 'bitrixOrigin'];
 const PRIVATE_OPTION_KEYS = ['pixelToolsApiKey'];
 
+// Производные и временные ключи: кэш аналитики (у «Динамики задач» это сотни килобайт на группу) и
+// номер запущенного AI-запроса. Это не настройки — в выгрузке они только раздувают текст, который
+// принято пересылать коллеге, а чужой кэш и чужой номер запроса ему всё равно бесполезны
+const DERIVED_STORAGE_KEY_PATTERNS = [/-cache-/, /-ai-job-/];
+
+function isDerivedKey(key) {
+  return DERIVED_STORAGE_KEY_PATTERNS.some((pattern) => pattern.test(key));
+}
+
 function withoutKeys(source, keys) {
   return Object.fromEntries(Object.entries(source ?? {}).filter(([key]) => !keys.includes(key)));
+}
+
+function withoutDerivedKeys(source) {
+  return Object.fromEntries(Object.entries(source ?? {}).filter(([key]) => !isDerivedKey(key)));
 }
 
 watch(() => props.visible, async (val) => {
   if (!val) return;
   const all = await chrome.storage.local.get(null);
-  const exportData = withoutKeys(all, PRIVATE_STORAGE_KEYS);
+  const exportData = withoutDerivedKeys(withoutKeys(all, PRIVATE_STORAGE_KEYS));
   if (exportData.options) {
     exportData.options = withoutKeys(exportData.options, PRIVATE_OPTION_KEYS);
   }
@@ -59,7 +72,7 @@ async function applyImport() {
     return;
   }
 
-  const data = withoutKeys(parsed, PRIVATE_STORAGE_KEYS);
+  const data = withoutDerivedKeys(withoutKeys(parsed, PRIVATE_STORAGE_KEYS));
 
   if (data.options && typeof data.options === 'object') {
     const knownKeys = new Set(Object.keys(getDefaultOptions()));
@@ -80,6 +93,12 @@ async function applyImport() {
       data.options = { ...(data.options ?? {}), [key]: backup.options[key] };
     }
   });
+
+  // Свой кэш аналитики переносим как есть: он не часть настроек, но clear() ниже стёр бы его,
+  // и виджету пришлось бы выкачивать историю задач заново
+  Object.entries(backup)
+    .filter(([key]) => isDerivedKey(key))
+    .forEach(([key, value]) => { data[key] = value; });
 
   await chrome.storage.local.clear();
   try {
@@ -110,7 +129,8 @@ async function resetSettings() {
     />
     <p class="m-0 text-xs text-surface-500 dark:text-surface-400">
       API-ключ для AI-функций в выгрузку не попадает — этими настройками можно спокойно поделиться.
-      При импорте ваш уже введённый ключ сохраняется.
+      При импорте ваш уже введённый ключ сохраняется. Данные, которые виджеты сохраняют для скорости,
+      в выгрузку тоже не попадают и при импорте остаются вашими.
     </p>
     <Message
       v-if="importError"

@@ -54,8 +54,8 @@ const form = reactive({
   copySeparator: props.initial.copySeparator ?? '\t',
   csvSeparator: props.initial.csvSeparator ?? ',',
   defaultTab: props.initial.defaultTab ?? 'summary',
-  defaultCompareWithPrev: props.initial.defaultCompareWithPrev ?? false,
-  defaultExcludeHotfixes: props.initial.defaultExcludeHotfixes ?? false,
+  defaultIncludeHotfixes: props.initial.defaultIncludeHotfixes ?? true,
+  defaultCompareEnabled: props.initial.defaultCompareEnabled ?? true,
 });
 
 async function saveSettings() {
@@ -169,26 +169,32 @@ async function saveSettings() {
 
       <div class="flex gap-2 items-center">
         <Checkbox
-          v-model="form.defaultCompareWithPrev"
+          v-model="form.defaultIncludeHotfixes"
           binary
-          input-id="settings-default-compare-with-prev"
+          input-id="settings-default-include-hotfixes"
         />
         <label
-          for="settings-default-compare-with-prev"
+          for="settings-default-include-hotfixes"
           class="text-sm cursor-pointer"
-        >Сравнивать с пред. периодом</label>
+        >Учитывать хотфиксы в данных</label>
       </div>
 
       <div class="flex gap-2 items-center">
         <Checkbox
-          v-model="form.defaultExcludeHotfixes"
+          v-model="form.defaultCompareEnabled"
           binary
-          input-id="settings-default-exclude-hotfixes"
+          input-id="settings-default-compare-enabled"
         />
         <label
-          for="settings-default-exclude-hotfixes"
+          for="settings-default-compare-enabled"
           class="text-sm cursor-pointer"
-        >Исключить хотфиксы</label>
+        >
+          Сравнивать с предыдущим периодом
+          <i
+            v-tooltip="'Состояние галки у поля «Сравнить с» при открытии виджета. Выключенное сравнение вдвое сокращает объём загрузки.'"
+            class="pi pi-question-circle text-surface-400 dark:text-surface-500"
+          />
+        </label>
       </div>
 
       <FormField label="Разделитель копирования (сводка)">

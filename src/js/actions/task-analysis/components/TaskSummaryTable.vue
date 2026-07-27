@@ -1,5 +1,5 @@
 <script setup>
-import {Button, Column, DataTable, Dialog, InputGroup, Password, Textarea} from 'primevue';
+import {Button, Column, ColumnGroup, DataTable, Dialog, InputGroup, Password, Row, Textarea} from 'primevue';
 import {computed, nextTick, onMounted, ref} from 'vue';
 
 import {useAiJob} from '../../../composables/useAiJob.js';
@@ -23,6 +23,10 @@ const props = defineProps({
     type: Array,
     default: null,
   },
+  compareDateRange: {
+    type: Array,
+    default: null,
+  },
   multiUser: {
     type: Boolean,
     default: false,
@@ -34,6 +38,10 @@ const props = defineProps({
   csvSeparator: {
     type: String,
     default: ',',
+  },
+  total: {
+    type: Object,
+    default: null,
   },
 });
 
@@ -59,6 +67,9 @@ const pointColorMap = computed(() => {
 function getPointColor(points) {
   return pointColorMap.value.get(points);
 }
+
+// Футер дублирует единственную запись, поэтому итоги показываем только когда строк больше одной
+const showFooter = computed(() => props.rows.length > 1 && props.total != null);
 
 function buildDistTooltip(dist, prevDist) {
   if (!prevDist) {
@@ -87,7 +98,7 @@ function buildDistTooltip(dist, prevDist) {
 function buildRows() {
   const headers = [];
   if (props.multiUser) headers.push('Исполнитель');
-  headers.push('Баллов всего', 'Задач всего', 'Корневые', 'Коэф. декомп.', 'Средний балл / задачу', 'Средний балл / мес.');
+  headers.push('Баллов всего', 'Задач всего', 'Корневые', 'Хотфиксы', 'Коэф. декомп.', 'Средний балл / задачу', 'Средний балл / мес.');
   headers.push('Распределение');
   const hasPrevDist = props.rows.some((r) => r.prevPointDistribution != null);
   if (hasPrevDist) headers.push('Распределение (пред.)');
@@ -95,11 +106,21 @@ function buildRows() {
   const dataRows = props.rows.map((row) => {
     const cells = [];
     if (props.multiUser) cells.push(row.userName);
-    cells.push(row.totalPoints, row.totalTasks, row.totalRoots, row.decompRatio, row.avgPointsPerTask, row.avgPoints);
+    cells.push(row.totalPoints, row.totalTasks, row.totalRoots, row.totalHotfixes, row.decompRatio, row.avgPointsPerTask, row.avgPoints);
     cells.push(row.pointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', '));
     if (hasPrevDist) cells.push(row.prevPointDistribution ? row.prevPointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', ') : '');
     return cells;
   });
+
+  if (props.rows.length > 1 && props.total) {
+    const total = props.total;
+    const totalCells = [];
+    if (props.multiUser) totalCells.push('Итого');
+    totalCells.push(total.totalPoints, total.totalTasks, total.totalRoots, total.totalHotfixes, total.decompRatio, total.avgPointsPerTask, total.avgPoints);
+    totalCells.push(total.pointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', '));
+    if (hasPrevDist) totalCells.push(total.prevPointDistribution ? total.prevPointDistribution.map((s) => `${s.points}: ${s.count} (${s.pct}%)`).join(', ') : '');
+    dataRows.push(totalCells);
+  }
 
   return {headers, dataRows};
 }
@@ -112,32 +133,46 @@ const isPromptPreviewModalOpened = ref(false);
 
 function buildAiData() {
   const periodLabel = 'мес.';
-  return props.rows.map((row) => {
+
+  function buildEntry(row, {исполнитель, топЗадач = false} = {}) {
     const entry = {
-      ...(props.multiUser ? {исполнитель: row.userName} : {}),
+      ...(исполнитель != null ? {исполнитель} : {}),
       баллов_всего: row.totalPoints,
       задач_всего: row.totalTasks,
       корневые_задачи: row.totalRoots,
+      хотфиксов: row.totalHotfixes,
       коэф_декомпозиции: row.decompRatio,
       средний_балл_за_задачу: row.avgPointsPerTask,
       [`средний_балл_за_${periodLabel}`]: row.avgPoints,
       распределение: row.pointDistribution.map((s) => `${s.points}б: ${s.count} (${s.pct}%)`).join(', '),
       ...(row.prevPointDistribution ? {распределение_пред_период: row.prevPointDistribution.map((s) => `${s.points}б: ${s.count} (${s.pct}%)`).join(', ')} : {}),
-      топ_задач: row.topTasks?.map((t) => `${t.title} (${t.points}б)`),
+      ...(топЗадач ? {топ_задач: row.topTasks?.map((t) => `${t.title} (${t.points}б)`)} : {}),
     };
     if (row.deltaTotal !== null) {
       entry.дельта_баллов = row.deltaTotal;
       entry.дельта_задач = row.deltaTotalTasks;
       entry.дельта_корневых = row.deltaTotalRoots;
+      if (row.deltaTotalHotfixes !== undefined) entry.дельта_хотфиксов = row.deltaTotalHotfixes;
       entry.дельта_коэф_декомп = row.deltaDecompRatio;
       entry.дельта_балл_за_задачу = row.deltaAvgPointsPerTask;
       entry[`дельта_балл_за_${periodLabel}`] = row.deltaAvgPoints;
     }
     return entry;
-  });
+  }
+
+  const entries = props.rows.map((row) => buildEntry(row, {
+    исполнитель: props.multiUser ? row.userName : null,
+    топЗадач: true,
+  }));
+
+  if (props.rows.length > 1 && props.total) {
+    entries.push(buildEntry(props.total, {исполнитель: 'Итого'}));
+  }
+
+  return entries;
 }
 
-const promptPreview = computed(() => buildPromptPreview(props.dateRange, aiContext.value.trim() || null));
+const promptPreview = computed(() => buildPromptPreview(props.dateRange, props.compareDateRange, aiContext.value.trim() || null));
 
 async function onAiContextInput(e) {
   aiContext.value = e.target.value.slice(0, AI_CONTEXT_MAX_LENGTH);
@@ -191,7 +226,11 @@ async function aiAnalyze() {
   const {onStart, onProgress} = aiJob.chatCallbacks();
   await aiJob.runJob(() => {
     const MAX_PROMPT_LENGTH = 20000;
-    let prompt = buildSystemPrompt(buildAiData(), props.dateRange, aiContext.value);
+    let prompt = buildSystemPrompt(buildAiData(), {
+      dateRange: props.dateRange,
+      compareDateRange: props.compareDateRange,
+      extraContext: aiContext.value,
+    });
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
       showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
@@ -304,7 +343,11 @@ function exportCsv() {
       field="userName"
       header="Исполнитель"
       :sortable="rows.length > 1"
-    />
+    >
+      <template #body="{ data }">
+        <span class="pts-blur">{{ data.userName }}</span>
+      </template>
+    </Column>
     <Column
       field="totalPoints"
       header="Баллов всего"
@@ -345,6 +388,22 @@ function exportCsv() {
           class="text-sm"
           :class="{'text-green-400': data.deltaTotalRoots > 0, 'text-red-400': data.deltaTotalRoots < 0, 'text-surface-400 dark:text-surface-500': data.deltaTotalRoots === 0}"
         ><template v-if="data.deltaTotalRoots > 0">+</template>{{ data.deltaTotalRoots }}</span>
+      </template>
+    </Column>
+    <Column
+      field="totalHotfixes"
+      :sortable="rows.length > 1"
+    >
+      <template #header>
+        <b v-tooltip.top="'Количество задач, название которых начинается с «Hotfix»'">Хотфиксы</b>
+      </template>
+      <template #body="{ data }">
+        {{ data.totalHotfixes }}
+        <span
+          v-if="data.deltaTotalHotfixes !== null"
+          class="text-sm"
+          :class="{'text-green-400': data.deltaTotalHotfixes < 0, 'text-red-400': data.deltaTotalHotfixes > 0, 'text-surface-400 dark:text-surface-500': data.deltaTotalHotfixes === 0}"
+        ><template v-if="data.deltaTotalHotfixes > 0">+</template>{{ data.deltaTotalHotfixes }}</span>
       </template>
     </Column>
     <Column
@@ -413,6 +472,108 @@ function exportCsv() {
         </div>
       </template>
     </Column>
+
+    <ColumnGroup
+      v-if="showFooter"
+      type="footer"
+    >
+      <Row>
+        <Column
+          v-if="multiUser"
+          footer="Итого:"
+          footer-class="text-right"
+        />
+        <Column>
+          <template #footer>
+            {{ total.totalPoints }}
+            <span
+              v-if="total.deltaTotal !== null"
+              class="text-sm"
+              :class="{'text-green-400': total.deltaTotal > 0, 'text-red-400': total.deltaTotal < 0, 'text-surface-400 dark:text-surface-500': total.deltaTotal === 0}"
+            ><template v-if="total.deltaTotal > 0">+</template>{{ total.deltaTotal }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            {{ total.totalTasks }}
+            <span
+              v-if="total.deltaTotalTasks !== null"
+              class="text-sm"
+              :class="{'text-green-400': total.deltaTotalTasks > 0, 'text-red-400': total.deltaTotalTasks < 0, 'text-surface-400 dark:text-surface-500': total.deltaTotalTasks === 0}"
+            ><template v-if="total.deltaTotalTasks > 0">+</template>{{ total.deltaTotalTasks }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            {{ total.totalRoots }}
+            <span
+              v-if="total.deltaTotalRoots !== null"
+              class="text-sm"
+              :class="{'text-green-400': total.deltaTotalRoots > 0, 'text-red-400': total.deltaTotalRoots < 0, 'text-surface-400 dark:text-surface-500': total.deltaTotalRoots === 0}"
+            ><template v-if="total.deltaTotalRoots > 0">+</template>{{ total.deltaTotalRoots }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            {{ total.totalHotfixes }}
+            <span
+              v-if="total.deltaTotalHotfixes !== null"
+              class="text-sm"
+              :class="{'text-green-400': total.deltaTotalHotfixes < 0, 'text-red-400': total.deltaTotalHotfixes > 0, 'text-surface-400 dark:text-surface-500': total.deltaTotalHotfixes === 0}"
+            ><template v-if="total.deltaTotalHotfixes > 0">+</template>{{ total.deltaTotalHotfixes }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            {{ total.decompRatio }}
+            <span
+              v-if="total.deltaDecompRatio !== null"
+              class="text-sm text-surface-400 dark:text-surface-500"
+            ><template v-if="total.deltaDecompRatio > 0">+</template>{{ total.deltaDecompRatio }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            {{ total.avgPointsPerTask }}
+            <span
+              v-if="total.deltaAvgPointsPerTask !== null"
+              class="text-sm"
+              :class="{'text-green-400': total.deltaAvgPointsPerTask > 0, 'text-red-400': total.deltaAvgPointsPerTask < 0, 'text-surface-400 dark:text-surface-500': total.deltaAvgPointsPerTask === 0}"
+            ><template v-if="total.deltaAvgPointsPerTask > 0">+</template>{{ total.deltaAvgPointsPerTask }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            {{ total.avgPoints }}
+            <span
+              v-if="total.deltaAvgPoints !== null"
+              class="text-sm"
+              :class="{'text-green-400': total.deltaAvgPoints > 0, 'text-red-400': total.deltaAvgPoints < 0, 'text-surface-400 dark:text-surface-500': total.deltaAvgPoints === 0}"
+            ><template v-if="total.deltaAvgPoints > 0">+</template>{{ total.deltaAvgPoints }}</span>
+          </template>
+        </Column>
+        <Column>
+          <template #footer>
+            <div
+              v-tooltip="buildDistTooltip(total.pointDistribution, total.prevPointDistribution ?? null)"
+              class="flex flex-col gap-px"
+            >
+              <div class="flex h-4 rounded overflow-hidden min-w-25 gap-px">
+                <div
+                  v-for="seg in total.pointDistribution"
+                  :key="seg.points"
+                  :style="{
+                    width: seg.pct + '%',
+                    minWidth: '3px',
+                    backgroundColor: getPointColor(seg.points),
+                  }"
+                />
+              </div>
+            </div>
+          </template>
+        </Column>
+      </Row>
+    </ColumnGroup>
   </DataTable>
 
   <div

@@ -53,6 +53,7 @@ async function copyLink() {
     :close-on-escape="false"
     :draggable="false"
     :style="{width: '400px'}"
+    :base-z-index="9999"
     @update:visible="onHide"
   >
     <template #header>

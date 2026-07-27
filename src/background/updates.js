@@ -80,8 +80,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 
   if (compareVersions(previousVersion, '2.12.0') < 0) {
-    const stored = await chrome.storage.local.get(['notification-details-filter']);
-    const savedFilter = stored['notification-details-filter'];
+    // Ключи настроек task-analysis содержат id группы, поэтому нужен весь storage целиком
+    const all = await chrome.storage.local.get(null);
+    const savedFilter = all['notification-details-filter'];
 
     // Старый формат — одиночный выбор (groupId/highlightAttribute — строка). Оборачиваем в
     // массивы (новый формат — мультивыбор) и полностью заменяем значение, без старых полей
@@ -93,14 +94,25 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         },
       });
     }
-  }
 
-  if (compareVersions(previousVersion, '2.13.0') < 0) {
-    // Присутствие вкладок в call-notifications переехало со storage на BroadcastChannel —
-    // записи под этим префиксом больше никто не читает, но у пользователей 2.12 они остались
-    const all = await chrome.storage.local.get(null);
-    const presenceKeys = Object.keys(all).filter((key) => key.startsWith('call-notifications-presence:'));
-    if (presenceKeys.length) await chrome.storage.local.remove(presenceKeys);
+    // task-analysis: «Исключить хотфиксы» переименована в «Учитывать хотфиксы в данных» (полярность
+    // инвертирована — старое значение переносим с отрицанием), а «Сравнивать с пред. периодом» убрана —
+    // сравнение теперь всегда включено, галка больше не существует. Обе правки — для каждой группы отдельно
+    const taskAnalysisUpdates = {};
+    Object.keys(all)
+      .filter((key) => key.startsWith('task-analysis-settings-'))
+      .forEach((key) => {
+        const groupSettings = all[key];
+        if (!groupSettings || typeof groupSettings !== 'object') return;
+        if (!('defaultExcludeHotfixes' in groupSettings) && !('defaultCompareWithPrev' in groupSettings)) return;
+
+        const {defaultExcludeHotfixes, defaultCompareWithPrev: _defaultCompareWithPrev, ...rest} = groupSettings;
+        taskAnalysisUpdates[key] = {
+          ...rest,
+          ...(defaultExcludeHotfixes !== undefined ? {defaultIncludeHotfixes: rest.defaultIncludeHotfixes ?? !defaultExcludeHotfixes} : {}),
+        };
+      });
+    if (Object.keys(taskAnalysisUpdates).length) await chrome.storage.local.set(taskAnalysisUpdates);
   }
 
   if (notificationMessage) {

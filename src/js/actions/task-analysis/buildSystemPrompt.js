@@ -11,11 +11,15 @@ function formatDate(d) {
   return parsed.isValid() ? parsed.format('DD.MM.YYYY') : String(d);
 }
 
-export function buildPromptPreview(dateRange, extraContext) {
-  const rawDays = dateRange ? dayjs(dateRange[1]).diff(dayjs(dateRange[0]), 'day') + 1 : null;
-  const periodLabelChip = dateRange
-    ? chip(`${rawDays} ${pluralize(rawDays, ['день', 'дня', 'дней'])} (${formatDate(dateRange[0])} — ${formatDate(dateRange[1])})`)
-    : v('N дней (начало — конец)');
+function buildPeriodLabel(dateRange) {
+  if (!dateRange?.[0]) return null;
+  const days = dayjs(dateRange[1] ?? dateRange[0]).diff(dayjs(dateRange[0]), 'day') + 1;
+  return `${days} ${pluralize(days, ['день', 'дня', 'дней'])} (${formatDate(dateRange[0])} — ${formatDate(dateRange[1] ?? dateRange[0])})`;
+}
+
+export function buildPromptPreview(dateRange, compareDateRange, extraContext) {
+  const periodLabelChip = dateRange ? chip(buildPeriodLabel(dateRange)) : v('N дней (начало — конец)');
+  const compareLabelChip = compareDateRange ? chip(buildPeriodLabel(compareDateRange)) : v('N дней (начало — конец)');
   const previewContext = extraContext != null ? chip(extraContext) : v('Доп. контекст');
 
   const note = (s) => `<span class="text-surface-400 dark:text-surface-500 text-xs">${escape(s)}</span>`;
@@ -25,6 +29,7 @@ export function buildPromptPreview(dateRange, extraContext) {
     '  баллов_всего: N,',
     '  задач_всего: N,',
     '  корневые_задачи: N,',
+    '  хотфиксов: N,',
     '  коэф_декомпозиции: N,',
     '  средний_балл_за_задачу: N,',
     '  средний_балл_за_мес.: N,',
@@ -33,22 +38,26 @@ export function buildPromptPreview(dateRange, extraContext) {
     `  ${note('// при сравнении с предыдущим периодом:')}`,
     '  дельта_баллов: ±N, дельта_задач: ±N,',
     '  дельта_коэф_декомп: ±N, дельта_балл_за_задачу: ±N, ...',
-    '}]',
+    `}, ${note('// при нескольких исполнителях — ещё один элемент с итогами:')}`,
+    '{ исполнитель: "Итого", ...те же поля, без топ_задач }]',
   ].join('\n')}</span>`;
 
-  return buildSystemPrompt(previewData, null, previewContext, periodLabelChip);
+  return buildSystemPrompt(previewData, {
+    extraContext: previewContext,
+    periodLabelOverride: periodLabelChip,
+    compareLabelOverride: compareLabelChip,
+  });
 }
 
-export function buildSystemPrompt(aiData, dateRange, extraContext = '', periodLabelOverride = null) {
-  const [dateFrom, dateTo] = dateRange ?? [];
-  const _start = dayjs(dateFrom);
-  const _end = dayjs(dateTo);
-  const durationDays = (_start.isValid() && _end.isValid()) ? _end.diff(_start, 'day') + 1 : null;
-  const periodLabel = periodLabelOverride ?? (dateFrom && dateTo
-    ? (durationDays !== null
-      ? `${durationDays} ${pluralize(durationDays, ['день', 'дня', 'дней'])} (${formatDate(dateFrom)} — ${formatDate(dateTo)})`
-      : `${formatDate(dateFrom)} — ${formatDate(dateTo)}`)
-    : (dateFrom ? `с ${formatDate(dateFrom)}` : null));
+export function buildSystemPrompt(aiData, {
+  dateRange = null,
+  compareDateRange = null,
+  extraContext = '',
+  periodLabelOverride = null,
+  compareLabelOverride = null,
+} = {}) {
+  const periodLabel = periodLabelOverride ?? buildPeriodLabel(dateRange);
+  const compareLabel = compareLabelOverride ?? buildPeriodLabel(compareDateRange);
 
   const extraSection = extraContext?.trim()
     ? `\nДополнительный контекст:\n${extraContext.trim()}\n`
@@ -56,7 +65,7 @@ export function buildSystemPrompt(aiData, dateRange, extraContext = '', periodLa
 
   const prompt = `Ты аналитик продуктивности команды разработки. Тебе предоставлена таблица KPI-метрик по закрытым задачам за период.
 
-Баллы — оценка сложности задачи: чем больше баллов, тем сложнее задача. ${periodLabel ? `\nАнализируемый период: ${periodLabel}` : ''}
+Баллы — оценка сложности задачи: чем больше баллов, тем сложнее задача.${periodLabel ? `\nАнализируемый период: ${periodLabel}` : ''}${compareLabel ? `\nСравнительный период (из него считаются дельты): ${compareLabel}` : ''}
 ${extraSection}
 Дай краткий конструктивный анализ на русском языке:
 - Общая продуктивность: как оценить результат за период

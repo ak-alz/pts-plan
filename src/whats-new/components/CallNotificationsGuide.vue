@@ -1,10 +1,10 @@
 <script setup>
 import dayjs from 'dayjs';
-import {Button, Checkbox, Column, DataTable, Message, MultiSelect, Tag} from 'primevue';
+import {Button, Checkbox, Column, DataTable, Message, MultiSelect, Tag, ToggleSwitch} from 'primevue';
 import {useToast} from 'primevue/usetoast';
 import {computed, onBeforeUnmount, onMounted, ref, toRaw, watch} from 'vue';
 
-import {toPlainMeetings} from '../../js/actions/call-notifications/meetingsEngine.js';
+import {isMeetingEnabled, toPlainMeetings} from '../../js/actions/call-notifications/meetingsEngine.js';
 import {
   DEFAULT_SETTINGS,
   MEETING_STATUS,
@@ -145,6 +145,12 @@ async function onSaveMeeting(meeting) {
   toast.add({severity: 'success', summary: index === -1 ? 'Встреча добавлена' : 'Встреча обновлена', life: 3000});
 }
 
+// Временное отключение вместо удаления: встреча остаётся в списке, но напоминаний по ней нет
+async function toggleMeetingEnabled(meetingId, enabled) {
+  meetings.value = meetings.value.map((item) => (item.id === meetingId ? {...item, enabled} : item));
+  await persistMeetings();
+}
+
 async function deleteMeeting(meetingId) {
   meetings.value = meetings.value.filter((item) => item.id !== meetingId);
   deleteConfirmId.value = null;
@@ -207,7 +213,8 @@ onBeforeUnmount(() => {
       Напоминания о встречах: браузерное уведомление, всплывающее уведомление или окно на сайте,
       со ссылкой на созвон в каждом. У окна можно включить рингтон, но по умолчанию звук выключен и может не
       запуститься без взаимодействия со вкладкой. Способы включаются в настройках. Разовые встречи
-      и регулярные (по дням недели) настраиваются ниже.
+      и регулярные (по дням недели) настраиваются ниже. Тумблер в списке временно отключает
+      напоминания о встрече, не удаляя её.
     </p>
 
     <div class="flex gap-2">
@@ -256,6 +263,19 @@ onBeforeUnmount(() => {
         </div>
       </template>
       <Column
+        header=""
+        style="width: 56px"
+      >
+        <template #body="{data}">
+          <ToggleSwitch
+            v-tooltip.top="isMeetingEnabled(data) ? 'Отключить напоминания об этой встрече' : 'Включить напоминания об этой встрече'"
+            :model-value="isMeetingEnabled(data)"
+            size="small"
+            @update:model-value="(value) => toggleMeetingEnabled(data.id, value)"
+          />
+        </template>
+      </Column>
+      <Column
         field="title"
         header="Название"
       >
@@ -274,7 +294,12 @@ onBeforeUnmount(() => {
       <Column header="Статус">
         <template #body="{data}">
           <Tag
-            v-if="data.type === MEETING_TYPE.ONCE"
+            v-if="!isMeetingEnabled(data)"
+            value="Отключена"
+            severity="warn"
+          />
+          <Tag
+            v-else-if="data.type === MEETING_TYPE.ONCE"
             :value="STATUS_LABELS[data.status]"
             :severity="STATUS_SEVERITIES[data.status]"
           />

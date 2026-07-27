@@ -59,7 +59,13 @@ function stopPreview() {
 
     <div class="grow min-w-0 flex flex-col gap-1.5">
       <div class="flex items-start justify-between gap-2">
-        <span class="text-sm font-medium text-surface-800 dark:text-surface-0">{{ feature.name }}</span>
+        <span class="text-sm font-medium text-surface-800 dark:text-surface-0">
+          {{ feature.name }}
+          <span
+            v-if="feature.beta"
+            class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-amber-600 dark:text-amber-400 align-middle"
+          >beta</span>
+        </span>
         <ToggleSwitch
           :model-value="enabled"
           @update:model-value="$emit('update:enabled', $event)"
