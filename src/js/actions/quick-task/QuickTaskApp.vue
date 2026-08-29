@@ -6,7 +6,7 @@ import QuickTask from './components/QuickTask.vue';
 
 defineProps({
   sessionId: {type: String, required: true},
-  groupId: {type: String, required: true},
+  context: {type: Object, required: true},
 });
 
 const isOpen = ref(false);
@@ -32,7 +32,7 @@ onUnmounted(() => document.removeEventListener('pts:quick-task:open', handleOpen
     <QuickTask
       v-if="isOpen"
       :session-id
-      :group-id
+      :context
       :stage-id
       @success="isOpen = false"
     />

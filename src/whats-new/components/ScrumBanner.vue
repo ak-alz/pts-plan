@@ -10,7 +10,7 @@ defineEmits(['open']);
       Работаете по Scrum?
     </p>
     <p class="m-0 text-[12px] text-surface-500 dark:text-surface-400 leading-snug">
-      Фичи расширения заточены под Scrum — посмотрите, что может помочь.
+      Функции расширения заточены под Scrum — посмотрите, что может помочь.
     </p>
     <Button
       label="Подробнее"

@@ -21,7 +21,7 @@ export async function exportTask(sessionId) {
   if (!buttonContainer) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-export-task',
+    className: 'js-export-task pts-app',
     style: 'order: 3;',
   });
 

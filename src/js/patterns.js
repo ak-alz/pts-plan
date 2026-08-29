@@ -151,7 +151,7 @@ export const SPRINT_SUMMARY_BB_USER_RE = /\[USER=(\d+)]([^[\n]+)\[\/USER][^\d\n]
 export const AI_DECOMPOSITIONS_BLOCK_RE = /\[AI_DECOMPOSITIONS\][\s\S]*?\[QUOTE[^\]]*\]([\s\S]*?)\[\/QUOTE\]/i;
 export const AI_DECOMPOSITIONS_ITEM_RE = /^-\s*(.+?)(?:\s*—\s*(\d+)\s*points?)?\s*$/;
 
-// Типы уведомлений (для чипа в notification-details)
+// Типы уведомлений (для метки в notification-details)
 export const NOTIF_NEW_TASK_RE = /добавил[а]? новую задачу|добавлена новая задача/i;
 export const NOTIF_COMMENT_RE = /добавил[а]? комментарий|добавлен комментарий/i;
 export const NOTIF_REACTION_RE = /отреагировал(\(а\)|а)? на (?:ваш )?комментарий|поставил[а]? реакцию|благодарит вас в сообщении/i;
@@ -161,6 +161,10 @@ export const NOTIF_CHANGE_RE = /изменил[а]? задачу|изменен�
 // Bitrix упоминает ID задачи в тексте уведомления как "[#481203]" — используется, когда в самом
 // уведомлении нет ссылки на задачу (всплывающий тост .ui-notification-manager-browser-balloon)
 export const NOTIF_TASK_ID_RE = /\[#(\d+)\]/;
+
+// Отдельного атрибута с ID уведомления у всплывающего уведомления нет: он зашит в id вспомогательных
+// элементов внутри него (кнопка «Ответить», поле ответа) как "…-im_notify-31857799u1F9D…"
+export const NOTIF_BALLOON_ID_RE = /im_notify-(\d+)/;
 
 // call-notifications: время регулярной встречи, "ЧЧ:ММ" в сутках. Маска поля гарантирует только
 // цифры на своих местах, поэтому диапазон часов/минут проверяется этим шаблоном — им же валидируется

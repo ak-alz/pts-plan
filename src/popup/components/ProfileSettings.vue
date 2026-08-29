@@ -1,12 +1,80 @@
 <script setup>
-import { Button, InputNumber, InputText, Password } from 'primevue';
+import { debounce } from 'lodash-es';
+import { Button, InputNumber, InputText, Message, Password, Select } from 'primevue';
+import { computed, ref, watch } from 'vue';
 
+import { DEFAULT_MODEL_VALUE } from '../../js/aiModel.js';
+import { getAiModels } from '../../js/PixelToolsApi.js';
 import FormField from '../../js/ui/FormField.vue';
 import { useAutoFill } from '../useAutoFill.js';
 
 const model = defineModel({ type: Object, required: true });
 
 const { autoFill, isFetching } = useAutoFill(model);
+
+const aiModels = ref([]);
+const defaultAiModelName = ref('');
+const aiModelsError = ref('');
+const isLoadingAiModels = ref(false);
+
+const aiModelChoices = computed(() => [
+  {
+    label: defaultAiModelName.value
+      ? `По умолчанию (${defaultAiModelName.value})`
+      : 'По умолчанию',
+    value: DEFAULT_MODEL_VALUE,
+  },
+  ...aiModels.value.map((aiModel) => ({ label: aiModel.name, value: aiModel.value })),
+]);
+
+// Номер последнего запроса справочника: ключ правят посимвольно, и ответ на устаревший вариант
+// ключа не должен затереть список, загруженный по актуальному
+let lastModelsRequest = 0;
+
+async function loadAiModels(apiKey) {
+  const request = ++lastModelsRequest;
+  aiModelsError.value = '';
+
+  if (!apiKey) {
+    aiModels.value = [];
+    defaultAiModelName.value = '';
+    return;
+  }
+
+  isLoadingAiModels.value = true;
+  try {
+    const { models, defaultModel } = await getAiModels(apiKey);
+    if (request !== lastModelsRequest) return;
+    aiModels.value = models;
+    defaultAiModelName.value = models.find((aiModel) => aiModel.value === defaultModel)?.name ?? '';
+
+    // Сохранённую нейросеть могли отключить в Пиксель Тулс или сменился тариф ключа
+    const selected = model.value.pixelToolsAiModel;
+    if (selected !== DEFAULT_MODEL_VALUE && !models.some((aiModel) => aiModel.value === selected)) {
+      model.value.pixelToolsAiModel = DEFAULT_MODEL_VALUE;
+    }
+  } catch (error) {
+    if (request !== lastModelsRequest) return;
+    aiModels.value = [];
+    defaultAiModelName.value = '';
+    aiModelsError.value = error.message;
+  } finally {
+    if (request === lastModelsRequest) isLoadingAiModels.value = false;
+  }
+}
+
+const loadAiModelsDebounced = debounce(loadAiModels, 600);
+let isFirstModelsLoad = true;
+
+watch(() => model.value.pixelToolsApiKey?.trim() ?? '', (apiKey) => {
+  // При открытии профиля ключ уже введён — ждать паузу в наборе незачем
+  if (isFirstModelsLoad) {
+    isFirstModelsLoad = false;
+    loadAiModels(apiKey);
+    return;
+  }
+  loadAiModelsDebounced(apiKey);
+}, { immediate: true });
 </script>
 
 <template>
@@ -22,7 +90,7 @@ const { autoFill, isFetching } = useAutoFill(model);
     <FormField
       id="profile_firstName"
       label="Имя"
-      tip="Ваше имя в Bitrix24 (нужно для некоторых фич)"
+      tip="Ваше имя в Bitrix24 (нужно для некоторых функций)"
     >
       <InputText
         id="profile_firstName"
@@ -35,7 +103,7 @@ const { autoFill, isFetching } = useAutoFill(model);
     <FormField
       id="profile_lastName"
       label="Фамилия"
-      tip="Ваша фамилия в Bitrix24 (нужно для некоторых фич)"
+      tip="Ваша фамилия в Bitrix24 (нужно для некоторых функций)"
     >
       <InputText
         id="profile_lastName"
@@ -48,7 +116,7 @@ const { autoFill, isFetching } = useAutoFill(model);
     <FormField
       id="profile_userId"
       label="ID пользователя"
-      tip="Ваш ID в Bitrix24 (нужно для некоторых фич)"
+      tip="Ваш ID в Bitrix24 (нужно для некоторых функций)"
     >
       <InputNumber
         v-model="model.userId"
@@ -82,6 +150,38 @@ const { autoFill, isFetching } = useAutoFill(model);
         >tools.pixelplus.ru</a>
         → Меню → Настройки аккаунта → Ключ для доступа по API
       </p>
+    </FormField>
+    <FormField
+      id="profile_pixelToolsAiModel"
+      label="Нейросеть для AI-функций"
+      tip="Какой нейросетью выполняются AI-функции расширения: быстрое создание подзадач, сводка по итогам спринтов, анализ баллов задач, динамика задач группы. Список зависит от тарифа вашего ключа и может меняться."
+    >
+      <Select
+        v-model="model.pixelToolsAiModel"
+        input-id="profile_pixelToolsAiModel"
+        :options="aiModelChoices"
+        option-label="label"
+        option-value="value"
+        size="small"
+        fluid
+        :loading="isLoadingAiModels"
+        :disabled="!model.pixelToolsApiKey?.trim()"
+      />
+      <p
+        v-if="!model.pixelToolsApiKey?.trim()"
+        class="text-xs text-surface-400 dark:text-surface-500 mt-1"
+      >
+        Список нейросетей загрузится, когда будет указан API ключ.
+      </p>
+      <Message
+        v-if="aiModelsError"
+        severity="error"
+        size="small"
+        :closable="false"
+        class="mt-1"
+      >
+        {{ aiModelsError }}
+      </Message>
     </FormField>
   </div>
 </template>

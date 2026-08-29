@@ -118,7 +118,6 @@ async function saveSettings() {
                 v-if="option.photo"
                 :image="option.photo"
                 shape="circle"
-                size="small"
               />
               {{ option.name }}
             </div>
@@ -148,7 +147,6 @@ async function saveSettings() {
                 v-if="option.photo"
                 :image="option.photo"
                 shape="circle"
-                size="small"
               />
               {{ option.name }}
             </div>

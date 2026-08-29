@@ -1,16 +1,17 @@
 <script setup>
 import {Button, Dialog} from 'primevue';
-import {ref} from 'vue';
+import { computed, ref } from 'vue';
 
+import PersonalScopeWarning from '../../ui/PersonalScopeWarning.vue';
 import TaskDynamics from './components/TaskDynamics.vue';
 
-defineProps({
+const props = defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
   options: {
@@ -19,6 +20,7 @@ defineProps({
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
 const modalOpened = ref(false);
 const isInfoModalOpened = ref(false);
 </script>
@@ -45,6 +47,10 @@ const isInfoModalOpened = ref(false);
     <template #header>
       <div class="flex items-center gap-1">
         <span class="p-dialog-title">Динамика задач группы</span>
+        <PersonalScopeWarning
+          v-if="isPersonal"
+          with-performer-note
+        />
         <Button
           v-tooltip="'Как это работает'"
           size="small"
@@ -58,7 +64,7 @@ const isInfoModalOpened = ref(false);
     <TaskDynamics
       v-if="modalOpened"
       :session-id
-      :group-id
+      :context
       :options
     />
   </Dialog>

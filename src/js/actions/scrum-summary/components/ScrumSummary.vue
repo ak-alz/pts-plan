@@ -13,7 +13,7 @@ import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import {stringToPastelColor} from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
-import { computeTrendLine, defaultIgnorePoints, defaultMonths } from '../variables.js';
+import { aggregateTeamSprints, computePointsStats, computeTrend, defaultIgnorePoints, defaultMonths, normalizeSprintsToFullTeam } from '../variables.js';
 import CreateTaskTemplate from './CreateTaskTemplate.vue';
 import SettingsForm from './SettingsForm.vue';
 import SummaryChart from './SummaryChart.vue';
@@ -78,52 +78,76 @@ const computedUsers = computed(() => {
         return !d.isBefore(prevRangeStart) && !d.isAfter(prevRangeEnd);
       });
 
-      const points = currentPeriod.map(({ y }) => y).sort((a, b) => a - b);
-      const avg = points.length ? Math.round(sum(points) / points.length) : 0;
-      const median = points.length ? Math.round(getMedian(points)) : 0;
-
-      const prevPoints = prevPeriod.map(({ y }) => y).sort((a, b) => a - b);
-      const prevAvg = prevPoints.length ? Math.round(sum(prevPoints) / prevPoints.length) : 0;
-      const prevMedian = prevPoints.length ? Math.round(getMedian(prevPoints)) : 0;
-
-      const trendLine = currentPeriod.length >= 2 ? computeTrendLine(currentPeriod) : null;
-      const trendStart = trendLine?.[0].y ?? null;
-      const trendEnd = trendLine?.[trendLine.length - 1].y ?? null;
-      const trendDelta = trendStart !== null && trendEnd !== null ? trendEnd - trendStart : null;
-      const trendPct = trendDelta !== null && trendStart !== 0
-        ? Math.round((trendDelta / trendStart) * 100)
-        : null;
+      const { avg, median } = computePointsStats(currentPeriod.map(({ y }) => y));
+      const { avg: prevAvg, median: prevMedian } = computePointsStats(prevPeriod.map(({ y }) => y));
 
       return {
         ...user,
         visibleSprints: currentPeriod,
+        prevSprints: prevPeriod,
         filteredSprintsLength: currentPeriod.length,
         avg,
         median,
 
-        hasPrevPeriod: prevPoints.length > 0,
-        deltaAvg: prevPoints.length ? avg - prevAvg : 0,
-        deltaMedian: prevPoints.length ? median - prevMedian : 0,
+        hasPrevPeriod: prevPeriod.length > 0,
+        deltaAvg: prevPeriod.length ? avg - prevAvg : 0,
+        deltaMedian: prevPeriod.length ? median - prevMedian : 0,
 
-        trendLine,
-        trendStart,
-        trendEnd,
-        trendDelta,
-        trendPct,
+        ...computeTrend(currentPeriod),
       };
     });
 });
 const dateUpdated = ref(null);
 const trendMode = ref(false);
 
-function getMedian(values) {
-  const mid = Math.floor(values.length / 2);
-
-  return (values.length % 2
-      ? values[mid]
-      : (values[mid - 1] + values[mid]) / 2
-  );
+function withUserId(sprints, userId) {
+  return sprints.map((sprint) => ({ ...sprint, userId }));
 }
+
+// Показатели команды считаются по суммарным баллам за каждый спринт, а не усреднением личных
+// средних: состав исполнителей от спринта к спринту меняется, и среднее из средних это скрывает
+const teamSummary = computed(() => {
+  if (computedUsers.value.length < 2) return null;
+
+  const currentSprints = aggregateTeamSprints(computedUsers.value.flatMap((user) => withUserId(user.visibleSprints, user.id)));
+  if (!currentSprints.length) return null;
+
+  const previousSprints = aggregateTeamSprints(computedUsers.value.flatMap((user) => withUserId(user.prevSprints, user.id)));
+
+  // Ожидаемый вклад считаем по обоим периодам сразу: веса не должны меняться между периодами,
+  // иначе сравнение «текущий против предыдущего» поедет само по себе
+  const expectedPointsByUser = Object.fromEntries(computedUsers.value.map((user) => {
+    const points = [...user.visibleSprints, ...user.prevSprints].map(({ y }) => y);
+    return [user.id, points.length ? sum(points) / points.length : 0];
+  }));
+
+  const normalizedCurrent = normalizeSprintsToFullTeam(currentSprints, expectedPointsByUser);
+  const normalizedPrevious = normalizeSprintsToFullTeam(previousSprints, expectedPointsByUser);
+
+  const { avg, median } = computePointsStats(currentSprints.map(({ y }) => y));
+  const normalized = computePointsStats(normalizedCurrent.map(({ y }) => y));
+  const normalizedPrev = computePointsStats(normalizedPrevious.map(({ y }) => y));
+
+  const totalPoints = sum(currentSprints.map(({ y }) => y));
+  const totalParticipations = sum(currentSprints.map((sprint) => sprint.participantIds.length));
+
+  return {
+    sprintsCount: currentSprints.length,
+    totalPoints,
+    avgParticipants: Math.round((totalParticipations / currentSprints.length) * 10) / 10,
+    avgPerParticipant: Math.round(totalPoints / totalParticipations),
+    avg,
+    median,
+    normalizedAvg: normalized.avg,
+
+    hasPrevPeriod: previousSprints.length > 0,
+    deltaAvg: previousSprints.length ? normalized.avg - normalizedPrev.avg : 0,
+    deltaMedian: previousSprints.length ? normalized.median - normalizedPrev.median : 0,
+
+    ...computeTrend(normalizedCurrent),
+  };
+});
+
 
 async function loadSettings() {
   const res = await chrome.storage.local.get([settingsStorageKey.value]);
@@ -223,7 +247,7 @@ function buildAiData() {
   const ignorePoints = typeof settings.value.ignorePoints === 'number' ? settings.value.ignorePoints : defaultIgnorePoints;
   const aiData = computedUsers.value.map((user) => {
     const entry = {
-      участник: user.name,
+      исполнитель: user.name,
       спринтов_в_периоде: user.visibleSprints.length,
       средний_балл: user.avg,
       медианный_балл: user.median,
@@ -240,6 +264,31 @@ function buildAiData() {
     }
     return entry;
   });
+
+  const team = teamSummary.value;
+  if (team) {
+    aiData.push({
+      исполнитель: 'ВСЯ КОМАНДА (суммарно за спринт)',
+      спринтов_в_периоде: team.sprintsCount,
+      исполнителей_в_спринте: team.avgParticipants,
+      средний_балл: team.avg,
+      медианный_балл: team.median,
+      средний_балл_на_исполнителя: team.avgPerParticipant,
+      средний_балл_при_полном_составе: team.normalizedAvg,
+      всего_баллов_за_период: team.totalPoints,
+      ...(team.trendDelta !== null ? {
+        тренд_начало: team.trendStart,
+        тренд_конец: team.trendEnd,
+        тренд_дельта: team.trendDelta,
+        ...(team.trendPct !== null ? {тренд_процент: `${team.trendPct > 0 ? '+' : ''}${team.trendPct}%`} : {}),
+      } : {}),
+      ...(team.hasPrevPeriod ? {
+        дельта_среднего: team.deltaAvg,
+        дельта_медианы: team.deltaMedian,
+      } : {}),
+    });
+  }
+
   return {aiData, ignorePoints};
 }
 
@@ -444,6 +493,7 @@ onMounted(async () => {
     <SummaryTable
       v-else
       :users="computedUsers"
+      :team="teamSummary"
       :trend-mode="trendMode"
       class="mb-3"
     />

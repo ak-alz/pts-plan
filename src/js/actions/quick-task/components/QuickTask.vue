@@ -1,6 +1,6 @@
 <script setup>
 import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select, Textarea} from 'primevue';
-import {onMounted, reactive, ref} from 'vue';
+import {computed, onMounted, reactive, ref} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {showToast} from '../../../toastHost/showToast.js';
@@ -10,14 +10,17 @@ import QuickTaskSettings from './QuickTaskSettings.vue';
 
 const props = defineProps({
   sessionId: {type: String, required: true},
-  groupId: {type: String, required: true},
+  context: {type: Object, required: true},
   stageId: {type: String, default: null},
 });
 
 const emit = defineEmits(['success']);
 
+const isPersonal = computed(() => props.context.type === 'personal');
+const contextKey = computed(() => isPersonal.value ? `personal-${props.context.id}` : props.context.id);
+
 const api = new BitrixApi(props.sessionId);
-const settingsStorageKey = `quick-task-settings-${props.groupId}`;
+const settingsStorageKey = computed(() => `quick-task-settings-${contextKey.value}`);
 
 const isSettingsOpen = ref(false);
 const isLoadingData = ref(false);
@@ -39,15 +42,15 @@ const form = reactive({
 
 async function loadSettings() {
   try {
-    const res = await chrome.storage.local.get([settingsStorageKey]);
-    settings.value = res[settingsStorageKey] ?? {};
+    const stored = await chrome.storage.local.get([settingsStorageKey.value]);
+    settings.value = stored[settingsStorageKey.value] ?? {};
   } catch { /* ignore */ }
 }
 
 function applyDefaults() {
   form.copyCommit = !!(settings.value.showCommitCheckbox && settings.value.copyCommitDefault);
-  form.responsibleId = settings.value.defaultResponsible ?? userId.value;
-  form.auditorIds = settings.value.defaultAuditors ?? [];
+  form.responsibleId = isPersonal.value ? userId.value : (settings.value.defaultResponsible ?? userId.value);
+  form.auditorIds = isPersonal.value ? [] : (settings.value.defaultAuditors ?? []);
 }
 
 async function onSettingsSaved() {
@@ -59,18 +62,23 @@ onMounted(async () => {
   isLoadingData.value = true;
   try {
     const [groupUsers, stagesResponse, currentUser] = await Promise.all([
-      api.getGroupUsers(props.groupId),
-      api.getStages(props.groupId),
+      // На личном плане список участников группы не имеет смысла — исполнитель всегда сам пользователь
+      isPersonal.value ? Promise.resolve([]) : api.getGroupUsers(props.context.id),
+      // task.stages.get всегда отдаёт «Мой план» ТЕКУЩЕГО пользователя строго по entityId=0,
+      // а не по его userId — иначе ACCESS_DENIED (проверено на реальном канбане)
+      api.getStages(isPersonal.value ? '0' : props.context.id),
       api.getCurrentUser(),
     ]);
     await loadSettings();
 
     userId.value = currentUser ? Number(currentUser.ID) : null;
-    users.value = groupUsers.map((user) => ({
-      id: Number(user.ID),
-      title: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
-      avatar: user.PERSONAL_PHOTO ?? '',
-    }));
+    users.value = isPersonal.value && currentUser
+      ? [{id: userId.value, title: [currentUser.NAME, currentUser.LAST_NAME].filter(Boolean).join(' '), avatar: currentUser.PERSONAL_PHOTO ?? ''}]
+      : groupUsers.map((user) => ({
+        id: Number(user.ID),
+        title: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
+        avatar: user.PERSONAL_PHOTO ?? '',
+      }));
     stages.value = Object.values(stagesResponse.data?.result ?? {})
       .sort((a, b) => a.SORT - b.SORT)
       .map((stage) => ({id: stage.ID, title: stage.TITLE, color: `#${stage.COLOR}`}));
@@ -96,7 +104,7 @@ async function submit() {
   }
   isSubmitting.value = true;
   try {
-    const fields = {TITLE: title, GROUP_ID: props.groupId};
+    const fields = {TITLE: title, GROUP_ID: isPersonal.value ? '0' : props.context.id};
     if (form.stageId) fields.STAGE_ID = form.stageId;
     if (form.responsibleId) fields.RESPONSIBLE_ID = form.responsibleId;
     if (form.description.trim()) fields.DESCRIPTION = form.description.trim();
@@ -113,7 +121,9 @@ async function submit() {
       } catch { /* ignore */ }
     }
 
-    const taskUrl = taskId && settings.value.showCreatedTask ? getTaskUrl(props.groupId, taskId) : null;
+    const taskUrl = taskId && settings.value.showCreatedTask
+      ? getTaskUrl(isPersonal.value ? '0' : props.context.id, taskId, userId.value)
+      : null;
     showToast({
       severity: 'success',
       summary: 'Задача создана',
@@ -161,8 +171,11 @@ async function submit() {
       />
     </FormField>
 
-    <div class="grid grid-cols-3 gap-3">
-      <FormField label="Исполнитель">
+    <div :class="isPersonal ? 'grid grid-cols-1 max-w-[240px] gap-3' : 'grid grid-cols-3 gap-3'">
+      <FormField
+        v-if="!isPersonal"
+        label="Исполнитель"
+      >
         <Select
           v-model="form.responsibleId"
           option-value="id"
@@ -180,7 +193,6 @@ async function submit() {
                 v-if="option.avatar"
                 :image="option.avatar"
                 shape="circle"
-                size="small"
               />
               {{ option.title }}
             </div>
@@ -207,7 +219,10 @@ async function submit() {
         </Select>
       </FormField>
 
-      <FormField label="Наблюдатели">
+      <FormField
+        v-if="!isPersonal"
+        label="Наблюдатели"
+      >
         <MultiSelect
           v-model="form.auditorIds"
           option-value="id"
@@ -226,7 +241,6 @@ async function submit() {
                 v-if="option.avatar"
                 :image="option.avatar"
                 shape="circle"
-                size="small"
               />
               {{ option.title }}
             </div>
@@ -275,6 +289,7 @@ async function submit() {
       :settings-storage-key="settingsStorageKey"
       :users="users"
       :current-user-id="userId"
+      :is-personal="isPersonal"
       @success="onSettingsSaved"
     />
   </Dialog>

@@ -10,6 +10,7 @@ const props = defineProps({
   settingsStorageKey: {type: String, required: true},
   users: {type: Array, default: () => []},
   currentUserId: {type: Number, default: null},
+  isPersonal: {type: Boolean, default: false},
 });
 
 const emit = defineEmits(['success']);
@@ -50,6 +51,7 @@ async function save() {
   >
     <div class="grid grid-cols-2 gap-x-4 gap-3 mb-3">
       <FormField
+        v-if="!isPersonal"
         id="qt_default_responsible"
         label="Исполнитель по умолчанию"
       >
@@ -71,7 +73,6 @@ async function save() {
                 v-if="option.avatar"
                 :image="option.avatar"
                 shape="circle"
-                size="small"
               />
               {{ option.title }}
             </div>
@@ -80,6 +81,7 @@ async function save() {
       </FormField>
 
       <FormField
+        v-if="!isPersonal"
         id="qt_default_auditors"
         label="Наблюдатели по умолчанию"
       >
@@ -101,7 +103,6 @@ async function save() {
                 v-if="option.avatar"
                 :image="option.avatar"
                 shape="circle"
-                size="small"
               />
               {{ option.title }}
             </div>

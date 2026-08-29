@@ -9,8 +9,8 @@ defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
 });
@@ -37,7 +37,7 @@ const modalOpened = ref(false);
   >
     <TaskSearchMain
       :session-id
-      :group-id
+      :context
     />
   </Dialog>
 </template>

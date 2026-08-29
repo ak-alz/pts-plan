@@ -19,7 +19,7 @@ const props = defineProps({
 
 const emit = defineEmits(['accept', 'dismiss', 'toggle-mute']);
 
-// Крестик закрывает окно так же, как кнопка «Скрыть» (отмена созвона). Диалог контролируемый
+// Крестик закрывает окно так же, как кнопка «Скрыть» (отмена встречи). Диалог контролируемый
 // (:visible завязан на meeting), поэтому закрытие по X превращаем в тот же dismiss
 function onHide(value) {
   if (!value) emit('dismiss');

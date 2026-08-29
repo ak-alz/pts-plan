@@ -67,7 +67,7 @@ export function getTaskIdFromUrl(url) {
 }
 
 export function getGroupIdFromUrl(url) {
-  const pattern = /\/workgroups\/group\/(\d+)\/tasks\/(?!task\/)(?:[?#]|$)/;
+  const pattern = /\/workgroups\/group\/(\d+)\/tasks\/(?:[?#]|$)/;
   const match = url.match(pattern);
 
   if (match && match[1]) {
@@ -79,6 +79,23 @@ export function getGroupIdFromUrl(url) {
 
 export function getUserIdFromUrl(url) {
   const pattern = /\/company\/personal\/user\/(\d+)(?:\/|\?|#|$)/;
+  const match = url.match(pattern);
+
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  return null;
+}
+
+/**
+ * Извлекает userId со страницы личного канбана («Мой план»). В отличие от getUserIdFromUrl()
+ * матчит только сам канбан (`/tasks/`), а не любую страницу профиля пользователя.
+ * @param {string} url
+ * @returns {string|null}
+ */
+export function getPersonalPlanUserIdFromUrl(url) {
+  const pattern = /\/company\/personal\/user\/(\d+)\/tasks\/(?:[?#]|$)/;
   const match = url.match(pattern);
 
   if (match && match[1]) {
@@ -994,6 +1011,33 @@ export function estimateTokenCount(text) {
   const cyrillicRatio = (text.match(CYRILLIC_CHARACTER_RE) || []).length / text.length;
   const charactersPerToken = CHARACTERS_PER_TOKEN_LATIN - (CHARACTERS_PER_TOKEN_LATIN - CHARACTERS_PER_TOKEN_CYRILLIC) * cyrillicRatio;
   return Math.ceil(text.length / charactersPerToken);
+}
+
+const IMAGE_FILE_EXTENSION_RE = /\.(?:png|jpe?g|gif|webp|bmp|avif)$/i;
+// Пикселей изображения на один токен
+const PIXELS_PER_IMAGE_TOKEN = 750;
+
+/**
+ * Проверяет по расширению, является ли файл растровым изображением.
+ * @param {string} fileName
+ * @returns {boolean}
+ */
+export function isImageFileName(fileName) {
+  return IMAGE_FILE_EXTENSION_RE.test(fileName ?? '');
+}
+
+/**
+ * Приблизительно оценивает число токенов изображения по его размерам: мультимодальные модели
+ * считают изображение от площади, порядка 750 пикселей на токен. Предел модели по длинной стороне
+ * (перед подсчётом изображение масштабируется под него) не учитывается — оценка ориентировочная
+ * и не привязана к конкретной модели.
+ * @param {number} width ширина в пикселях
+ * @param {number} height высота в пикселях
+ * @returns {number} приблизительное число токенов
+ */
+export function estimateImageTokenCount(width, height) {
+  if (!width || !height) return 0;
+  return Math.ceil((width * height) / PIXELS_PER_IMAGE_TOKEN);
 }
 
 // [TABLE][TR][TD]...[/TD][/TR][/TABLE] → Markdown-таблица. Первая строка становится заголовком —

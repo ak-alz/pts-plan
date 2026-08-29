@@ -1,3 +1,4 @@
+import {DEFAULT_MODEL_VALUE} from './aiModel.js';
 import {getColors} from './utils.js';
 
 export const optionTypes = {
@@ -21,21 +22,21 @@ const options = [
   {
     key: 'userFirstName',
     name: 'Имя',
-    tip: 'Ваше имя в Bitrix24 (нужно для некоторых фич)',
+    tip: 'Ваше имя в Bitrix24 (нужно для некоторых функций)',
     groups: ['profile'],
     type: optionTypes.TEXT,
   },
   {
     key: 'userLastName',
     name: 'Фамилия',
-    tip: 'Ваша фамилия в Bitrix24 (нужно для некоторых фич)',
+    tip: 'Ваша фамилия в Bitrix24 (нужно для некоторых функций)',
     groups: ['profile'],
     type: optionTypes.TEXT,
   },
   {
     key: 'userId',
     name: 'ID пользователя',
-    tip: 'Ваш ID в Bitrix24 (нужно для некоторых фич)',
+    tip: 'Ваш ID в Bitrix24 (нужно для некоторых функций)',
     groups: ['profile'],
     type: optionTypes.NUMBER,
   },
@@ -45,6 +46,14 @@ const options = [
     tip: 'API ключ для AI-функций (декомпозиция задач)',
     groups: ['profile'],
     type: optionTypes.TEXT,
+  },
+  {
+    key: 'pixelToolsAiModel',
+    name: 'Нейросеть для AI-функций',
+    tip: 'Какой нейросетью выполняются AI-функции расширения. Список зависит от тарифа вашего ключа.',
+    groups: ['profile'],
+    type: optionTypes.SELECT,
+    default: DEFAULT_MODEL_VALUE,
   },
   {
     key: 'userNameColor',
@@ -168,7 +177,7 @@ const options = [
     popularity: 90,
     action: async ({sessionId}) => {
       const {taskSearch} = await import('/src/js/actions/task-search');
-      taskSearch(sessionId);
+      return taskSearch(sessionId);
     },
   },
   {
@@ -180,19 +189,19 @@ const options = [
     popularity: 90,
     action: async ({sessionId}) => {
       const {quickTask} = await import('/src/js/actions/quick-task');
-      quickTask(sessionId);
+      return quickTask(sessionId);
     },
   },
   {
     key: 'scrumPoints',
     name: 'Таблица баллов за текущий спринт (виджет)',
-    tip: '<p>Добавляет кнопку «Scrum» в канбане. Показывает таблицу баллов за текущий спринт: сколько очков у каждого исполнителя в каждой колонке.</p><p>Отдельная фича внутри — кнопка завершения всех задач в колонке одним кликом, очень удобно при закрытии спринта.</p><p>Внутри виджета есть настройки.</p>',
+    tip: '<p>Добавляет кнопку «Scrum» в канбане. Показывает таблицу баллов за текущий спринт: сколько очков у каждого исполнителя в каждой колонке.</p><p>Отдельная функция внутри — кнопка завершения всех задач в колонке одним кликом, очень удобно при закрытии спринта.</p><p>Внутри виджета есть настройки.</p>',
     author: 'Данил М.',
     groups: ['analytics'],
     popularity: 75,
     action: async ({sessionId}) => {
       const {scrumPoints} = await import('/src/js/actions/scrum-points');
-      scrumPoints(sessionId);
+      return scrumPoints(sessionId);
     },
   },
   {
@@ -204,7 +213,7 @@ const options = [
     popularity: 60,
     action: async ({sessionId}) => {
       const {sprintHistory} = await import('/src/js/actions/sprint-history');
-      sprintHistory(sessionId);
+      return sprintHistory(sessionId);
     },
   },
   {
@@ -216,7 +225,7 @@ const options = [
     popularity: 55,
     action: async ({sessionId}) => {
       const {scrumSummary} = await import('/src/js/actions/scrum-summary');
-      scrumSummary(sessionId);
+      return scrumSummary(sessionId);
     },
   },
   {
@@ -228,7 +237,7 @@ const options = [
     popularity: 55,
     action: async ({sessionId, options}) => {
       const {taskAnalysis} = await import('/src/js/actions/task-analysis');
-      taskAnalysis(sessionId, options);
+      return taskAnalysis(sessionId, options);
     },
   },
   {
@@ -242,7 +251,7 @@ const options = [
     popularity: 70,
     action: async ({sessionId, options}) => {
       const {taskDynamics} = await import('/src/js/actions/task-dynamics');
-      taskDynamics(sessionId, options);
+      return taskDynamics(sessionId, options);
     },
   },
   {
@@ -254,7 +263,7 @@ const options = [
     popularity: 60,
     action: async ({sessionId}) => {
       const {sprintPriorities} = await import('/src/js/actions/sprint-priorities');
-      sprintPriorities(sessionId);
+      return sprintPriorities(sessionId);
     },
   },
   {
@@ -363,13 +372,13 @@ const options = [
     new: true,
     action: async ({ sessionId }) => {
       const { exportGroupTasks } = await import('/src/js/actions/export-group-tasks');
-      exportGroupTasks(sessionId);
+      return exportGroupTasks(sessionId);
     },
   },
   {
     key: 'fixLinks',
     name: 'Не обрезать длинные ссылки',
-    tip: '<p>Bitrix автоматически обрезает длинные ссылки в описании и комментариях, заменяя конец на «...». Эта фича восстанавливает полный адрес — теперь его можно прочитать целиком.</p>',
+    tip: '<p>Bitrix автоматически обрезает длинные ссылки в описании и комментариях, заменяя конец на «...». Эта функция восстанавливает полный адрес — теперь его можно прочитать целиком.</p>',
     author: 'Алексей К.',
     groups: ['tasks'],
     popularity: 70,
@@ -558,8 +567,8 @@ const options = [
       },
       {
         key: 'notificationDetailsHideChips',
-        name: 'Скрыть чипы',
-        tip: 'Убирает строку чипов (тип, группа, стадия, постановщик, исполнитель) справа от заголовка уведомления. Цветная рамка/фон и иконка подсветки в углу карточки остаются.',
+        name: 'Скрыть метки',
+        tip: 'Убирает строку меток (тип, группа, стадия, постановщик, исполнитель) справа от заголовка уведомления. Цветная рамка/фон и иконка подсветки в углу карточки остаются.',
         default: false,
       },
       {
@@ -684,7 +693,7 @@ const options = [
   {
     key: 'invisibleMentions',
     name: 'Подсветка неработающих упоминаний',
-    tip: '<p>Упоминание пользователя в комментарии работает только если он добавлен в задачу. Эта фича подсвечивает иконкой предупреждения «неработающие» упоминания, а также комментарии без упоминаний участников задачи в первых 100 символах.</p>',
+    tip: '<p>Упоминание пользователя в комментарии работает только если он добавлен в задачу. Эта функция подсвечивает иконкой предупреждения «неработающие» упоминания, а также комментарии без упоминаний участников задачи в первых 100 символах.</p>',
     author: 'Алексей К.',
     groups: ['tasks'],
     popularity: 80,
@@ -706,9 +715,9 @@ const options = [
     groups: ['notifications'],
     popularity: 80,
     needs: ['userFirstName', 'userLastName'],
-    action: async ({options}) => {
+    action: async ({sessionId, options}) => {
       const {closeNotifications} = await import('/src/js/actions/close-notifications');
-      closeNotifications(options.userFirstName, options.userLastName, options);
+      closeNotifications(sessionId, options.userFirstName, options.userLastName, options);
     },
     options: [
       {
@@ -716,6 +725,18 @@ const options = [
         name: 'Выделять TAGALL и упоминания в тексте',
         tip: 'Заменяет в тексте всплывающего уведомления «[Имя Фамилия] и другие участники задачи» на жирный TAGALL, а ваше имя выделяет жирным.',
         default: true,
+      },
+      {
+        key: 'closeNotificationsMarkRead',
+        name: 'Отмечать прочитанными',
+        tip: 'Закрытое чужое уведомление отмечается прочитанным, чтобы счётчик у колокольчика не рос. Для части уведомлений отметка может не сработать — они просто закрываются без неё.',
+        default: false,
+      },
+      {
+        key: 'closeNotificationsMarkTaskViewed',
+        name: 'Прочитывать комментарии задачи',
+        tip: '<p>Закрывая чужое уведомление о комментарии, отмечает задачу просмотренной — она перестаёт подсвечиваться в списке как задача с новыми комментариями.</p><p>Bitrix отмечает просмотр задачи целиком, поэтому прочитанными станут <b>все</b> её комментарии, а не только тот, о котором пришло уведомление. Сами уведомления о комментариях, где вас упомянули, при этом остаются непрочитанными.</p>',
+        default: false,
       },
     ],
   },
@@ -754,9 +775,9 @@ const options = [
     groups: ['appearance'],
     popularity: 50,
     needs: ['userFirstName', 'userLastName'],
-    action: async ({options}) => {
+    action: async ({sessionId, options}) => {
       const {kanbanUserCards} = await import('/src/js/actions/kanban-user-cards');
-      kanbanUserCards(options.kanbanUserCardBackground, options.userFirstName, options.userLastName);
+      return kanbanUserCards(sessionId, options.kanbanUserCardBackground, options.userFirstName, options.userLastName);
     },
     options: [
       {
@@ -933,7 +954,7 @@ const options = [
   {
     key: 'callNotifications',
     name: 'Уведомления о встречах',
-    tip: '<p>Напоминает о запланированных встречах: браузерным уведомлением, всплывающим уведомлением или окном на сайте, со ссылкой на созвон в каждом. У окна можно включить рингтон, но по умолчанию звук выключен и может не сработать без взаимодействия со вкладкой. Каждый способ включается отдельно. Список встреч и настройки — на отдельной странице.</p>',
+    tip: '<p>Напоминает о запланированных встречах: браузерным уведомлением, всплывающим уведомлением или окном на сайте, со ссылкой на встречу в каждом. У окна можно включить рингтон, но по умолчанию звук выключен и может не сработать без взаимодействия со вкладкой. Каждый способ включается отдельно. Список встреч и настройки — на отдельной странице.</p>',
     author: 'Константин Ф.',
     groups: ['notifications'],
     popularity: 60,
@@ -944,6 +965,16 @@ const options = [
       const {callNotifications} = await import('/src/js/actions/call-notifications');
       callNotifications();
     },
+  },
+  {
+    key: 'imageActions',
+    name: 'Копирование и скачивание изображений',
+    tip: '<p>При наведении на изображение в описании задачи или в комментарии показывает поверх него две кнопки: скопировать изображение в буфер обмена и скачать файл.</p><p>И копируется, и скачивается оригинал, а не уменьшенное превью из текста.</p>',
+    author: 'Данил М.',
+    groups: ['tasks'],
+    popularity: 60,
+    new: true,
+    action: () => import('/src/js/actions/image-actions'),
   },
 ];
 

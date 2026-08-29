@@ -12,11 +12,17 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
   stages: {
+    type: Array,
+    default: () => [],
+  },
+  // На личном плане списка участников нет — исполнители известны только из уже загруженных задач,
+  // поэтому их передаёт родитель (см. computed users в SprintHistory.vue)
+  users: {
     type: Array,
     default: () => [],
   },
@@ -46,9 +52,14 @@ const form = reactive({
 });
 
 onMounted(async () => {
+  if (props.context.type === 'personal') {
+    userOptions.value = props.users.map((user) => ({id: String(user.id), name: user.name, photo: user.photo}));
+    return;
+  }
+
   isUsersLoading.value = true;
   try {
-    groupUsers.value = await bitrixApi.getGroupUsers(props.groupId);
+    groupUsers.value = await bitrixApi.getGroupUsers(props.context.id);
     userOptions.value = groupUsers.value.map((user) => ({
       id: String(user.ID),
       name: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
@@ -64,7 +75,8 @@ onMounted(async () => {
 async function saveSettings() {
   isLoading.value = true;
   try {
-    const key = `sprint-history-settings-${props.groupId}`;
+    const contextKey = props.context.type === 'personal' ? `personal-${props.context.id}` : props.context.id;
+    const key = `sprint-history-settings-${contextKey}`;
     await chrome.storage.local.set({[key]: toRaw(form)});
     showToast({severity: 'success', summary: 'Сохранено', life: 3000});
     emit('success', toRaw(form));
@@ -110,7 +122,6 @@ async function saveSettings() {
                 v-if="option.photo"
                 :image="option.photo"
                 shape="circle"
-                size="small"
               />
               {{ option.name }}
             </div>

@@ -1,18 +1,35 @@
 <script setup>
-import {Button, Dialog} from 'primevue';
-import { ref } from 'vue';
+import {Button, Dialog, Message, Select} from 'primevue';
+import { computed, onMounted, ref } from 'vue';
 
+import BitrixApi from '../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../composables/usePersonalGroupFilter.js';
+import FormField from '../../ui/FormField.vue';
 import ScrumPoints from './components/ScrumPoints.vue';
 
-defineProps({
+const props = defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
+});
+
+const isPersonal = computed(() => props.context.type === 'personal');
+
+// У «Моего плана» нет своего канбана, а таблица баллов держится на его колонках, поэтому на личном
+// плане виджет работает по выбранной группе. Настройки при этом общие с виджетом самой группы
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  new BitrixApi(props.sessionId),
+  `scrum-points-personal-group-${props.context.id}`,
+);
+const activeGroupId = computed(() => (isPersonal.value ? selectedGroupId.value : props.context.id));
+
+onMounted(() => {
+  if (isPersonal.value) restoreGroupFilter();
 });
 
 const modalOpened = ref(false);
@@ -48,9 +65,42 @@ const isInfoModalOpened = ref(false);
         />
       </div>
     </template>
+    <div
+      v-if="isPersonal"
+      class="mb-3"
+    >
+      <FormField
+        label="Группа"
+        tip="У личного плана нет своего канбана, поэтому баллы считаются по колонкам выбранной группы"
+      >
+        <Select
+          v-model="selectedGroupId"
+          :options="groupOptions"
+          option-label="name"
+          option-value="id"
+          placeholder="Выберите группу"
+          filter
+          filter-placeholder="Поиск"
+          size="small"
+          class="min-w-[260px]"
+        />
+      </FormField>
+    </div>
+
+    <Message
+      v-if="isPersonal && !activeGroupId"
+      severity="info"
+      size="small"
+      :closable="false"
+    >
+      Выберите группу — баллы считаются по колонкам её канбана.
+    </Message>
+
     <ScrumPoints
+      v-if="activeGroupId"
+      :key="activeGroupId"
       :session-id
-      :group-id
+      :group-id="activeGroupId"
     />
   </Dialog>
 

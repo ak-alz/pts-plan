@@ -113,7 +113,7 @@ const RINGTONE_MAX_MINUTES_SELECT_OPTIONS = RINGTONE_MAX_MINUTES_OPTIONS.map((mi
           class="text-sm cursor-pointer"
         >Всплывающее уведомление</label>
         <i
-          v-tooltip="'Всплывает в углу страницы со ссылкой на созвон — тише, чем окно с рингтоном. Висит, пока не закроете.'"
+          v-tooltip="'Всплывает в углу страницы со ссылкой на встречу — тише, чем окно с рингтоном. Висит, пока не закроете.'"
           class="pi pi-question-circle text-surface-500 dark:text-surface-400 text-xs"
         />
       </div>

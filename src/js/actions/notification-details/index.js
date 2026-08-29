@@ -33,6 +33,8 @@ const SELECTORS = {
   anyItem: '.bx-im-content-notification-item__container',
   taskLink: 'a[href*="/tasks/task/view/"]',
   titleContainer: '.bx-im-content-notification-item-header__title-container',
+  authorTitle: '.bx-im-content-notification-item-header__title-container .bx-im-chat-title__text',
+  authorAvatar: '.bx-im-content-notification-item-avatar__container img',
   contentText: '.bx-im-content-notification-item-content__content-text',
   notifHeader: '.bx-im-content-notification__header',
   headerButtonsContainer: '.bx-im-content-notification__header-buttons-container',
@@ -187,6 +189,26 @@ function applyTextTransform(element, firstName, lastName) {
   textElement.innerHTML = markTagallAndMentions(textElement.innerHTML, firstName, lastName);
 }
 
+// В разметке карточки автор есть только именем, ID пользователя там нет и ссылки на профиль тоже,
+// поэтому именем приходится обходиться и как значением фильтра. Имя лежит в двух местах —
+// заголовок карточки и alt аватара; второе служит резервом. Оттуда же берётся и сам аватар,
+// так что аватарки в опциях фильтра не стоят ни одного дополнительного запроса
+function getAuthorInfo(element) {
+  const avatarElement = element.querySelector(SELECTORS.authorAvatar);
+  const titleElement = element.querySelector(SELECTORS.authorTitle);
+  const titleName = titleElement?.getAttribute('title')?.trim() || titleElement?.textContent.trim();
+
+  return {
+    name: titleName || avatarElement?.getAttribute('alt')?.trim() || '',
+    avatarUrl: avatarElement?.getAttribute('src') ?? '',
+  };
+}
+
+// Имя подставляется в CSS-селектор как строка в кавычках — экранируем то, что её ломает
+function escapeCssString(value) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 export function notificationDetails(sessionId, options = {}) {
   const bitrixApi = new BitrixApi(sessionId);
 
@@ -206,9 +228,9 @@ export function notificationDetails(sessionId, options = {}) {
   const userId = options.userId ? String(options.userId) : null;
 
   // Единый источник подсветки: атрибут, иконка PrimeIcons, подпись, цвета рамки/фона и флаг.
-  // Порядок = приоритет: getHighlightMatch берёт первый совпавший (он же задаёт иконку и чип),
+  // Порядок = приоритет: getHighlightMatch берёт первый совпавший (он же задаёт иконку и метку),
   // а injectStyles вставляет CSS в обратном порядке, чтобы по каскаду победила рамка того же типа.
-  // duplicatesType — ключ NOTIF_TYPES, чей тип-чип не дублируем (его заменяет чип подсветки).
+  // duplicatesType — ключ NOTIF_TYPES, чью метку типа не дублируем (её заменяет метка подсветки).
   const HIGHLIGHT_ICONS = [
     {attribute: 'data-pts-my-mention', icon: 'pi-at', label: 'Упомянут', color: options.notificationDetailsHighlightMentionBorder, background: options.notificationDetailsHighlightMentionBackground, enabled: flags.highlightMention},
     {attribute: 'data-pts-my-task', icon: 'pi-wrench', label: 'Исполнитель', color: options.notificationDetailsHighlightBorder, background: options.notificationDetailsHighlightBackground, enabled: flags.highlight},
@@ -224,6 +246,7 @@ export function notificationDetails(sessionId, options = {}) {
     groups: new Map(),      // groupId → group | null
     stages: new Map(),      // stageId → stage
     stageGroups: new Set(), // groupId, для которых стадии уже загружены
+    authorAvatars: new Map(), // имя автора → URL аватара, ключом служит имя за отсутствием ID
   };
 
   const FILTER_STYLE_ID = 'pts-nd-active-filters';
@@ -236,15 +259,19 @@ export function notificationDetails(sessionId, options = {}) {
   const filterState = reactive({
     selectedGroupIds: [],
     selectedHighlightAttributes: [],
+    selectedAuthorNames: [],
     groupOptions: [],
     highlightOptions: [],
+    authorOptions: [],
+    visibleCount: 0,
+    totalCount: 0,
     // Селект типов имеет смысл, только если хотя бы одна подсветка включена в настройках —
     // иначе он всегда останется пустым (data-атрибуты подсветки не расставляются вовсе, см. renderItem)
     showHighlightSelect: HIGHLIGHT_ICONS.some((item) => item.enabled),
   });
 
   // Загружается один раз за время жизни страницы, до первой отрисовки фильтр-бара — благодаря
-  // этому последний выбор пользователя (группа/тип) применяется сразу, как только для него
+  // этому последний выбор пользователя (группа/тип/автор) применяется сразу, как только для него
   // появится подходящая опция в списке (см. updateGroupFilterOptions/updateHighlightFilterOptions)
   async function loadSavedFilterState() {
     if (filterStateLoaded) return;
@@ -257,6 +284,7 @@ export function notificationDetails(sessionId, options = {}) {
     if (savedState) {
       filterState.selectedGroupIds = savedState.groupIds ?? [];
       filterState.selectedHighlightAttributes = savedState.highlightAttributes ?? [];
+      filterState.selectedAuthorNames = savedState.authorNames ?? [];
     }
 
     if (!filterState.showHighlightSelect && filterState.selectedHighlightAttributes.length) {
@@ -275,8 +303,15 @@ export function notificationDetails(sessionId, options = {}) {
         // chrome.storage.local не сериализует Proxy-массив как настоящий Array (см. CLAUDE.md)
         groupIds: [...filterState.selectedGroupIds],
         highlightAttributes: [...filterState.selectedHighlightAttributes],
+        authorNames: [...filterState.selectedAuthorNames],
       },
     });
+  }
+
+  function hasActiveFilters() {
+    return !!(filterState.selectedGroupIds.length
+      || filterState.selectedHighlightAttributes.length
+      || filterState.selectedAuthorNames.length);
   }
 
   // Единая точка входа для любого изменения выбора — селект группы/типа или кнопка сброса в
@@ -292,6 +327,8 @@ export function notificationDetails(sessionId, options = {}) {
     applyFilters();
     updateGroupFilterOptions(container);
     updateHighlightFilterOptions(container);
+    updateAuthorFilterOptions(container);
+    updateFilterCounts(container);
     saveFilterState();
     maybeTriggerFilterLoadMore(container);
   }
@@ -308,13 +345,14 @@ export function notificationDetails(sessionId, options = {}) {
     // display:contents — сам div не должен быть отдельным flex-item внутри header: раскладка
     // (flex/gap/padding) целиком живёт на <form> внутри FilterBar.vue, а не на этом контейнере
     const mountElement = document.createElement('div');
-    mountElement.className = 'contents pts-nd-filter-bar';
+    mountElement.className = 'contents pts-nd-filter-bar pts-app';
 
     const app = createApp(FilterBar, {
       filterState,
       onSelectGroup: (value) => applySelection({selectedGroupIds: value}),
       onSelectHighlight: (value) => applySelection({selectedHighlightAttributes: value}),
-      onReset: () => applySelection({selectedGroupIds: [], selectedHighlightAttributes: []}),
+      onSelectAuthor: (value) => applySelection({selectedAuthorNames: value}),
+      onReset: () => applySelection({selectedGroupIds: [], selectedHighlightAttributes: [], selectedAuthorNames: []}),
     });
     app.use(PrimeVue, primeVueOptions);
     app.directive('tooltip', Tooltip);
@@ -323,8 +361,8 @@ export function notificationDetails(sessionId, options = {}) {
 
     header.insertBefore(mountElement, buttonsContainer);
 
-    // filterState.selectedGroupIds/selectedHighlightAttributes не сбрасываем — к этому моменту в
-    // них уже может лежать восстановленный chrome.storage.local выбор (см. loadSavedFilterState в init())
+    // Выбранные значения в filterState не сбрасываем — к этому моменту в них уже может лежать
+    // восстановленный из chrome.storage.local выбор (см. loadSavedFilterState в init())
     applyFilters();
   }
 
@@ -339,6 +377,10 @@ export function notificationDetails(sessionId, options = {}) {
     }
     if (filterState.selectedHighlightAttributes.length) {
       const selectors = filterState.selectedHighlightAttributes.map((attribute) => `[${attribute}]`).join(', ');
+      rules.push(`.bx-im-content-notification-item__container:not(${selectors}) { display: none !important; }`);
+    }
+    if (filterState.selectedAuthorNames.length) {
+      const selectors = filterState.selectedAuthorNames.map((name) => `[data-pts-author="${escapeCssString(name)}"]`).join(', ');
       rules.push(`.bx-im-content-notification-item__container:not(${selectors}) { display: none !important; }`);
     }
 
@@ -357,10 +399,10 @@ export function notificationDetails(sessionId, options = {}) {
   }
 
   // Кандидаты для счётчика в ОДНОМ селекте — обработанные карточки, уже отфильтрованные по
-  // ДРУГОМУ селекту (byGroup: false внутри updateHighlightFilterOptions и наоборот). Так счётчики
+  // ОСТАЛЬНЫМ селектам (byGroup: false внутри updateGroupFilterOptions и так далее). Так счётчики
   // показывают, сколько уведомлений реально останется видно при выборе именно этой опции — с
-  // учётом уже выбранного в другом селекте, а не по всем карточкам без разбора
-  function getFilterCandidates(container, {byGroup = true, byHighlight = true} = {}) {
+  // учётом уже выбранного в других селектах, а не по всем карточкам без разбора
+  function getFilterCandidates(container, {byGroup = true, byHighlight = true, byAuthor = true} = {}) {
     if (!container) return [];
 
     let selector = '[data-pts-details="done"]';
@@ -371,6 +413,10 @@ export function notificationDetails(sessionId, options = {}) {
     if (byHighlight && filterState.selectedHighlightAttributes.length) {
       const highlightSelectors = filterState.selectedHighlightAttributes.map((attribute) => `[${attribute}]`).join(', ');
       selector += `:is(${highlightSelectors})`;
+    }
+    if (byAuthor && filterState.selectedAuthorNames.length) {
+      const authorSelectors = filterState.selectedAuthorNames.map((name) => `[data-pts-author="${escapeCssString(name)}"]`).join(', ');
+      selector += `:is(${authorSelectors})`;
     }
     return container.querySelectorAll(selector);
   }
@@ -402,7 +448,8 @@ export function notificationDetails(sessionId, options = {}) {
       .map(([groupId, count]) => {
         const group = cache.groups.get(groupId);
         const groupName = group?.NAME ?? `Группа #${groupId}`;
-        return {value: groupId, label: `${groupName} (${count})`};
+        // Цвет кружка тот же, что у чипа группы в карточке (createGroupChip)
+        return {value: groupId, label: `${groupName} (${count})`, color: stringToPastelColor(groupName)};
       });
   }
 
@@ -423,10 +470,48 @@ export function notificationDetails(sessionId, options = {}) {
       const count = [...candidates].filter((element) => element.hasAttribute(item.attribute)).length;
       if (!count && !isSelected) return;
 
-      options.push({value: item.attribute, label: `${item.label} (${count})`});
+      options.push({value: item.attribute, label: `${item.label} (${count})`, icon: item.icon, color: item.color});
     });
 
     filterState.highlightOptions = options;
+  }
+
+  // Авторы, как группы и типы выше, считаются прямо по DOM — по атрибуту data-pts-author. В отличие
+  // от групп, он есть у всех карточек, а не только у уведомлений о задачах (см. collectNewItems).
+  // Без атрибута остаются только уведомления, у которых человека-автора нет вовсе (системные), —
+  // такие под фильтр по автору не попадают
+  function updateAuthorFilterOptions(container) {
+    if (!flags.filter) return;
+
+    const authorCounts = new Map();
+    getFilterCandidates(container, {byAuthor: false}).forEach((element) => {
+      const authorName = element.getAttribute('data-pts-author');
+      if (!authorName) return;
+      authorCounts.set(authorName, (authorCounts.get(authorName) ?? 0) + 1);
+    });
+
+    // Текущий выбор остаётся в списке опций даже без карточек — причина та же, что у групп выше
+    filterState.selectedAuthorNames.forEach((authorName) => {
+      if (!authorCounts.has(authorName)) authorCounts.set(authorName, 0);
+    });
+
+    filterState.authorOptions = [...authorCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'))
+      .map(([authorName, count]) => ({
+        value: authorName,
+        label: `${authorName} (${count})`,
+        avatar: cache.authorAvatars.get(authorName) ?? '',
+      }));
+  }
+
+  // Счётчик "показано / всего" в фильтр-баре: показанные — обработанные карточки, прошедшие все
+  // активные фильтры (та же выборка, что и applyFilters оставляет видимой), всего — все уведомления,
+  // загруженные в список, включая не про задачи: активный фильтр скрывает и их
+  function updateFilterCounts(container) {
+    if (!flags.filter) return;
+
+    filterState.visibleCount = getFilterCandidates(container).length;
+    filterState.totalCount = container?.querySelectorAll(SELECTORS.anyItem).length ?? 0;
   }
 
   // Проверка overflow — внутри triggerScrollLoadMore (см. utils.js): скрытые фильтром элементы
@@ -435,7 +520,7 @@ export function notificationDetails(sessionId, options = {}) {
   // эту функцию снова — отдельный цикл ожидания не нужен, он сам продолжится по мутациям DOM либо
   // остановится, когда Bitrix перестанет присылать новые уведомления (реальный конец истории)
   function maybeTriggerFilterLoadMore(container) {
-    if (!container || (!filterState.selectedGroupIds.length && !filterState.selectedHighlightAttributes.length)) return;
+    if (!container || !hasActiveFilters()) return;
     if (filterLoadMoreAttempts >= FILTER_LOAD_MORE_MAX_ATTEMPTS) return;
 
     if (triggerScrollLoadMore(container)) filterLoadMoreAttempts += 1;
@@ -461,16 +546,32 @@ export function notificationDetails(sessionId, options = {}) {
     });
   }
 
-  // Находит ещё не обработанные уведомления о задачах, помечает их и навешивает скелетон
+  /**
+   * Помечает все ещё не обработанные уведомления: у каждого читает автора, а уведомлениям о
+   * задачах вдобавок навешивает скелетон и отдаёт их на догрузку деталей.
+   * @param {Element} container - Список уведомлений.
+   * @returns {{taskItems: Array<{el: Element, skeleton: Element, taskId: string}>, processedCount: number}}
+   * Карточки, которым нужна загрузка задачи, и общее число только что помеченных карточек.
+   */
   function collectNewItems(container) {
-    const candidates = [...container.querySelectorAll(SELECTORS.newItem)]
-      .filter((el) => el.querySelector(SELECTORS.taskLink));
+    const newElements = [...container.querySelectorAll(SELECTORS.newItem)];
 
-    const items = [];
-    candidates.forEach((el) => {
-      const href = el.querySelector(SELECTORS.taskLink).getAttribute('href');
+    const taskItems = [];
+    newElements.forEach((el) => {
+      // Автор читается у всех карточек, а не только у тех, где есть ссылка на задачу: иначе
+      // уведомления без задачи (сообщения, реакции, системные события) не получали бы
+      // data-pts-author, и фильтр по автору прятал бы их даже при выбранном авторе, который их и прислал
+      const {name: authorName, avatarUrl} = getAuthorInfo(el);
+      if (authorName) {
+        el.setAttribute('data-pts-author', authorName);
+        if (avatarUrl) cache.authorAvatars.set(authorName, avatarUrl);
+      }
+
+      const href = el.querySelector(SELECTORS.taskLink)?.getAttribute('href') ?? '';
       const taskId = getTaskIdFromUrl(href)?.taskId ?? null;
 
+      // Обработанной помечается и карточка без задачи: без метки она и попадала бы в выборку новых
+      // на каждой мутации, и не считалась бы в счётчиках фильтра — те смотрят только на "done"
       if (!taskId) {
         el.setAttribute('data-pts-details', 'done');
         return;
@@ -480,14 +581,14 @@ export function notificationDetails(sessionId, options = {}) {
       const skeleton = document.createElement('div');
       skeleton.className = 'pts-nd-skeleton';
       el.querySelector(SELECTORS.titleContainer)?.appendChild(skeleton);
-      items.push({el, skeleton, taskId});
+      taskItems.push({el, skeleton, taskId});
     });
 
-    return items;
+    return {taskItems, processedCount: newElements.length};
   }
 
   // sonet_group.get не отдаёт группы, к которым у пользователя нет доступа (например, его
-  // вывели из состава), а название всё равно нужно для чипа и подписи в фильтре. Резерв — страница
+  // вывели из состава), а название всё равно нужно для метки и подписи в фильтре. Резерв — страница
   // просмотра задачи, где название группы видно независимо от доступа к самой группе (см.
   // getGroupNameFromTaskPage). По одному запросу на группу, а не на задачу
   async function fillMissingGroupNames(missingGroupIds, tasks) {
@@ -512,8 +613,8 @@ export function notificationDetails(sessionId, options = {}) {
 
     const tasks = taskIds.map((id) => cache.tasks.get(id)).filter(Boolean);
 
-    // Группы/стадии/пользователи нужны только для чипов (плюс группы — ещё и для подписей
-    // в фильтре). Если чипы скрыты, эти batch-запросы пропускаем — они больше ни на что не влияют
+    // Группы/стадии/пользователи нужны только для меток (плюс группы — ещё и для подписей
+    // в фильтре). Если метки скрыты, эти batch-запросы пропускаем — они больше ни на что не влияют
     const needsGroups = !flags.hideChips || flags.filter;
     const needsStagesAndUsers = !flags.hideChips;
 
@@ -625,7 +726,7 @@ export function notificationDetails(sessionId, options = {}) {
     return chip;
   }
 
-  // Чип-пояснение, почему карточка подсвечена: кружок цвета рамки + короткая подпись
+  // Метка-пояснение, почему карточка подсвечена: кружок цвета рамки + короткая подпись
   function createHighlightChip({label, color}) {
     const chip = createChip(`Подсветка: ${label}`);
     chip.append(createDot(color), createLabel(label));
@@ -681,14 +782,14 @@ export function notificationDetails(sessionId, options = {}) {
   function renderChips(el, task, matchedTypes, highlight) {
     const chips = [];
 
-    // Пояснение по подсветке — первым чипом
+    // Пояснение по подсветке — первой меткой
     if (highlight) chips.push(createHighlightChip(highlight));
 
     // У tagall комментарий избыточен — он подразумевается самим обращением
     const typesAfterTagall = matchedTypes.some(({key}) => key === 'tagall')
       ? matchedTypes.filter(({key}) => key !== 'comment')
       : matchedTypes;
-    // Не дублируем тип-чипом тот тип, что уже показал чип подсветки (по ключу, не по подписи)
+    // Не дублируем меткой типа тот тип, что уже показала метка подсветки (по ключу, не по подписи)
     const visibleTypes = highlight?.duplicatesType
       ? typesAfterTagall.filter(({key}) => key !== highlight.duplicatesType)
       : typesAfterTagall;
@@ -718,7 +819,7 @@ export function notificationDetails(sessionId, options = {}) {
     el.querySelector(SELECTORS.titleContainer)?.appendChild(block);
   }
 
-  // Тип подсветки с видимой рамкой (первый совпавший по приоритету) — общий для иконки и чипа
+  // Тип подсветки с видимой рамкой (первый совпавший по приоритету) — общий для иконки и метки
   function getHighlightMatch(el) {
     return HIGHLIGHT_ICONS.find((item) => item.enabled && el.hasAttribute(item.attribute)) ?? null;
   }
@@ -783,20 +884,29 @@ export function notificationDetails(sessionId, options = {}) {
 
     injectFilterUI();
 
-    const items = collectNewItems(container);
-    if (items.length) {
+    const {taskItems, processedCount} = collectNewItems(container);
+    if (taskItems.length) {
       try {
-        await loadDetails(items.map((item) => item.taskId));
-        items.forEach(renderItem);
-        updateGroupFilterOptions(container);
-        updateHighlightFilterOptions(container);
+        await loadDetails(taskItems.map((item) => item.taskId));
+        taskItems.forEach(renderItem);
       } catch {
-        items.forEach(({el, skeleton}) => {
+        taskItems.forEach(({el, skeleton}) => {
           skeleton.remove();
           el.setAttribute('data-pts-details', 'error');
         });
       }
     }
+
+    // Опции пересчитываются по любым новым карточкам, а не только по задачным: автор есть и у тех,
+    // где ссылки на задачу нет вовсе. После неудачной загрузки пересчёт тоже уместен — он читает
+    // DOM и кэш, так что просто не увидит того, что не отрисовалось
+    if (processedCount) {
+      updateGroupFilterOptions(container);
+      updateHighlightFilterOptions(container);
+      updateAuthorFilterOptions(container);
+    }
+
+    updateFilterCounts(container);
 
     // Проверяем даже когда новых карточек не было — например, сразу после выбора фильтра
     // или когда предыдущая попытка подгрузки ничего не добавила (см. maybeTriggerFilterLoadMore)

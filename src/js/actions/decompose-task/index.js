@@ -27,7 +27,7 @@ export async function decomposeTask(sessionId) {
   const taskTitle = titleBlock.querySelector('.ui-toolbar-title-item')?.textContent.trim() ?? '';
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-decompose-task',
+    className: 'js-decompose-task pts-app',
     style: 'order: 2;',
   });
 

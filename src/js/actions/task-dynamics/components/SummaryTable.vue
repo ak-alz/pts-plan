@@ -45,7 +45,7 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  groupId: {
+  contextKey: {
     type: String,
     required: true,
   },
@@ -145,7 +145,7 @@ const othersNote = computed(() => {
 });
 
 const AI_CONTEXT_MAX_LENGTH = 1000;
-const aiContextStorageKey = computed(() => `task-dynamics-ai-context-${props.groupId}`);
+const aiContextStorageKey = computed(() => `task-dynamics-ai-context-${props.contextKey}`);
 const aiContext = ref('');
 const isAiContextModalOpened = ref(false);
 const isPromptPreviewModalOpened = ref(false);
@@ -221,7 +221,7 @@ const promptPreviewText = computed(() => new DOMParser()
   .parseFromString(promptPreview.value, 'text/html').body.textContent ?? '');
 const promptTokens = computed(() => estimateTokenCount(promptPreviewText.value));
 
-const aiJob = useAiJob(() => `task-dynamics-ai-job-${props.groupId}`, {
+const aiJob = useAiJob(() => `task-dynamics-ai-job-${props.contextKey}`, {
   onAuthError: () => { isApiKeyModalOpened.value = true; },
 });
 const aiLoading = aiJob.loading;

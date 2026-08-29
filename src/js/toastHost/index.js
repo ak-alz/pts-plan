@@ -12,7 +12,7 @@ let armed = false;
 
 function mountToastHost() {
   const container = Object.assign(document.createElement('div'), {
-    className: 'js-toast-host',
+    className: 'js-toast-host pts-app',
   });
   document.body.appendChild(container);
 

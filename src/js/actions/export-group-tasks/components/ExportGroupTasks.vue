@@ -4,6 +4,8 @@ import { Avatar, Badge, Button, Column, DataTable, Message, MultiSelect, Select,
 import { computed, onMounted, ref, toRaw, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
+import { collectStagesFromGroups, groupStagesByGroup } from '../../../personalPlan.js';
 import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
@@ -14,18 +16,32 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
+// Ключ для chrome.storage — обязательно разный неймспейс, иначе фильтры личного плана
+// схлопнутся с несуществующей группой с тем же числовым id, что и userId
+const contextKey = computed(() => isPersonal.value ? `personal-${props.context.id}` : props.context.id);
+// На личном плане ссылки строятся через userId (Bitrix сам так их рендерит для этих карточек)
+const linkUserId = computed(() => isPersonal.value ? props.context.id : null);
+
 const bitrixApi = new BitrixApi(props.sessionId);
+
+// В личный план попадают задачи разных групп — фильтр позволяет сузить выгрузку до одной.
+// Пусто означает «все группы»
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  bitrixApi,
+  `export-group-tasks-group-${props.context.id}`,
+);
 
 // Личные предпочтения (набор колонок, формат, разделители) — общие для всех групп.
 const SETTINGS_STORAGE_KEY = 'export-group-tasks-settings';
 // Фильтры зависят от конкретной группы (свои стадии, свои участники) — хранятся отдельно от настроек.
-const filtersStorageKey = `export-group-tasks-filters-${props.groupId}`;
+const filtersStorageKey = computed(() => `export-group-tasks-filters-${contextKey.value}`);
 
 // Предпросмотр — только чтобы проверить набор колонок и формат, не весь список. Реальная
 // выгрузка (копирование/скачивание) всегда запрашивает полный список заново по текущим фильтрам.
@@ -116,6 +132,13 @@ let isInitializing = true;
 
 const visibleColumns = computed(() => COLUMN_DEFINITIONS.filter((column) => selectedColumnKeys.value.includes(column.key)));
 const stageMap = computed(() => Object.fromEntries(stages.value.map((stage) => [stage.id, stage])));
+
+// Колонки из нескольких канбанов разводим группами PrimeVue, а не подписью в каждой опции —
+// с заголовком группы над списком подпись у каждой строки была бы лишней. Одна группа — плоский
+// список без заголовка
+const stageGroups = computed(() => groupStagesByGroup(stages.value));
+const hasSeveralStageGroups = computed(() => stageGroups.value.length > 1);
+const stageSelectOptions = computed(() => (hasSeveralStageGroups.value ? stageGroups.value : stages.value));
 const showRichTextFormat = computed(() => selectedColumnKeys.value.includes('description') || selectedColumnKeys.value.includes('comments'));
 
 // Список участников только этой группы (не все возможные исполнители/постановщики в системе) —
@@ -169,7 +192,7 @@ function enrichTask(task) {
     commentsCount: task.comments ? userComments.length : null,
     description: formatRichText(task.description ?? ''),
     comments: formatCommentsBlock(userComments),
-    url: getTaskUrl(task.groupId, task.id),
+    url: getTaskUrl(isPersonal.value ? null : task.groupId, task.id, linkUserId.value),
   };
 }
 
@@ -191,10 +214,20 @@ watch([selectedColumnKeys, format, csvSeparator, textFormat], () => {
   });
 }, { deep: true });
 
+// Колонки прошлой группы к новой отношения не имеют: и список перезагружаем, и выбор сбрасываем,
+// иначе оставшийся id отфильтровал бы выдачу в ноль
+watch(selectedGroupId, async () => {
+  if (isInitializing) return;
+  stageIds.value = [];
+  // Чужие группы прошлой выдачи к новому фильтру отношения не имеют
+  extraStageGroupIds.value = [];
+  await loadPersonalStages();
+});
+
 watch([status, stageIds, responsibleId, createdById], () => {
   if (isInitializing) return;
   chrome.storage.local.set({
-    [filtersStorageKey]: {
+    [filtersStorageKey.value]: {
       status: status.value,
       stageIds: toRaw(stageIds.value),
       responsibleId: responsibleId.value,
@@ -252,12 +285,17 @@ async function loadCreatorNames(tasks) {
 }
 
 async function loadStages() {
+  // На личном плане своего набора колонок нет: STAGE_ID задачи указывает на канбан её собственной
+  // группы. Список собирается из уже выгруженных задач (см. refreshPersonalStages), поэтому до
+  // первой выгрузки колонок ещё нет
+  if (isPersonal.value) return;
+
   isStagesLoading.value = true;
   try {
-    const stagesResponse = await bitrixApi.getStages(props.groupId);
+    const stagesResponse = await bitrixApi.getStages(props.context.id);
     stages.value = Object.values(stagesResponse.data?.result ?? {})
       .sort((a, b) => a.SORT - b.SORT)
-      .map((stage) => ({ id: String(stage.ID), name: stage.TITLE, color: `#${stage.COLOR}` }));
+      .map((stage) => ({ id: String(stage.ID), title: stage.TITLE, name: stage.TITLE, color: `#${stage.COLOR}` }));
   } catch (e) {
     console.warn('[export-group-tasks] failed to load stages:', e);
   } finally {
@@ -266,9 +304,12 @@ async function loadStages() {
 }
 
 async function loadGroupUsers() {
+  // На личном плане участников группы нет — исполнитель/постановщик всегда один и тот же человек
+  if (isPersonal.value) return;
+
   isGroupUsersLoading.value = true;
   try {
-    groupUsers.value = await bitrixApi.getGroupUsers(props.groupId);
+    groupUsers.value = await bitrixApi.getGroupUsers(props.context.id);
   } catch (e) {
     console.warn('[export-group-tasks] failed to load group users:', e);
   } finally {
@@ -276,13 +317,66 @@ async function loadGroupUsers() {
   }
 }
 
+// На личном плане «мои задачи» — это объединение 4 ролей (ответственный/соисполнитель/наблюдатель/
+// постановщик), а не только ответственность — см. searchMyTasks() в BitrixApi.js
+async function runSearch(params) {
+  if (!isPersonal.value) return bitrixApi.searchTasks(params);
+
+  const tasks = await bitrixApi.searchMyTasks(props.context.id, {...params, groupId: selectedGroupId.value});
+  await addUnknownStages(tasks);
+  return tasks;
+}
+
+// Группы, чьих канбанов нет в составе участия пользователя. В личный план попадает и задача такой
+// группы (добавили наблюдателем), и без её колонок столбец «Стадия» показал бы прочерк
+const extraStageGroupIds = ref([]);
+
+// Колонки для фильтра нужны уже на первом шаге, до всякой выгрузки, поэтому берутся не из задач,
+// а из канбанов групп пользователя — это один батч. Выбрана конкретная группа — только её колонки,
+// иначе колонки всех групп сразу
+async function loadPersonalStages() {
+  const baseGroupIds = selectedGroupId.value
+    ? [selectedGroupId.value]
+    : groupOptions.value.map((group) => group.id);
+  const groupIds = [...new Set([...baseGroupIds, ...extraStageGroupIds.value])];
+
+  isStagesLoading.value = true;
+  try {
+    stages.value = await collectStagesFromGroups(bitrixApi, groupIds);
+  } catch (error) {
+    console.warn('[export-group-tasks] failed to load stages:', error);
+    stages.value = [];
+  } finally {
+    isStagesLoading.value = false;
+  }
+}
+
+// Список пересобирается целиком, а не дополняется: подпись группы у колонки зависит от того,
+// сколько групп в списке, и дописанные колонки разошлись бы с уже собранными по оформлению
+async function addUnknownStages(tasks) {
+  const knownStageIds = new Set(stages.value.map((stage) => stage.id));
+  const unknownGroupIds = new Set();
+  tasks.forEach((task) => {
+    const stageId = String(task.stageId ?? '');
+    const groupId = String(task.groupId ?? '0');
+    if (!stageId || stageId === '0' || groupId === '0') return;
+    if (!knownStageIds.has(stageId)) unknownGroupIds.add(groupId);
+  });
+
+  const newGroupIds = [...unknownGroupIds].filter((groupId) => !extraStageGroupIds.value.includes(groupId));
+  if (!newGroupIds.length) return;
+
+  extraStageGroupIds.value = [...extraStageGroupIds.value, ...newGroupIds];
+  await loadPersonalStages();
+}
+
 function buildFilterParams() {
   return {
-    groupId: props.groupId,
+    groupId: isPersonal.value ? null : props.context.id,
+    responsibleId: isPersonal.value ? null : responsibleId.value,
     status: status.value === 'all' ? null : status.value,
     stageIds: stageIds.value,
-    responsibleId: responsibleId.value,
-    createdBy: createdById.value,
+    createdBy: isPersonal.value ? null : createdById.value,
     createdDateFrom: dateRange.value?.[0] ? dayjs(dateRange.value[0]).format('YYYY-MM-DD 00:00:00') : null,
     createdDateTo: dateRange.value?.[1] ? dayjs(dateRange.value[1] ?? dateRange.value[0]).format('YYYY-MM-DD 23:59:59') : null,
     // По умолчанию свежие задачи должны идти первее — сортировка нужна на сервере, а не после
@@ -306,7 +400,7 @@ async function loadPreview() {
   try {
     const extraSelectFields = requiredExtraSelectFields.value;
     const needsCommentsNow = needsComments.value;
-    let tasks = await bitrixApi.searchTasks({ ...buildFilterParams(), limit: PREVIEW_LIMIT });
+    let tasks = await runSearch({ ...buildFilterParams(), limit: PREVIEW_LIMIT });
     tasks = await attachComments(tasks);
     previewTasks.value = tasks;
     lastFetchedExtraSelectFields = extraSelectFields;
@@ -336,7 +430,7 @@ async function goToStep2(activateCallback) {
 // Реальная выгрузка не переиспользует previewTasks (он ограничен PREVIEW_LIMIT) — запрашивает
 // полный список заново по текущим фильтрам в момент копирования/скачивания.
 async function getExportTasks() {
-  let tasks = await bitrixApi.searchTasks(buildFilterParams());
+  let tasks = await runSearch(buildFilterParams());
   tasks = await attachComments(tasks);
   if (selectedColumnKeys.value.includes('creator')) await loadCreatorNames(tasks);
   return tasks;
@@ -344,7 +438,12 @@ async function getExportTasks() {
 
 onMounted(async () => {
   try {
-    const stored = await chrome.storage.local.get([SETTINGS_STORAGE_KEY, filtersStorageKey]);
+    if (isPersonal.value) {
+      await restoreGroupFilter();
+      await loadPersonalStages();
+    }
+
+    const stored = await chrome.storage.local.get([SETTINGS_STORAGE_KEY, filtersStorageKey.value]);
     const settings = stored[SETTINGS_STORAGE_KEY];
     if (settings) {
       // Array.isArray() на случай старых записей, испорченных прежним багом с сохранением reactive-массива без toRaw()
@@ -354,7 +453,7 @@ onMounted(async () => {
       textFormat.value = settings.textFormat ?? 'bbcode';
     }
 
-    const filters = stored[filtersStorageKey];
+    const filters = stored[filtersStorageKey.value];
     if (filters) {
       status.value = filters.status ?? 'active';
       stageIds.value = Array.isArray(filters.stageIds) ? filters.stageIds : [];
@@ -442,7 +541,7 @@ async function downloadFile() {
     const tasks = (await getExportTasks()).map(enrichTask);
     const mimeType = format.value === 'json' ? 'application/json' : 'text/csv';
     const blob = new Blob([buildOutput(tasks)], { type: `${mimeType};charset=utf-8` });
-    downloadBlob(blob, `tasks-group-${props.groupId}.${format.value}`);
+    downloadBlob(blob, isPersonal.value ? `tasks-my-plan.${format.value}` : `tasks-group-${props.context.id}.${format.value}`);
   } catch (e) {
     console.warn('[export-group-tasks]', e);
     showToast({
@@ -490,14 +589,38 @@ async function downloadFile() {
                 class="w-full"
               />
             </FormField>
-            <FormField label="Колонка канбана">
-              <MultiSelect
-                v-model="stageIds"
-                :options="stages"
+            <FormField
+              v-if="isPersonal"
+              label="Группа"
+              tip="В личный план попадают задачи разных групп. Пусто — выгружаем по всем"
+            >
+              <Select
+                v-model="selectedGroupId"
+                :options="groupOptions"
                 option-label="name"
                 option-value="id"
+                placeholder="Все группы"
+                show-clear
+                filter
+                filter-placeholder="Поиск"
+                size="small"
+                class="w-full"
+              />
+            </FormField>
+            <FormField
+              label="Колонка канбана"
+              :tip="isPersonal ? 'Колонки всех ваших групп, разбитые по группам. Выберите группу выше, чтобы оставить только её колонки' : ''"
+            >
+              <MultiSelect
+                v-model="stageIds"
+                :options="stageSelectOptions"
+                option-label="title"
+                option-value="id"
+                :option-group-label="hasSeveralStageGroups ? 'groupName' : undefined"
+                :option-group-children="hasSeveralStageGroups ? 'stages' : undefined"
                 placeholder="Все"
                 filter
+                :filter-fields="['title', 'groupName']"
                 filter-placeholder="Поиск"
                 :max-selected-labels="2"
                 :loading="isStagesLoading"
@@ -508,12 +631,13 @@ async function downloadFile() {
                 <template #option="{ option }">
                   <div class="flex gap-2 items-center">
                     <Badge :style="`background-color: ${option.color};`" />
-                    {{ option.name }}
+                    {{ option.title }}
                   </div>
                 </template>
               </MultiSelect>
             </FormField>
             <FormField
+              v-if="!isPersonal"
               label="Исполнитель"
               tip="Список ограничен участниками этой группы — не все возможные исполнители задач в системе"
             >
@@ -534,7 +658,6 @@ async function downloadFile() {
                       v-if="option.avatar"
                       :image="option.avatar"
                       shape="circle"
-                      size="small"
                     />
                     {{ option.name }}
                   </div>
@@ -542,6 +665,7 @@ async function downloadFile() {
               </Select>
             </FormField>
             <FormField
+              v-if="!isPersonal"
               label="Постановщик"
               tip="Список ограничен участниками этой группы — не все возможные постановщики задач в системе"
             >
@@ -562,7 +686,6 @@ async function downloadFile() {
                       v-if="option.avatar"
                       :image="option.avatar"
                       shape="circle"
-                      size="small"
                     />
                     {{ option.name }}
                   </div>
@@ -665,7 +788,7 @@ async function downloadFile() {
                     />
                     <a
                       class="pts-blur"
-                      :href="getTaskUrl(data.groupId, data.id)"
+                      :href="getTaskUrl(isPersonal ? null : data.groupId, data.id, linkUserId)"
                       target="_top"
                     >
                       {{ data.title }}

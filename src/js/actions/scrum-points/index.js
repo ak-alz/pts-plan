@@ -3,13 +3,14 @@ import Ripple from 'primevue/ripple';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
+import { resolveKanbanContext } from '../../kanbanContext.js';
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
+import { refreshActionBarButtonGroup } from '../../utils.js';
 import ScrumPointsApp from './ScrumPointsApp.vue';
 
-export function scrumPoints(sessionId) {
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+export async function scrumPoints(sessionId) {
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   const buttonsContainer = document.querySelector('.ui-actions-bar__buttons');
   if (!buttonsContainer) return;
@@ -18,7 +19,7 @@ export function scrumPoints(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-scrum-points pts-actions-bar-btn',
+    className: 'js-scrum-points pts-actions-bar-btn pts-app',
     style: 'order: 1;',
   });
 
@@ -26,7 +27,7 @@ export function scrumPoints(sessionId) {
 
   const app = createApp(ScrumPointsApp, {
     sessionId,
-    groupId,
+    context,
   });
   app.use(PrimeVue, primeVueOptions);
   app.directive('tooltip', Tooltip);

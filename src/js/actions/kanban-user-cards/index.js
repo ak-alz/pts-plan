@@ -1,14 +1,15 @@
-import {getGroupIdFromUrl, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
+import {resolveKanbanContext} from '../../kanbanContext.js';
+import {insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
 
 // Своя метка обработанных карточек, а не общая: на тех же карточках канбана работают ещё две фичи
 const PROCESSED_CLASS = 'js-kanban-user-cards-processed';
 
-export function kanbanUserCards(backgroundColor, firstName, lastName) {
+export async function kanbanUserCards(sessionId, backgroundColor, firstName, lastName) {
   if (!validateHexColor(backgroundColor)) return;
   if (!firstName || !lastName) return;
 
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   const kanbanGrid = document.querySelector('.main-kanban-grid');
   if (!kanbanGrid) return;

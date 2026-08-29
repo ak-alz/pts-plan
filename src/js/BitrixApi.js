@@ -14,6 +14,23 @@ function delay(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
+// Больше 50 команд за раз batch.json не принимает
+const BATCH_COMMAND_LIMIT = 50;
+
+/**
+ * Режет карту команд batch.json на порции допустимого размера.
+ * @param {Record<string, string>} commands - Карта «ключ команды → метод?параметры».
+ * @returns {Array<Record<string, string>>}
+ */
+function chunkBatchCommands(commands) {
+  const entries = Object.entries(commands);
+  const chunks = [];
+  for (let start = 0; start < entries.length; start += BATCH_COMMAND_LIMIT) {
+    chunks.push(Object.fromEntries(entries.slice(start, start + BATCH_COMMAND_LIMIT)));
+  }
+  return chunks;
+}
+
 /**
  * Похож ли ответ (или ошибка axios) на ограничение интенсивности запросов Bitrix.
  * @param {any} data - Тело ответа Bitrix (`{error, error_description}`) либо элемент result_error батча.
@@ -51,6 +68,9 @@ function buildTasksFilter({
   groupId,
   createdBy,
   responsibleId,
+  responsibleOrCreatedBy,
+  accompliceId,
+  auditorId,
   stageIds,
   createdDateFrom,
   createdDateTo,
@@ -93,6 +113,24 @@ function buildTasksFilter({
   if (groupId) filter['GROUP_ID'] = groupId;
   if (createdBy) filter['CREATED_BY'] = createdBy;
   if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
+  if (accompliceId) filter['ACCOMPLICE'] = accompliceId;
+  if (auditorId) filter['AUDITOR'] = auditorId;
+  if (responsibleOrCreatedBy) {
+    // Единственный OR, который Bitrix действительно выполняет как объединение: RESPONSIBLE_ID и
+    // CREATED_BY — обычные колонки самой задачи. Форма ровно из документированного примера
+    // CTasks::GetList — ::LOGIC=OR внутри подфильтра верхнего уровня, поля в пронумерованных
+    // дочерних подфильтрах по одному. Замер на реальном портале: 1982 и 1622 по отдельности,
+    // 2649 вместе — то есть объединение с пересечением, а не одно из двух.
+    // Для ACCOMPLICE и AUDITOR та же форма молча вырождается в AND (678 и 9028 по отдельности,
+    // 467 вместе) — они приходят JOIN'ом к таблице участников, и общий JOIN даёт пересечение.
+    // Поэтому наблюдатель и соисполнитель по-прежнему требуют отдельных запросов.
+    if (!filter['::LOGIC']) filter['::LOGIC'] = 'AND';
+    filter['::SUBFILTER-1'] = {
+      '::LOGIC': 'OR',
+      '::SUBFILTER-1': {'RESPONSIBLE_ID': responsibleOrCreatedBy},
+      '::SUBFILTER-2': {'CREATED_BY': responsibleOrCreatedBy},
+    };
+  }
   if (stageIds?.length) filter['STAGE_ID'] = stageIds;
   if (createdDateFrom) filter['>=CREATED_DATE'] = createdDateFrom;
   if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
@@ -226,6 +264,19 @@ export default class BitrixApi {
         cmd,
       });
     }));
+  }
+
+  /**
+   * Группы и проекты, в которых состоит текущий пользователь (sonet_group.user.groups).
+   * Единственный дешёвый способ узнать состав групп на личном плане: собирать их из самих задач
+   * пришлось бы, выкачав весь «Мой план» целиком.
+   * @return {Promise<Array<{id: string, name: string}>>} Группы, отсортированные по названию.
+   */
+  getUserGroups() {
+    return this.http.postForm('/rest/sonet_group.user.groups.json', {sessid: this.sessionId})
+      .then(({data}) => (data?.result ?? [])
+        .map((group) => ({id: String(group.GROUP_ID), name: group.GROUP_NAME ?? `Группа #${group.GROUP_ID}`}))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru')));
   }
 
   /**
@@ -525,6 +576,22 @@ export default class BitrixApi {
   }
 
   /**
+   * Отмечает одно уведомление прочитанным.
+   * ONLY_CURRENT обязателен: без него Bitrix отмечает прочитанными все уведомления с ID не меньше
+   * указанного — то есть заодно и личные, пришедшие позже.
+   * @param {string|number} notificationId - ID уведомления.
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  markNotificationRead(notificationId) {
+    return this.http.postForm('/rest/im.notify.read.json', {
+      sessid: this.sessionId,
+      ID: notificationId,
+      ACTION: 'Y',
+      ONLY_CURRENT: 'Y',
+    });
+  }
+
+  /**
    * Обновляет поля задачи (tasks.task.update).
    * @param {string|number} taskId
    * @param {Record<string, any>} fields — объект с полями задачи, например { TITLE: 'Новое название' }
@@ -627,6 +694,68 @@ export default class BitrixApi {
           throw new Error(`Bitrix ограничил число запросов: не удалось загрузить ${retry.failedStarts.length * PAGE_SIZE} задач. Сузьте период и повторите через несколько минут.`);
         }
       }
+    }
+
+    return limit ? tasks.slice(0, limit) : tasks;
+  }
+
+  /**
+   * Возвращает уникальные задачи, где пользователь фигурирует в любой из 4 ролей — ответственный,
+   * соисполнитель, наблюдатель или постановщик. Именно так Bitrix формирует личный канбан
+   * «Мой план» — он не ограничивается ответственностью (проверено эмпирически на реальном
+   * канбане: объединение всех 4 ролей дало 100% совпадение с видимыми карточками, при этом
+   * RESPONSIBLE_ID — не самая крупная роль).
+   * Одним запросом все 4 роли не забрать: ответственный и постановщик объединяются через OR
+   * (см. responsibleOrCreatedBy в buildTasksFilter), а соисполнитель и наблюдатель — нет, для них
+   * тот же OR вырождается в пересечение. Отсюда три запроса через уже существующий searchTasks()
+   * (со всей его пагинацией и повтором при рейт-лимите) и объединение здесь с дедупликацией по id.
+   * @param {string|number} userId
+   * @param {Object} [params] - остальные параметры searchTasks (status, selectFields, limit и т.д.), общие для всех запросов
+   * @returns {Promise<any[]>}
+   */
+  async searchMyTasks(userId, {order, limit, onProgress, ...params} = {}) {
+    const ROLE_FILTERS = [
+      {responsibleOrCreatedBy: userId},
+      {accompliceId: userId},
+      {auditorId: userId},
+    ];
+
+    // Прогресс общий на все запросы: каждый ролевой запрос считает свои loaded/total, и если
+    // отдавать их наружу как есть, полоса дёргалась бы между ролями. Складываем последние
+    // известные значения каждой роли
+    const progressByRole = ROLE_FILTERS.map(() => ({loaded: 0, total: 0}));
+    const trackRoleProgress = (roleIndex) => (progress) => {
+      progressByRole[roleIndex] = progress;
+      onProgress({
+        loaded: progressByRole.reduce((sum, item) => sum + item.loaded, 0),
+        total: progressByRole.reduce((sum, item) => sum + item.total, 0),
+      });
+    };
+
+    const results = await Promise.all(
+      // limit передаётся в каждый запрос, чтобы не выкачивать лишнее (например, у наблюдателя
+      // задач может быть на порядок больше остальных ролей) — после объединения список пересортировывается
+      // и обрезается до limit ещё раз, иначе после дедупликации порядок был бы «сначала все ответственные,
+      // потом все соисполнители» вместо реальной сортировки по order
+      ROLE_FILTERS.map((roleFilter, roleIndex) => this.searchTasks({
+        ...params,
+        ...roleFilter,
+        order,
+        limit,
+        onProgress: onProgress ? trackRoleProgress(roleIndex) : null,
+      })),
+    );
+
+    const taskById = new Map();
+    results.flat().forEach((task) => taskById.set(task.id, task));
+    const tasks = [...taskById.values()];
+
+    if (order?.field) {
+      // Bitrix ожидает поле фильтра/сортировки в верхнем регистре с подчёркиванием (CREATED_DATE),
+      // а сама задача в ответе tasks.task.list возвращается с тем же полем в camelCase (createdDate)
+      const key = order.field.toLowerCase().replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      const direction = order.direction === 'ASC' ? 1 : -1;
+      tasks.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * direction);
     }
 
     return limit ? tasks.slice(0, limit) : tasks;
@@ -779,6 +908,26 @@ export default class BitrixApi {
   }
 
   /**
+   * Отмечает задачу просмотренной — тем же внутренним контроллером, который дёргает сама карточка
+   * задачи при открытии. Снимает пометку о непрочитанных комментариях. Прочитать один конкретный
+   * комментарий нельзя: Bitrix фиксирует просмотр по задаче целиком, а официального REST-метода
+   * для этого нет вовсе (комментарии стали чатом только с версии модуля tasks 25.700).
+   * @param {string|number} taskId
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  markTaskViewed(taskId) {
+    return this.http.postForm(
+      '/bitrix/services/main/ajax.php?action=tasks.task.view.update',
+      {taskId},
+      {
+        headers: {
+          'x-bitrix-csrf-token': this.sessionId,
+        },
+      },
+    );
+  }
+
+  /**
    * Batch-запрос tasks.task.get для нескольких задач (до 50 за раз).
    * Поля ответа в camelCase: id, responsibleId, createdBy, groupId, stageId.
    * @param {string[]} taskIds
@@ -812,7 +961,23 @@ export default class BitrixApi {
   }
 
   /**
-   * Batch-запрос task.stages.get для нескольких групп.
+   * Выполняет произвольный набор команд batch.json, разбивая его на допустимые порции, и отдаёт
+   * объединённый `result.result`. Ключи команд обязаны быть уникальными — по ним и склеивается
+   * результат, а вызывающий код нередко достаёт из ключа идентификатор (см. getGroupsByIdsBatch).
+   * @param {Record<string, string>} commands - Карта «ключ команды → метод?параметры».
+   * @return {Promise<Record<string, any>>} Ответы всех команд одной картой.
+   */
+  runBatchCommands(commands) {
+    return Promise.all(
+      chunkBatchCommands(commands).map((cmd) => this.requestWithRateLimitRetry(
+        () => this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd}),
+      )),
+    ).then((responses) => Object.assign({}, ...responses.map((response) => response.data?.result?.result ?? {})));
+  }
+
+  /**
+   * Batch-запрос task.stages.get для нескольких групп. Групп может быть много — на личном плане
+   * стадии собираются по всем группам, из которых в него попали задачи, — поэтому идёт порциями.
    * @param {string[]} groupIds
    * @return {Promise<Record<string, object>>} Карта stageId → stage (UPPER_CASE поля)
    */
@@ -822,16 +987,15 @@ export default class BitrixApi {
     groupIds.forEach((id) => {
       cmd[`s${id}`] = `task.stages.get?entityId=${id}`;
     });
-    return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
-      .then(({data}) => {
-        const stages = {};
-        Object.values(data?.result?.result ?? {}).forEach((val) => {
-          Object.values(val ?? {}).forEach((stage) => {
-            if (stage?.ID) stages[stage.ID] = stage;
-          });
+    return this.runBatchCommands(cmd).then((results) => {
+      const stages = {};
+      Object.values(results).forEach((val) => {
+        Object.values(val ?? {}).forEach((stage) => {
+          if (stage?.ID) stages[stage.ID] = stage;
         });
-        return stages;
       });
+      return stages;
+    });
   }
 
   /**
@@ -845,16 +1009,15 @@ export default class BitrixApi {
     groupIds.forEach((id) => {
       cmd[`g${id}`] = `sonet_group.get?FILTER[ID]=${id}&select[]=ID&select[]=NAME`;
     });
-    return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
-      .then(({data}) => {
-        const groups = {};
-        Object.entries(data?.result?.result ?? {}).forEach(([key, val]) => {
-          const id = key.slice(1);
-          const group = Array.isArray(val) ? val[0] : val;
-          if (group?.ID) groups[id] = group;
-        });
-        return groups;
+    return this.runBatchCommands(cmd).then((results) => {
+      const groups = {};
+      Object.entries(results).forEach(([key, val]) => {
+        const id = key.slice(1);
+        const group = Array.isArray(val) ? val[0] : val;
+        if (group?.ID) groups[id] = group;
       });
+      return groups;
+    });
   }
 
   /**
@@ -885,13 +1048,12 @@ export default class BitrixApi {
     userIds.forEach((id) => {
       cmd[`u${id}`] = `im.user.get?ID=${id}`;
     });
-    return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd})
-      .then(({data}) => {
-        const users = {};
-        Object.values(data?.result?.result ?? {}).forEach((val) => {
-          if (val?.id) users[String(val.id)] = val;
-        });
-        return users;
+    return this.runBatchCommands(cmd).then((results) => {
+      const users = {};
+      Object.values(results).forEach((val) => {
+        if (val?.id) users[String(val.id)] = val;
       });
+      return users;
+    });
   }
 }

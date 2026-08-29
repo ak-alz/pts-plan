@@ -19,7 +19,7 @@ defineProps({
   copySeparator: {type: String, default: '\t'},
   csvSeparator: {type: String, default: ','},
   defaultTab: {type: String, default: 'summary'},
-  groupId: {type: String, required: true},
+  contextKey: {type: String, required: true},
   dateRange: {type: Array, default: null},
   compareDateRange: {type: Array, default: null},
 });
@@ -50,7 +50,7 @@ defineProps({
           v-if="summaryTableData"
           :rows="summaryTableData.rows"
           :total="summaryTableData.total"
-          :group-id="groupId"
+          :context-key="contextKey"
           :date-range="dateRange"
           :compare-date-range="compareDateRange"
           :multi-user="multiUser"

@@ -1,6 +1,23 @@
 import {definePreset} from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
+import BaseStyle from '@primevue/core/base/style';
 import {ru} from 'primelocale/ru.json';
+
+// PrimeVue кладёт свои базовые стили <style>-тегом в head того документа, где смонтировано
+// приложение. Для попапа и «Что нового» это свой документ, а для виджетов — страница Bitrix, и
+// глобальный `*, ::before, ::after { box-sizing: border-box }` из этих стилей менял вёрстку всего
+// Bitrix. Пример: таймер на карточке канбана (`height: 18px` + `padding-top: 14px` +
+// `overflow: hidden`) съёживался с 34px до 18px, контентная часть оставалась 2px, и строка
+// обрезалась своим же боксом — таймер выглядел пропавшим.
+// border-box возвращается точечно: виджетам — в `content-styles.css`, нашим страницам — preflight
+// Tailwind (`app.css` подключает `tailwindcss` целиком, вместе с ним).
+const GLOBAL_BOX_SIZING_RE = /\*,\s*::before,\s*::after\s*\{[^}]*\}/;
+
+if (GLOBAL_BOX_SIZING_RE.test(BaseStyle.style)) {
+  BaseStyle.style = BaseStyle.style.replace(GLOBAL_BOX_SIZING_RE, '');
+} else {
+  console.warn('[pts-plan] в базовых стилях PrimeVue не найден глобальный сброс box-sizing — после обновления PrimeVue его разметка изменилась, проверьте primeVueOptions.js');
+}
 
 const preset = definePreset(Aura, {
   semantic: {

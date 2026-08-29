@@ -6,6 +6,38 @@
 
 @custom-variant dark (&:where(.pts-dark, .pts-dark *));
 
+/* Возвращаем border-box, снятый из базовых стилей PrimeVue (см. `primeVueOptions.js`): и его
+   компоненты, и утилиты Tailwind в нашей разметке рассчитаны на него, а страница Bitrix — на
+   content-box, поэтому глобальным правилом его давать нельзя.
+   `.pts-app` — контейнер каждого нашего Vue-приложения; `[class^="p-"]`/`[class*=" p-"]` — элементы
+   PrimeVue (`p-`-класс на корне есть у всех его компонентов), включая всплывающие слои, которые он
+   выносит в `body` мимо контейнера.
+   `body` из выборки исключён намеренно: пока открыто окно, PrimeVue вешает на него
+   `p-overflow-hidden` (`blockBodyScroll`), и без `:not()` правило потомками накрыло бы всю страницу
+   Bitrix — ровно та поломка, от которой мы уходим. На сам `body` box-sizing не влияет: у блока с
+   `width: auto` padding вычитается из доступной ширины в любой модели.
+
+   ИЗВЕСТНЫЙ КОМПРОМИСС: выборка по префиксу `p-` шире, чем «элементы PrimeVue». Если у элемента
+   самого Bitrix класс начнётся на `p-`, border-box достанется и всем его потомкам. Сейчас
+   коллизий нет — Bitrix держится префиксов `bx-`, `ui-`, `task-`, `main-`, — но точного способа
+   отличить свой `p-`-класс от чужого у нас нет: PrimeVue не даёт своим компонентам отдельного
+   маркера, а всплывающие слои он выносит в `body` мимо наших контейнеров, так что одним `.pts-app`
+   не обойтись. Если правило когда-нибудь заденет вёрстку Bitrix — искать причину здесь */
+.pts-app,
+.pts-app::before,
+.pts-app::after,
+.pts-app *,
+.pts-app *::before,
+.pts-app *::after,
+:is([class^="p-"], [class*=" p-"]):not(body),
+:is([class^="p-"], [class*=" p-"]):not(body)::before,
+:is([class^="p-"], [class*=" p-"]):not(body)::after,
+:is([class^="p-"], [class*=" p-"]):not(body) *,
+:is([class^="p-"], [class*=" p-"]):not(body) *::before,
+:is([class^="p-"], [class*=" p-"]):not(body) *::after {
+  box-sizing: border-box;
+}
+
 .commit-button,
 .decompose-task-button,
 .export-task-button {

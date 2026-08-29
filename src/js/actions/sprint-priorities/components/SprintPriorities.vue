@@ -508,6 +508,17 @@ onMounted(async () => {
         outlined
         @click="activeRefreshAction.command()"
       />
+      <Button
+        v-tooltip="'Открыть Google Таблицу'"
+        as="a"
+        :href="settings.sheetUrl"
+        target="_blank"
+        rel="noopener"
+        icon="pi pi-external-link"
+        size="small"
+        severity="secondary"
+        variant="text"
+      />
     </div>
 
     <TeamPoints

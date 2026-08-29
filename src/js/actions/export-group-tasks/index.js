@@ -3,13 +3,14 @@ import Ripple from 'primevue/ripple';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
+import { resolveKanbanContext } from '../../kanbanContext.js';
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
+import { refreshActionBarButtonGroup } from '../../utils.js';
 import ExportGroupTasksApp from './ExportGroupTasksApp.vue';
 
-export function exportGroupTasks(sessionId) {
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+export async function exportGroupTasks(sessionId) {
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   const buttonsContainer = document.querySelector('.ui-actions-bar__buttons');
   if (!buttonsContainer) return;
@@ -18,7 +19,7 @@ export function exportGroupTasks(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-export-group-tasks pts-actions-bar-btn',
+    className: 'js-export-group-tasks pts-actions-bar-btn pts-app',
     style: 'order: 8;',
   });
 
@@ -26,7 +27,7 @@ export function exportGroupTasks(sessionId) {
 
   const app = createApp(ExportGroupTasksApp, {
     sessionId,
-    groupId,
+    context,
   });
   app.use(PrimeVue, primeVueOptions);
   app.directive('tooltip', Tooltip);

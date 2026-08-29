@@ -1,20 +1,22 @@
 <script setup>
 import { Dialog } from 'primevue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
+import PersonalScopeWarning from '../../ui/PersonalScopeWarning.vue';
 import ExportGroupTasks from './components/ExportGroupTasks.vue';
 
-defineProps({
+const props = defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
 const modalOpened = ref(false);
 </script>
 
@@ -30,14 +32,19 @@ const modalOpened = ref(false);
 
   <Dialog
     v-model:visible="modalOpened"
-    header="Экспорт задач группы"
     dismissable-mask
     modal
     style="width: 1100px; max-width: 95vw;"
   >
+    <template #header>
+      <div class="flex items-center gap-2">
+        <span class="p-dialog-title">Экспорт задач группы</span>
+        <PersonalScopeWarning v-if="isPersonal" />
+      </div>
+    </template>
     <ExportGroupTasks
       :session-id
-      :group-id
+      :context
     />
   </Dialog>
 </template>

@@ -187,7 +187,6 @@ async function createTask() {
                 v-if="option.avatar"
                 :image="option.avatar"
                 shape="circle"
-                size="small"
               />
               {{ option.title }}
             </div>

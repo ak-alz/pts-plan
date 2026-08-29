@@ -15,6 +15,14 @@ import PopupApp from './PopupApp.vue';
 dayjs.extend(localizedFormat);
 dayjs.locale('ru', ru);
 
+// Окну попапа расширения Chrome шлёт `resize` при любом изменении разметки, даже когда размер не
+// меняется — окно так и остаётся 600×520. PrimeVue по любому `resize` закрывает свои всплывающие
+// слои, поэтому подсказка к опции успевала открыться и тут же схлопывалась: курсор снова оказывался
+// на иконке, подсказка открывалась заново, и цикл повторялся. Размер у попапа фиксированный,
+// настоящих ресайзов у него не бывает, так что событие здесь гасим. Обработчики на `window`
+// вызываются в порядке подписки, а этот навешивается до монтирования — то есть раньше любого слоя.
+window.addEventListener('resize', event => event.stopImmediatePropagation(), true);
+
 const app = createApp(PopupApp);
 app.use(PrimeVue, createPrimeVueOptions({darkModeSelector: '.dark'}));
 app.use(ToastService);

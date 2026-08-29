@@ -24,7 +24,7 @@ defineProps({
   milestoneComparison: {type: Object, default: null},
   milestones: {type: Array, default: () => []},
   userNames: {type: Object, default: () => ({})},
-  groupId: {type: String, required: true},
+  contextKey: {type: String, required: true},
   dateRange: {type: Array, default: null},
   compareDateRange: {type: Array, default: null},
   cut: {type: String, default: 'all'},
@@ -59,7 +59,7 @@ const emit = defineEmits(['open-settings']);
           :milestone-comparison="milestoneComparison"
           :milestones="milestones"
           :bucket-rows="bucketRows"
-          :group-id="groupId"
+          :context-key="contextKey"
           :date-range="dateRange"
           :compare-date-range="compareDateRange"
           :cut="cut"

@@ -3,13 +3,14 @@ import Ripple from 'primevue/ripple';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
+import { resolveKanbanContext } from '../../kanbanContext.js';
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
+import { refreshActionBarButtonGroup } from '../../utils.js';
 import SprintPrioritiesApp from './SprintPrioritiesApp.vue';
 
-export function sprintPriorities(sessionId) {
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+export async function sprintPriorities(sessionId) {
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   const buttonsContainer = document.querySelector('.ui-actions-bar__buttons');
   if (!buttonsContainer) return;
@@ -18,7 +19,7 @@ export function sprintPriorities(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-sprint-priorities pts-actions-bar-btn',
+    className: 'js-sprint-priorities pts-actions-bar-btn pts-app',
     style: 'order: 7;',
   });
 
@@ -26,7 +27,7 @@ export function sprintPriorities(sessionId) {
 
   const app = createApp(SprintPrioritiesApp, {
     sessionId,
-    groupId,
+    context,
   });
   app.use(PrimeVue, primeVueOptions);
   app.directive('tooltip', Tooltip);

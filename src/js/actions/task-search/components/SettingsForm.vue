@@ -34,6 +34,11 @@ const RESULT_LIMIT_OPTIONS = [
   { label: 'Без ограничения', value: null },
 ];
 
+const SORT_FIELD_OPTIONS = [
+  { label: 'Дате создания', value: 'CREATED_DATE' },
+  { label: 'Дате изменения', value: 'CHANGED_DATE' },
+];
+
 const HIDDEN_FILTER_OPTIONS = [
   { label: 'Исключить из названия', value: 'excludeTitle' },
   { label: 'Статус', value: 'status' },
@@ -53,7 +58,9 @@ const form = reactive({
   defaultSmartSearch: props.initial.defaultSmartSearch !== false,
   defaultExtendedSearch: props.initial.defaultExtendedSearch ?? false,
   defaultExcludeTitle: props.initial.defaultExcludeTitle ?? '',
+  defaultExcludeHotfixes: props.initial.defaultExcludeHotfixes ?? false,
   resultLimit: props.initial.resultLimit !== undefined ? props.initial.resultLimit : 100,
+  sortField: props.initial.sortField ?? 'CREATED_DATE',
   hiddenFilters: props.initial.hiddenFilters ?? [],
 });
 
@@ -131,6 +138,17 @@ async function saveSettings() {
             class="text-sm cursor-pointer"
           >Искать в описании и комментариях</label>
         </div>
+        <div class="flex gap-2 items-center self-end">
+          <ToggleSwitch
+            v-model="form.defaultExcludeHotfixes"
+            input-id="settings-exclude-hotfixes"
+            size="small"
+          />
+          <label
+            for="settings-exclude-hotfixes"
+            class="text-sm cursor-pointer"
+          >Исключать хотфиксы</label>
+        </div>
         <FormField
           label="Максимум задач"
           tip="Ограничивает количество задач в результатах поиска. Меньшее значение — быстрее загрузка."
@@ -138,6 +156,19 @@ async function saveSettings() {
           <Select
             v-model="form.resultLimit"
             :options="RESULT_LIMIT_OPTIONS"
+            option-label="label"
+            option-value="value"
+            size="small"
+            class="w-full"
+          />
+        </FormField>
+        <FormField
+          label="Сортировать по"
+          tip="Сначала новые. По этому же полю сортируется таблица результатов. Если задач больше, чем «Максимум задач», лишние отсекаются с конца — то есть самые старые."
+        >
+          <Select
+            v-model="form.sortField"
+            :options="SORT_FIELD_OPTIONS"
             option-label="label"
             option-value="value"
             size="small"

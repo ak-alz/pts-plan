@@ -1,20 +1,22 @@
 <script setup>
 import { Dialog } from 'primevue';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
+import PersonalScopeWarning from '../../ui/PersonalScopeWarning.vue';
 import SprintHistoryMain from './components/SprintHistory.vue';
 
-defineProps({
+const props = defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
 const modalOpened = ref(false);
 </script>
 
@@ -30,13 +32,21 @@ const modalOpened = ref(false);
 
   <Dialog
     v-model:visible="modalOpened"
-    header="История спринта"
     dismissable-mask
     modal
   >
+    <template #header>
+      <div class="flex items-center gap-2">
+        <span class="p-dialog-title">История спринта</span>
+        <PersonalScopeWarning
+          v-if="isPersonal"
+          with-performer-note
+        />
+      </div>
+    </template>
     <SprintHistoryMain
       :session-id
-      :group-id
+      :context
     />
   </Dialog>
 </template>

@@ -16,7 +16,7 @@ const steps = [
     type: 'single',
     default: 'basic',
     // Базовые улучшения работы с задачами — полезны всем, не зависят от роли и раздела.
-    features: ['decomposeTask', 'editTaskTitle', 'showComments', 'statusMarkers', 'invisibleMentions', 'fixLinks', 'worktimeEnd', 'callNotifications'],
+    features: ['decomposeTask', 'editTaskTitle', 'showComments', 'statusMarkers', 'invisibleMentions', 'fixLinks', 'worktimeEnd', 'callNotifications', 'imageActions'],
     options: [
       { label: 'Разработчик', value: 'developer', description: 'Пишете код, работаете с git', features: ['commitButton', 'kanbanCommitButton', 'tagallButton', 'exportTask'] },
       { label: 'Руководитель / аналитик', value: 'management', description: 'Ставите задачи, следите за спринтами и метриками команды', features: ['exportGroupTasks', 'taskDynamics'] },

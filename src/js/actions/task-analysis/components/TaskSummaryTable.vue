@@ -15,7 +15,7 @@ const props = defineProps({
     type: Array,
     required: true,
   },
-  groupId: {
+  contextKey: {
     type: String,
     required: true,
   },
@@ -126,7 +126,7 @@ function buildRows() {
 }
 
 const AI_CONTEXT_MAX_LENGTH = 1000;
-const aiContextStorageKey = computed(() => `task-analysis-ai-context-${props.groupId}`);
+const aiContextStorageKey = computed(() => `task-analysis-ai-context-${props.contextKey}`);
 const aiContext = ref('');
 const isAiContextModalOpened = ref(false);
 const isPromptPreviewModalOpened = ref(false);
@@ -186,7 +186,7 @@ const aiResultElement = ref(null);
 const isApiKeyModalOpened = ref(false);
 const apiKeyInputValue = ref('');
 
-const aiJob = useAiJob(() => `task-analysis-ai-job-${props.groupId}`, {
+const aiJob = useAiJob(() => `task-analysis-ai-job-${props.contextKey}`, {
   onAuthError: () => { isApiKeyModalOpened.value = true; },
 });
 const aiLoading = aiJob.loading;

@@ -61,25 +61,21 @@ function openAllTasks() {
   urls.forEach((url) => window.open(url, '_blank'));
 }
 
+// Не вешаем кнопку на a.delete-button ("Применить и удалить") — та скрыта через
+// display:none и появляется по неизвестной нам логике показа, соседство с ней рискованно
 function addOpenAllTasksButton() {
-  const deleteButton = document.querySelector('a.delete-button');
-  if (!deleteButton) return;
+  const totalElement = document.querySelector('span.alert-total');
+  if (!totalElement) return;
 
   insertCSS(`
     .pts-alert-open-all {
-      display: inline-block;
-      vertical-align: middle;
-      background-color: #e4ae16;
-      padding: 0 10px;
+      color: #e4ae16;
       font-size: 12px;
-      text-align: center;
-      line-height: 24px;
-      border: none;
-      color: #ffffff;
-      transition: all .3s;
-      box-sizing: border-box;
+      text-decoration: underline;
       cursor: pointer;
-      border-radius: 6px;
+    }
+    .pts-alert-open-all:hover {
+      color: #c6960a;
     }
   `, 'pts-alert-open-all');
 
@@ -89,7 +85,7 @@ function addOpenAllTasksButton() {
   });
 
   button.addEventListener('click', openAllTasks);
-  deleteButton.after(button);
+  totalElement.after(' | ', button);
 }
 
 function addGroupNames() {
@@ -140,6 +136,9 @@ function applyGroupFilter(value) {
   });
 }
 
+// Любая фильтрация на этой странице (в т.ч. пагинация) реализована на бекенде и полностью
+// перезагружает документ — скрипт запускается заново с нуля, отслеживать динамическую
+// подгрузку карточек без reload не нужно
 function addGroupFilter() {
   const settingsRows = document.querySelectorAll('div.settings-row');
   const settingsRow = settingsRows[settingsRows.length - 1];
@@ -148,6 +147,7 @@ function addGroupFilter() {
 
   insertCSS(`
     .pts-alert-group-filter {
+      box-sizing: border-box;
       height: 30px;
       width: 200px;
       margin-left: 25px;

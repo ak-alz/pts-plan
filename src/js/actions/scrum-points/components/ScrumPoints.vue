@@ -18,6 +18,8 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  // Группу выбирает оболочка: на личном плане селектом, на групповом канбане это сама группа
+  // (см. ScrumPointsApp.vue). Сюда всегда приходит уже выбранная
   groupId: {
     type: String,
     required: true,
@@ -25,11 +27,13 @@ const props = defineProps({
 });
 
 const bitrixApi = new BitrixApi(props.sessionId);
+
 provide('groupId', props.groupId);
 provide('bitrixApi', bitrixApi);
 
 const settings = ref({});
 const emptySettings = computed(() => !settings.value.users?.length || !settings.value.columns?.length);
+// Ключ общий с виджетом самой группы: колонки и исполнители настраиваются один раз
 const settingsStorageKey = computed(() => `scrum-points-settings-${props.groupId}`);
 const columns = ref([]);
 const columnsMap = computed(() => new Map(columns.value.map((column) => [column.id, column])));
@@ -43,10 +47,10 @@ const dateUpdated = ref(null);
 async function fetchData() {
   isLoading.value = true;
 
+  // Присваиваем всегда, а не только при наличии записи: на личном плане группу можно переключить,
+  // и без сброса у новой группы остались бы колонки и исполнители предыдущей
   const stored = await chrome.storage.local.get([settingsStorageKey.value]);
-  if (stored[settingsStorageKey.value]) {
-    settings.value = stored[settingsStorageKey.value];
-  }
+  settings.value = stored[settingsStorageKey.value] ?? {};
 
   try {
     // Запускаем параллельно: метаданные колонок, задачи выбранных колонок и участники группы.

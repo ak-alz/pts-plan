@@ -148,7 +148,7 @@ export async function showCats(options) {
   leftMenu.appendChild(image);
 
   const intervalId = setInterval(() => {
-    // Баннер мог уехать из DOM вместе с перерисованным меню — держать таймер и качать картинки
+    // Баннер мог уехать из DOM вместе с перерисованным меню — держать таймер и качать изображения
     // в пустоту незачем
     if (!image.isConnected) {
       clearInterval(intervalId);

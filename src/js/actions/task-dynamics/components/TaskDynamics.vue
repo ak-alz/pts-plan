@@ -15,6 +15,7 @@ import {
 import {computed, onMounted, onUnmounted, reactive, ref, shallowRef, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
@@ -55,8 +56,8 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
   options: {
@@ -65,7 +66,55 @@ const props = defineProps({
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
+// Ключ для chrome.storage/кэша — обязательно разный неймспейс, иначе настройки личного плана
+// схлопнутся с несуществующей группой с тем же числовым id, что и userId
+const contextKey = computed(() => isPersonal.value ? `personal-${props.context.id}` : props.context.id);
+
 const bitrixApi = new BitrixApi(props.sessionId);
+
+// В личный план попадают задачи разных групп — фильтр позволяет сузить статистику до одной.
+// Пусто означает «все группы»
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  bitrixApi,
+  `task-dynamics-group-${props.context.id}`,
+);
+
+// Кэш итогов по дням отдельным ключом на каждый фильтр: цифры за один и тот же день при «всех
+// группах» и при выбранной группе разные, и в общем кэше они бы перетирали друг друга.
+// Настройки и контекст AI намеренно остаются на contextKey — их делить по группам незачем
+const cacheKey = computed(() => (isPersonal.value && selectedGroupId.value
+  ? `${contextKey.value}-group-${selectedGroupId.value}`
+  : contextKey.value));
+
+// Одна логическая выборка задач: на групповом канбане это запрос по GROUP_ID, на личном плане —
+// объединение 4 ролей внутри searchMyTasks(), то есть в неё попадают и чужие задачи, где
+// пользователь наблюдатель или соисполнитель
+function fetchScopedTasks(params) {
+  return isPersonal.value
+    ? bitrixApi.searchMyTasks(props.context.id, {...params, groupId: selectedGroupId.value})
+    : bitrixApi.searchTasks({...params, groupId: props.context.id});
+}
+
+// Для подсчёта объединение ролей недоступно: OR между ACCOMPLICE и AUDITOR Bitrix молча
+// превращает в пересечение, а посчитать уникальные задачи по трём запросам сервер не умеет.
+// Поэтому на личном плане берём сумму по ролям — она завышена на пересечения, и это допустимо:
+// число идёт только в прогресс и в проверку «есть ли что грузить», а нулевая сумма всё равно
+// означает пустое объединение
+const countScopes = computed(() => (isPersonal.value
+  ? [{responsibleOrCreatedBy: props.context.id}, {accompliceId: props.context.id}, {auditorId: props.context.id}]
+    .map((scope) => ({...scope, groupId: selectedGroupId.value}))
+  : [{groupId: props.context.id}]));
+
+async function countScopedTasks(requests) {
+  const scopes = countScopes.value;
+  const counts = await bitrixApi.countTasksBatch(
+    requests.flatMap((request) => scopes.map((scope) => ({...request, ...scope}))),
+  );
+  return requests.map((_, index) => counts
+    .slice(index * scopes.length, (index + 1) * scopes.length)
+    .reduce((sum, value) => sum + value, 0));
+}
 
 // Историческим выборкам нужны свои поля: без STATUS не отфильтровать отклонённые, без COMMENTS_COUNT
 // не посчитать уточнения. Базовые FAVORITE/CHANGED_DATE/GROUP_ID на тысячах задач только весят.
@@ -73,7 +122,7 @@ const HISTORY_SELECT_FIELDS = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 
 // Живому бэклогу не нужны ни название, ни исполнитель — только возраст, давность активности и колонка
 const ACTIVE_SELECT_FIELDS = ['ID', 'CREATED_DATE', 'ACTIVITY_DATE', 'STAGE_ID', 'STATUS'];
 
-const settingsStorageKey = `task-dynamics-settings-${props.groupId}`;
+const settingsStorageKey = computed(() => `task-dynamics-settings-${contextKey.value}`);
 const settings = ref({...DEFAULT_SETTINGS});
 const isSettingsOpened = ref(false);
 
@@ -103,11 +152,11 @@ const cacheSizeLabel = computed(() => {
 });
 
 async function refreshCacheSize() {
-  cacheSizeBytes.value = await getCacheSizeBytes(props.groupId);
+  cacheSizeBytes.value = await getCacheSizeBytes(cacheKey.value);
 }
 
 async function resetCache() {
-  await clearCache(props.groupId);
+  await clearCache(cacheKey.value);
   await refreshCacheSize();
   showToast({
     severity: 'success',
@@ -227,7 +276,7 @@ async function fetchData({force = false} = {}) {
     const compareDayKeys = compareRequestRange ? getDayKeys(compareRequestRange) : [];
     const requiredDayKeys = [...new Set([...periodDayKeys, ...compareDayKeys])];
 
-    const storedCache = await loadCache(props.groupId);
+    const storedCache = await loadCache(cacheKey.value);
     // «Обновить» сбрасывает срез и агрегаты — но только тех дней, которые сейчас будут выгружены
     // заново: дни вне периода трогать нельзя, иначе обновление за месяц выкидывало бы годы истории.
     // Имена исполнителей остаются всегда: они не устаревают, а без них после загрузки из кэша
@@ -246,20 +295,18 @@ async function fetchData({force = false} = {}) {
     // живой бэклог) идут одним батчем: до этого запроса виджет ещё ничего не показывает
     const countRequests = ranges.flatMap((range) => [
       {
-        groupId: props.groupId,
         createdDateFrom: formatDayStart(range.from),
         createdDateTo: formatDayEnd(range.to),
       },
       {
-        groupId: props.groupId,
         status: 'closed',
         closedDateFrom: formatDayStart(range.from),
         closedDateTo: formatDayEnd(range.to),
       },
     ]);
-    if (needSnapshot) countRequests.push({groupId: props.groupId, status: 'active'});
+    if (needSnapshot) countRequests.push({status: 'active'});
 
-    const counts = await bitrixApi.countTasksBatch(countRequests);
+    const counts = await countScopedTasks(countRequests);
     const estimates = ranges.map((range, index) => ({
       range,
       createdCount: counts[index * 2] ?? 0,
@@ -279,8 +326,7 @@ async function fetchData({force = false} = {}) {
     let snapshotRequest = Promise.resolve(cache.snapshot);
     if (needSnapshot) {
       isSnapshotLoading.value = true;
-      snapshotRequest = bitrixApi.searchTasks({
-        groupId: props.groupId,
+      snapshotRequest = fetchScopedTasks({
         status: 'active',
         selectFields: ACTIVE_SELECT_FIELDS,
         onProgress: trackProgress('active'),
@@ -297,8 +343,7 @@ async function fetchData({force = false} = {}) {
 
     for (const [index, {range, createdCount, closedCount}] of estimates.entries()) {
       const createdTasks = createdCount
-        ? await bitrixApi.searchTasks({
-          groupId: props.groupId,
+        ? await fetchScopedTasks({
           createdDateFrom: formatDayStart(range.from),
           createdDateTo: formatDayEnd(range.to),
           selectFields: HISTORY_SELECT_FIELDS,
@@ -307,8 +352,7 @@ async function fetchData({force = false} = {}) {
         : [];
 
       const closedTasks = closedCount
-        ? await bitrixApi.searchTasks({
-          groupId: props.groupId,
+        ? await fetchScopedTasks({
           status: 'closed',
           closedDateFrom: formatDayStart(range.from),
           closedDateTo: formatDayEnd(range.to),
@@ -343,7 +387,7 @@ async function fetchData({force = false} = {}) {
 
     // Если всё пришло из кэша, перезаписывать его нечем — а объём там измеряется сотнями килобайт
     if (ranges.length || needSnapshot) {
-      await saveCache(props.groupId, {days, users: userNames, snapshot: currentSnapshot});
+      await saveCache(cacheKey.value, {days, users: userNames, snapshot: currentSnapshot});
       await refreshCacheSize();
     }
   } catch (e) {
@@ -440,6 +484,14 @@ const userNames = computed(() => {
   return names;
 });
 
+// Мультиселект исключений в настройках. На групповом канбане это участники группы, на личном
+// состава участников нет — берём исполнителей, встретившихся в уже загруженных задачах
+const settingsUsers = computed(() => (isPersonal.value
+  ? Object.entries(taskUserNames.value)
+    .map(([id, name]) => ({id, name, photo: null}))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+  : groupUsers.value));
+
 const hasBacklogColumns = computed(() => (settings.value.backlogStageIds ?? []).length > 0);
 
 const isEmptyPeriod = computed(() => !!summary.value && summary.value.created === 0 && summary.value.closed === 0);
@@ -459,9 +511,9 @@ const isRangeStale = computed(() => {
 });
 
 async function loadSettings() {
-  const stored = await chrome.storage.local.get([settingsStorageKey]);
-  if (!stored[settingsStorageKey]) return false;
-  settings.value = {...DEFAULT_SETTINGS, ...stored[settingsStorageKey]};
+  const stored = await chrome.storage.local.get([settingsStorageKey.value]);
+  if (!stored[settingsStorageKey.value]) return false;
+  settings.value = {...DEFAULT_SETTINGS, ...stored[settingsStorageKey.value]};
   return true;
 }
 
@@ -474,11 +526,23 @@ function onSaveSettings(newSettings) {
     : null;
 }
 
-/** Колонки канбана и участники группы: нужны названиям колонок и мультиселекту исключений, но не расчётам. */
+/**
+ * Колонки канбана и участники группы: нужны названиям колонок и мультиселекту исключений, но не
+ * расчётам. На личном плане не запрашиваются вовсе. Колонок у «Моего плана» нет: STAGE_ID задач
+ * указывает на канбан их собственной группы, и единого бэклога, от которого считается срез
+ * «сейчас», там просто не существует — поэтому этот срез на личном плане недоступен, а остальные
+ * расчёты работают как есть. Имена исполнителей берутся из самих задач (см. collectUserNames).
+ */
 async function loadReferenceData(hasStoredSettings) {
+  if (isPersonal.value) {
+    stages.value = [];
+    groupUsers.value = [];
+    return;
+  }
+
   const [stagesResponse, users] = await Promise.all([
-    bitrixApi.getStages(props.groupId),
-    bitrixApi.getGroupUsers(props.groupId),
+    bitrixApi.getStages(props.context.id),
+    bitrixApi.getGroupUsers(props.context.id),
   ]);
 
   stages.value = Object.values(stagesResponse.data?.result ?? {}).sort((a, b) => a.SORT - b.SORT);
@@ -501,6 +565,8 @@ async function loadReferenceData(hasStoredSettings) {
 onMounted(async () => {
   const hasStoredSettings = await loadSettings();
   applyDefaults();
+  // Фильтр по группе восстанавливаем до первой загрузки: от него зависит и выборка, и ключ кэша
+  if (isPersonal.value) await restoreGroupFilter();
   isInitialLoading.value = false;
 
   // Справочники расчётам не нужны, поэтому грузятся параллельно с данными: иначе при полностью
@@ -531,7 +597,7 @@ onMounted(async () => {
     </template>
 
     <template v-else>
-      <div class="flex gap-2 mb-3">
+      <div class="flex gap-2 mb-3 items-center">
         <Button
           label="Настройки"
           size="small"
@@ -542,7 +608,7 @@ onMounted(async () => {
         />
         <Button
           v-if="cacheSizeBytes > 0"
-          v-tooltip="'Виджет сохраняет итоги по дням, чтобы повторное открытие за тот же период не выкачивало историю заново. Кнопка удаляет их для этой группы — цифры на экране останутся, но следующая загрузка будет полной.'"
+          v-tooltip="'Виджет сохраняет итоги по дням, чтобы повторное открытие за тот же период не выкачивало историю заново. Кнопка удаляет их для этого канбана — цифры на экране останутся, но следующая загрузка будет полной.'"
           :label="`Сбросить кэш (${cacheSizeLabel})`"
           size="small"
           severity="secondary"
@@ -613,6 +679,25 @@ onMounted(async () => {
         </FormField>
 
         <FormField
+          v-if="isPersonal"
+          label="Группа"
+          tip="В личный план попадают задачи разных групп. Пусто — считаем по всем. Кэш по дням у каждого фильтра свой"
+        >
+          <Select
+            v-model="selectedGroupId"
+            :options="groupOptions"
+            option-label="name"
+            option-value="id"
+            placeholder="Все группы"
+            show-clear
+            filter
+            filter-placeholder="Поиск"
+            size="small"
+            class="w-[220px]"
+          />
+        </FormField>
+
+        <FormField
           label="Значения"
           tip="Переключает распределение размеров задач и воронку планов между количеством задач и долями."
         >
@@ -656,8 +741,13 @@ onMounted(async () => {
         :closable="false"
         class="mb-3"
       >
-        За выбранный период в группе нет ни созданных, ни закрытых задач. Проверьте диапазон — или, если
-        группа новая, начните с более широкого периода.
+        <template v-if="isPersonal">
+          За выбранный период нет ни созданных, ни закрытых задач. Проверьте диапазон.
+        </template>
+        <template v-else>
+          За выбранный период в группе нет ни созданных, ни закрытых задач. Проверьте диапазон — или, если
+          группа новая, начните с более широкого периода.
+        </template>
       </Message>
 
       <DynamicsTabs
@@ -675,7 +765,7 @@ onMounted(async () => {
         :milestone-comparison="milestoneComparison"
         :milestones="milestones"
         :user-names="userNames"
-        :group-id="groupId"
+        :context-key="contextKey"
         :date-range="fetchedDateRange"
         :compare-date-range="fetchedCompareRange"
         :cut="form.cut"
@@ -696,7 +786,7 @@ onMounted(async () => {
   >
     <SettingsForm
       :stages="stages"
-      :users="groupUsers"
+      :users="settingsUsers"
       :initial="settings"
       :settings-storage-key="settingsStorageKey"
       @success="onSaveSettings"

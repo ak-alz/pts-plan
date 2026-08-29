@@ -77,7 +77,7 @@ watch(() => props.visible, (value) => {
   if (value) resetForm();
 });
 
-const titlePlaceholder = computed(() => (form.type === MEETING_TYPE.ONCE ? 'Например, Созвон с клиентом' : 'Например, Дейли'));
+const titlePlaceholder = computed(() => (form.type === MEETING_TYPE.ONCE ? 'Например, Встреча с клиентом' : 'Например, Дейли'));
 
 const isLinkValid = computed(() => !form.link.trim() || isValidHttpUrl(form.link.trim()));
 
@@ -154,7 +154,7 @@ function onSubmit() {
           />
         </FormField>
 
-        <FormField label="Ссылка на созвон">
+        <FormField label="Ссылка на встречу">
           <InputText
             v-model="form.link"
             size="small"

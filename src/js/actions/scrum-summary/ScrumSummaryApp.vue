@@ -1,18 +1,35 @@
 <script setup>
-import {Button, Dialog} from 'primevue';
-import { ref } from 'vue';
+import { Button, Dialog, Message, Select } from 'primevue';
+import { computed, onMounted, ref } from 'vue';
 
+import BitrixApi from '../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../composables/usePersonalGroupFilter.js';
+import FormField from '../../ui/FormField.vue';
 import ScrumSummary from './components/ScrumSummary.vue';
 
-defineProps({
+const props = defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
+});
+
+const isPersonal = computed(() => props.context.type === 'personal');
+
+// У «Моего плана» нет ни своего канбана, ни спринтов, поэтому на личном плане виджет работает по
+// выбранной группе — по образцу scrum-points. Настройки при этом общие с виджетом самой группы
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  new BitrixApi(props.sessionId),
+  `scrum-summary-personal-group-${props.context.id}`,
+);
+const activeGroupId = computed(() => (isPersonal.value ? selectedGroupId.value : props.context.id));
+
+onMounted(() => {
+  if (isPersonal.value) restoreGroupFilter();
 });
 
 const modalOpened = ref(false);
@@ -49,9 +66,42 @@ const isInfoModalOpened = ref(false);
       </div>
     </template>
 
+    <div
+      v-if="isPersonal"
+      class="mb-3"
+    >
+      <FormField
+        label="Группа"
+        tip="У личного плана нет своего канбана и спринтов, поэтому виджет работает по выбранной группе"
+      >
+        <Select
+          v-model="selectedGroupId"
+          :options="groupOptions"
+          option-label="name"
+          option-value="id"
+          placeholder="Выберите группу"
+          filter
+          filter-placeholder="Поиск"
+          size="small"
+          class="min-w-[260px]"
+        />
+      </FormField>
+    </div>
+
+    <Message
+      v-if="isPersonal && !activeGroupId"
+      severity="info"
+      size="small"
+      :closable="false"
+    >
+      Выберите группу — виджет считает по её спринтам и колонкам.
+    </Message>
+
     <ScrumSummary
+      v-if="activeGroupId"
+      :key="activeGroupId"
       :session-id
-      :group-id
+      :group-id="activeGroupId"
     />
   </Dialog>
 

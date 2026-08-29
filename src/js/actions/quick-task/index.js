@@ -3,26 +3,26 @@ import Ripple from 'primevue/ripple';
 import Tooltip from 'primevue/tooltip';
 import {createApp} from 'vue';
 
+import {resolveKanbanContext} from '../../kanbanContext.js';
 import primeVueOptions from '../../primeVueOptions.js';
-import {getGroupIdFromUrl} from '../../utils.js';
 import QuickTaskApp from './QuickTaskApp.vue';
 
-export function quickTask(sessionId) {
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+export async function quickTask(sessionId) {
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   if (!document.querySelector('.main-kanban-column')) return;
 
   if (document.querySelector('.js-quick-task')) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-quick-task',
+    className: 'js-quick-task pts-app',
   });
   document.body.appendChild(appContainer);
 
   const app = createApp(QuickTaskApp, {
     sessionId,
-    groupId,
+    context,
   });
   app.use(PrimeVue, primeVueOptions);
   app.directive('tooltip', Tooltip);

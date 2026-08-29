@@ -4,10 +4,12 @@ import { Avatar, Button, Checkbox, Dialog, MultiSelect, Select, ToggleSwitch } f
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
+import { collectStagesFromTasks, groupStagesByGroup } from '../../../personalPlan.js';
 import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import { getTaskPointsFromName, isHotfixTask } from '../../../utils.js';
+import { getTaskPointsFromName, isHotfixTask, pluralize } from '../../../utils.js';
 import { getPeriodRange, ROOT_STATUS_OPTIONS } from '../variables.js';
 import GroupedTasksTable from './GroupedTasksTable.vue';
 import SettingsForm from './SettingsForm.vue';
@@ -18,14 +20,30 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
+// Ссылки на задачи: на личном плане Bitrix рендерит карточки через пользователя, даже если у
+// задачи есть настоящая группа, — поэтому там groupId принудительно пустой
+const linkGroupId = computed(() => (isPersonal.value ? null : props.context.id));
+const linkUserId = computed(() => (isPersonal.value ? props.context.id : null));
+// Ключ для chrome.storage — обязательно разный неймспейс, иначе настройки личного плана
+// схлопнутся с несуществующей группой с тем же числовым id, что и userId
+const contextKey = computed(() => isPersonal.value ? `personal-${props.context.id}` : props.context.id);
+
 const bitrixApi = new BitrixApi(props.sessionId);
-const SETTINGS_KEY = `sprint-history-settings-${props.groupId}`;
+const settingsKey = computed(() => `sprint-history-settings-${contextKey.value}`);
+
+// В личный план попадают задачи разных групп — фильтр позволяет сузить историю до одной.
+// Пусто означает «все группы»
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  bitrixApi,
+  `sprint-history-group-${props.context.id}`,
+);
 
 const settings = ref({});
 const isSettingsModalOpened = ref(false);
@@ -53,8 +71,8 @@ function applyDefaults() {
 }
 
 async function loadSettings() {
-  const stored = await chrome.storage.local.get(SETTINGS_KEY);
-  settings.value = stored[SETTINGS_KEY] ?? {};
+  const stored = await chrome.storage.local.get(settingsKey.value);
+  settings.value = stored[settingsKey.value] ?? {};
 }
 
 function onSettingsSaved(newSettings) {
@@ -82,13 +100,18 @@ const filteredTasks = computed(() => {
   let tasks = allTasks.value;
   if (excludeHotfixes.value) tasks = tasks.filter((task) => !isHotfixTask(task.title));
   if (selectedUserId.value) tasks = tasks.filter((task) => task.responsible.id === selectedUserId.value);
-  // Только в режиме группировки: там же и стоит сам мультиселект — иначе сохранённые в настройках
-  // колонки резали бы список без всякого контрола на экране
-  if (groupByParent.value && selectedStageIds.value.length) {
-    tasks = tasks.filter((task) => selectedStageIds.value.includes(String(task.stageId)));
-  }
   return tasks;
 });
+
+// Выбранные колонки в порядке канбана — для цветных кружков в поле мультиселекта
+const selectedStages = computed(() => stages.value.filter((stage) => selectedStageIds.value.includes(stage.id)));
+
+// Колонки из нескольких канбанов разводим группами PrimeVue, а не подписью в каждой опции —
+// с заголовком группы над списком подпись у каждой строки была бы лишней. Одна группа — плоский
+// список без заголовка
+const stageGroups = computed(() => groupStagesByGroup(stages.value));
+const hasSeveralStageGroups = computed(() => stageGroups.value.length > 1);
+const stageSelectOptions = computed(() => (hasSeveralStageGroups.value ? stageGroups.value : stages.value));
 
 const allTasksById = computed(() => {
   const map = {};
@@ -155,19 +178,48 @@ const groupedRows = computed(() => {
 });
 
 const filteredGroupedRows = computed(() => {
-  if (rootStatusFilter.value === 'all') return groupedRows.value;
-  const wantClosed = rootStatusFilter.value === 'closed';
-  return groupedRows.value.filter((row) => !!row.parentClosedDate === wantClosed);
+  let rows = groupedRows.value;
+
+  // Фильтр по колонке применяется к родительской задаче группы, а не к задачам спринта: стадия
+  // канбана проставлена у корневой задачи, у подзадач её обычно нет вовсе. Группы, чья родительская
+  // задача не найдена (parentStageId пуст), при активном фильтре скрываются — сопоставить их не с чем
+  if (selectedStageIds.value.length) {
+    rows = rows.filter((row) => row.parentStageId && selectedStageIds.value.includes(row.parentStageId));
+  }
+
+  if (rootStatusFilter.value !== 'all') {
+    const wantClosed = rootStatusFilter.value === 'closed';
+    rows = rows.filter((row) => !!row.parentClosedDate === wantClosed);
+  }
+
+  return rows;
 });
 
 async function fetchStages() {
   try {
-    const { data } = await bitrixApi.getStages(props.groupId);
+    const { data } = await bitrixApi.getStages(props.context.id);
     stages.value = Object.values(data.result)
       .sort((a, b) => a.SORT - b.SORT)
-      .map((stage) => ({ id: String(stage.ID), name: stage.TITLE, color: `#${stage.COLOR}` }));
+      .map((stage) => ({ id: String(stage.ID), title: stage.TITLE, name: stage.TITLE, color: `#${stage.COLOR}` }));
   } catch (e) {
     console.warn(e);
+  }
+}
+
+// На личном плане своего набора колонок нет: у каждой задачи STAGE_ID указывает на канбан её
+// собственной группы. Поэтому список собирается из уже загруженных задач — и обновляется вместе
+// с ними, ведь при другом периоде и группы будут другие.
+// Родительские задачи учитываются наравне с задачами спринта: в режиме группировки фильтр
+// применяется именно к колонке родителя, и без них половина вариантов в списке бы не появилась
+async function refreshPersonalStages() {
+  try {
+    stages.value = await collectStagesFromTasks(bitrixApi, [
+      ...allTasks.value,
+      ...Object.values(parentTasksMap.value),
+    ]);
+  } catch (error) {
+    console.warn(error);
+    stages.value = [];
   }
 }
 
@@ -185,6 +237,8 @@ async function fetchGroupedData() {
   const parentTasksList = parentIds.length ? await bitrixApi.searchTasks({ ids: parentIds }) : [];
   parentTasksMap.value = Object.fromEntries(parentTasksList.map((task) => [String(task.id), task]));
   groupedDataLoaded.value = true;
+
+  if (isPersonal.value) await refreshPersonalStages();
 }
 
 async function fetchData() {
@@ -197,20 +251,28 @@ async function fetchData() {
   try {
     const dateFrom = dayjs(dateRange.value[0]).format('YYYY-MM-DD 00:00:00');
     const dateTo = dayjs(dateRange.value[1] ?? dateRange.value[0]).format('YYYY-MM-DD 23:59:59');
-    const tasks = await bitrixApi.searchTasks({
-      groupId: props.groupId,
+    // На личном плане «мои задачи» — объединение 4 ролей, а не только ответственность,
+    // поэтому в выборку попадают и чужие задачи, где пользователь наблюдатель или соисполнитель
+    const searchParams = {
       status: 'closed',
       closedDateFrom: dateFrom,
       closedDateTo: dateTo,
-    });
+    };
+    const tasks = isPersonal.value
+      ? await bitrixApi.searchMyTasks(props.context.id, { ...searchParams, groupId: selectedGroupId.value })
+      : await bitrixApi.searchTasks({ ...searchParams, groupId: props.context.id });
 
     allTasks.value = tasks.map((task) => ({
       ...task,
       points: getTaskPointsFromName(task.title),
     }));
 
+    // В режиме группировки колонки соберёт fetchGroupedData() — он добавляет к выборке ещё и
+    // родительские задачи, а собирать дважды значит дважды сходить в batch
     if (groupByParent.value) {
       await fetchGroupedData();
+    } else if (isPersonal.value) {
+      await refreshPersonalStages();
     }
   } catch (e) {
     console.warn(e);
@@ -247,14 +309,16 @@ watch(groupByParent, async (isEnabled) => {
 onMounted(async () => {
   await loadSettings();
   applyDefaults();
-  await fetchStages();
+  // На личном плане колонки известны только из самих задач, поэтому там их собирает fetchData()
+  if (isPersonal.value) await restoreGroupFilter();
+  else await fetchStages();
   await fetchData();
 });
 </script>
 
 <template>
   <div class="min-w-[640px]">
-    <div class="mb-3">
+    <div class="mb-3 flex items-center gap-2">
       <Button
         icon="pi pi-cog"
         size="small"
@@ -271,6 +335,24 @@ onMounted(async () => {
           <DateRangePicker
             v-model="dateRange"
             presets="current"
+          />
+        </FormField>
+        <FormField
+          v-if="isPersonal"
+          label="Группа"
+          tip="В личный план попадают задачи разных групп. Пусто — считаем по всем"
+        >
+          <Select
+            v-model="selectedGroupId"
+            :options="groupOptions"
+            option-label="name"
+            option-value="id"
+            placeholder="Все группы"
+            show-clear
+            filter
+            filter-placeholder="Поиск"
+            size="small"
+            class="min-w-[200px]"
           />
         </FormField>
         <Button
@@ -300,7 +382,6 @@ onMounted(async () => {
                 v-if="option.photo"
                 :image="option.photo"
                 shape="circle"
-                size="small"
               />
               {{ option.name }}
             </div>
@@ -339,17 +420,47 @@ onMounted(async () => {
         <template v-if="groupByParent">
           <MultiSelect
             v-model="selectedStageIds"
-            :options="stages"
-            option-label="name"
+            :options="stageSelectOptions"
+            option-label="title"
             option-value="id"
+            :option-group-label="hasSeveralStageGroups ? 'groupName' : undefined"
+            :option-group-children="hasSeveralStageGroups ? 'stages' : undefined"
             placeholder="Все колонки"
             filter
+            :filter-fields="['title', 'groupName']"
             filter-placeholder="Поиск"
             show-clear
             size="small"
             fluid
             input-class="min-w-[160px]"
-          />
+          >
+            <template #option="{ option }">
+              <div class="flex items-center gap-2">
+                <span
+                  v-if="option.color"
+                  class="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                  :style="`background-color: ${option.color};`"
+                />
+                <span>{{ option.title }}</span>
+              </div>
+            </template>
+            <template #value="{ value, placeholder }">
+              <div
+                v-if="value?.length"
+                class="flex items-center gap-2"
+              >
+                <span
+                  v-for="stage in selectedStages"
+                  :key="stage.id"
+                  v-tooltip.top="stage.name"
+                  class="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                  :style="`background-color: ${stage.color};`"
+                />
+                <span>{{ selectedStages.length }} {{ pluralize(selectedStages.length, ['колонка', 'колонки', 'колонок']) }}</span>
+              </div>
+              <span v-else>{{ placeholder }}</span>
+            </template>
+          </MultiSelect>
           <Select
             v-model="rootStatusFilter"
             :options="ROOT_STATUS_OPTIONS"
@@ -366,7 +477,8 @@ onMounted(async () => {
     <GroupedTasksTable
       v-if="groupByParent"
       :rows="filteredGroupedRows"
-      :group-id="groupId"
+      :group-id="linkGroupId"
+      :user-id="linkUserId"
       :stages="stages"
       :loading="isLoading"
     />
@@ -374,7 +486,8 @@ onMounted(async () => {
     <TaskTable
       v-else
       :tasks="filteredTasks"
-      :group-id="groupId"
+      :group-id="linkGroupId"
+      :user-id="linkUserId"
       :loading="isLoading"
     />
 
@@ -385,8 +498,9 @@ onMounted(async () => {
     >
       <SettingsForm
         :session-id="sessionId"
-        :group-id="groupId"
+        :context="context"
         :stages="stages"
+        :users="users"
         :initial="settings"
         @success="onSettingsSaved"
       />

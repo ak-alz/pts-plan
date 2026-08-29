@@ -12,9 +12,16 @@ const props = defineProps({
       return [];
     },
   },
+  // Ссылки на задачи: на групповом канбане через группу, на личном плане — через пользователя.
+  // Bitrix там рендерит карточки как /company/personal/user/{id}/tasks/task/view/{id}/ даже у
+  // задач с настоящей группой, поэтому groupId для личного плана приходит пустым
   groupId: {
     type: String,
-    required: true,
+    default: null,
+  },
+  userId: {
+    type: String,
+    default: null,
   },
   loading: {
     type: Boolean,
@@ -71,7 +78,7 @@ function isRootTask(task) {
           class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
         />
         <a
-          :href="getTaskUrl(groupId, data.id)"
+          :href="getTaskUrl(groupId, data.id, userId)"
           target="_top"
           class="pts-blur"
           :class="{ 'font-bold': highlightIds.includes(String(data.id)) }"

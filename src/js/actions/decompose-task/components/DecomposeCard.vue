@@ -94,7 +94,6 @@ function onCopyContentChange() {
                 v-if="option.avatar"
                 :image="option.avatar"
                 shape="circle"
-                size="small"
               />
               {{ option.title }}
             </div>
@@ -135,7 +134,6 @@ function onCopyContentChange() {
               v-if="option.avatar"
               :image="option.avatar"
               shape="circle"
-              size="small"
             />
             {{ option.title }}
           </template>

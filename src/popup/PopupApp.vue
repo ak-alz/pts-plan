@@ -1,7 +1,7 @@
 <script setup>
 import { debounce } from 'lodash-es';
 import { Button, Dialog, IconField, InputIcon, InputText, SelectButton, Toast } from 'primevue';
-import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue';
 
 import { useTheme } from '../js/composables/useTheme.js';
 import options, { getDefaultOptions, groups } from '../js/options.js';
@@ -19,7 +19,7 @@ watch(search, (val) => {
   if (val) selectedGroup.value = 'all';
 });
 
-const profileKeys = new Set(['userFirstName', 'userLastName', 'userId', 'pixelToolsApiKey']);
+const profileKeys = new Set(['userFirstName', 'userLastName', 'userId', 'pixelToolsApiKey', 'pixelToolsAiModel']);
 
 const groupOptions = [
   { label: 'Все', value: 'all' },
@@ -100,8 +100,23 @@ function openCallNotificationsGuide() {
   chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?calls=1') });
 }
 
+// Опции пишет не только попап: расширение само сбрасывает «Нейросеть для AI-функций» на значение
+// по умолчанию, когда выбранную модель отключили в Пиксель Тулс. Без этого форма осталась бы со
+// старым значением и следующим же сохранением вернула бы нерабочую модель обратно.
+// Присваивание тех же значений реактивность не трогает, поэтому собственные записи попапа
+// сюда возвращаются вхолостую и цикла не создают
+function handleOptionsStorageChanged(changes, area) {
+  if (area !== 'local' || !changes.options) return;
+  Object.assign(form, changes.options.newValue);
+}
+
 onMounted(() => {
   loadSettings();
+  chrome.storage.onChanged.addListener(handleOptionsStorageChanged);
+});
+
+onUnmounted(() => {
+  chrome.storage.onChanged.removeListener(handleOptionsStorageChanged);
 });
 </script>
 

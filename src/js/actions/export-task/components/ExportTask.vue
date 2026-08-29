@@ -1,6 +1,6 @@
 <script setup>
 import dayjs from 'dayjs';
-import { Button, Dialog, IconField, InputIcon, InputText, Message, SelectButton, Skeleton, Textarea, ToggleSwitch } from 'primevue';
+import { Button, Dialog, IconField, InputIcon, InputText, SelectButton, Skeleton, Textarea, ToggleSwitch } from 'primevue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
@@ -8,7 +8,7 @@ import { DISK_FILE_INLINE_RE } from '../../../patterns.js';
 import { showToast } from '../../../toastHost/showToast.js';
 import { translateRuToEn } from '../../../translateRuToEn.js';
 import FormField from '../../../ui/FormField.vue';
-import { bbcodeToMarkdown, downloadBlob, estimateTokenCount, isSystemComment, minifyPrompt, pluralize, slugify, TASK_STATUS_LABELS } from '../../../utils.js';
+import { bbcodeToMarkdown, downloadBlob, estimateImageTokenCount, estimateTokenCount, isImageFileName, isSystemComment, minifyPrompt, pluralize, slugify, TASK_STATUS_LABELS } from '../../../utils.js';
 import { ARCHIVE_NAME_SLUG_PLACEHOLDER, DEFAULT_ARCHIVE_NAME_TEMPLATE, getTaskTitleText, renderArchiveName, withZipExtension } from '../variables.js';
 import SettingsForm from './SettingsForm.vue';
 
@@ -31,12 +31,16 @@ const commentsLoaded = ref(false);
 const loadingSubtasks = ref(false);
 const subtasksLoaded = ref(false);
 const subtasksTree = ref([]); // дерево прямых подзадач taskId: [{ id, title, status, files: [{name, url}], children: [...] }]
+const loadingParentTasks = ref(false);
+const parentTasksLoaded = ref(false);
+const parentTasks = ref([]); // цепочка предков от корневой задачи к прямому родителю: [{ id, title, description, createdDate, status, files: [{name, url, diskFileId}] }]
 const taskTitle = ref('');
 const taskDescription = ref('');
 const taskCreatedDate = ref('');
 const taskStatus = ref('');
 const taskStageName = ref('');
 const taskAuthorId = ref('');
+const taskParentId = ref('');
 const taskAuthorName = ref('');
 const taskFileObjects = ref([]);
 const allComments = ref([]);
@@ -48,15 +52,21 @@ const includeTitle = ref(true);
 const includeDescription = ref(true);
 const includeComments = ref(true);
 const includeSubtasks = ref(false);
+const includeParentTasks = ref(false);
 const textFormat = ref('bbcode'); // формат самого текста (описание/комментарии) — независим от exportAsJson
 const exportAsJson = ref(false); // оборачивает результат в JSON-структуру вместо плоского текста
 const downloadingZip = ref(false);
 const archiveNameTemplate = ref(DEFAULT_ARCHIVE_NAME_TEMPLATE);
 const archiveName = ref('');
+const showArchiveNameInput = ref(false);
+const autoCountImageTokens = ref(false);
 const translatingSlug = ref(false);
 const isSettingsOpened = ref(false);
 const attachmentDiskIdMap = ref(new Map()); // ATTACHMENT_ID → "n{OBJECT_ID}"
-const diskFileByObjectId = ref(new Map()); // "n{OBJECT_ID}" → { name, url } — все известные файлы Диска (вложения + инлайн-картинки в тексте)
+const diskFileByObjectId = ref(new Map()); // "n{OBJECT_ID}" → { name, url } — все известные файлы Диска (вложения + инлайн-изображения в тексте)
+const imageSizeByUrl = ref(new Map()); // url изображения → { width, height } либо null, если размеры получить не удалось
+const measuringImages = ref(false);
+const imagesMeasured = ref(false);
 
 const textFormatOptions = [
   { label: 'BBCode', value: 'bbcode' },
@@ -67,13 +77,16 @@ const SETTINGS_STORAGE_KEY = 'export-task-settings';
 // Предел глубины обхода дерева подзадач: реальные деревья куда мельче, а каждый уровень — это ещё
 // один последовательный запрос
 const MAX_SUBTASK_DEPTH = 20;
+// Тот же предел для подъёма по цепочке предков: от циклов защищает visitedIds, а это страховка
+// от неправдоподобно длинной цепочки — каждый уровень стоит отдельного запроса
+const MAX_PARENT_DEPTH = 20;
 const extraContextStorageKey = computed(() => `export-task-context-${groupId.value}`);
 
 let isInitializing = true;
 let authorLoaded = false;
 let translatedTaskSlug = null;
 
-watch([includeTitle, includeDescription, includeComments, includeSubtasks, textFormat, exportAsJson, archiveNameTemplate], () => {
+watch([includeTitle, includeDescription, includeComments, includeSubtasks, includeParentTasks, textFormat, exportAsJson, archiveNameTemplate, showArchiveNameInput, autoCountImageTokens], () => {
   if (isInitializing) return;
   chrome.storage.local.set({
     [SETTINGS_STORAGE_KEY]: {
@@ -81,9 +94,12 @@ watch([includeTitle, includeDescription, includeComments, includeSubtasks, textF
       includeDescription: includeDescription.value,
       includeComments: includeComments.value,
       includeSubtasks: includeSubtasks.value,
+      includeParentTasks: includeParentTasks.value,
       textFormat: textFormat.value,
       exportAsJson: exportAsJson.value,
       archiveNameTemplate: archiveNameTemplate.value,
+      showArchiveNameInput: showArchiveNameInput.value,
+      autoCountImageTokens: autoCountImageTokens.value,
     },
   });
 });
@@ -99,6 +115,13 @@ watch(includeSubtasks, async (newValue) => {
   if (isInitializing) return;
   if (newValue && !subtasksLoaded.value) {
     await loadSubtasks();
+  }
+});
+
+watch(includeParentTasks, async (newValue) => {
+  if (isInitializing) return;
+  if (newValue && !parentTasksLoaded.value) {
+    await loadParentTasks();
   }
 });
 
@@ -213,21 +236,21 @@ const taskStatusLabel = computed(() => TASK_STATUS_LABELS[taskStatus.value] ?? '
 
 // «Дата создания» вместе с точным числом прошедших дней — по просьбе пользователя, чтобы не
 // пересчитывать вручную давность задачи.
-function formatCreatedDateLine() {
-  const daysSinceCreation = dayjs().diff(dayjs(taskCreatedDate.value), 'day');
-  return `${dayjs(taskCreatedDate.value).format('DD.MM.YYYY')} (${daysSinceCreation} ${pluralize(daysSinceCreation, ['день', 'дня', 'дней'])} назад)`;
+function formatCreatedDateLine(createdDate) {
+  const daysSinceCreation = dayjs().diff(dayjs(createdDate), 'day');
+  return `${dayjs(createdDate).format('DD.MM.YYYY')} (${daysSinceCreation} ${pluralize(daysSinceCreation, ['день', 'дня', 'дней'])} назад)`;
 }
 
-function buildTaskMetaLines(isMarkdown) {
+function buildTaskMetaLines(isMarkdown, { createdDate, statusLabel, stageName = '' }) {
   const lines = [];
-  if (taskCreatedDate.value) {
-    lines.push(isMarkdown ? `**Дата создания:** ${formatCreatedDateLine()}` : `Дата создания: ${formatCreatedDateLine()}`);
+  if (createdDate) {
+    lines.push(isMarkdown ? `**Дата создания:** ${formatCreatedDateLine(createdDate)}` : `Дата создания: ${formatCreatedDateLine(createdDate)}`);
   }
-  if (taskStatusLabel.value) {
-    lines.push(isMarkdown ? `**Статус:** ${taskStatusLabel.value}` : `Статус: ${taskStatusLabel.value}`);
+  if (statusLabel) {
+    lines.push(isMarkdown ? `**Статус:** ${statusLabel}` : `Статус: ${statusLabel}`);
   }
-  if (taskStageName.value) {
-    lines.push(isMarkdown ? `**Стадия:** ${taskStageName.value}` : `Стадия: ${taskStageName.value}`);
+  if (stageName) {
+    lines.push(isMarkdown ? `**Стадия:** ${stageName}` : `Стадия: ${stageName}`);
   }
   return lines;
 }
@@ -273,6 +296,36 @@ function formatSubtaskLines(nodes, forZip, parentRef = '') {
   return lines;
 }
 
+// Предки выводятся от корневой задачи к прямому родителю. Когда их несколько, прямой помечается
+// явно: по одному порядку номеров это не читается.
+function formatParentTask(parent, index, forZip) {
+  const isMarkdown = textFormat.value === 'markdown';
+  const isDirectParent = parentTasks.value.length > 1 && index === parentTasks.value.length - 1;
+  const directParentMark = isDirectParent ? (isMarkdown ? ' — _прямой родитель_' : ' — прямой родитель') : '';
+  const numberPrefix = parentTasks.value.length > 1 ? (isMarkdown ? `${index + 1}. ` : `[${index + 1}] `) : '';
+  const header = isMarkdown
+    ? `### ${numberPrefix}${parent.title}${directParentMark}`
+    : `${numberPrefix}${parent.title}${directParentMark}:`;
+
+  const metaLines = buildTaskMetaLines(isMarkdown, {
+    createdDate: parent.createdDate,
+    statusLabel: TASK_STATUS_LABELS[parent.status] ?? '',
+  });
+
+  // Вложения, у которых нет плейсхолдера [DISK FILE ID=...] в самом описании — по тому же правилу,
+  // что и у описания самой задачи.
+  const inlineDiskFileIds = extractInlineDiskFileIds(parent.description);
+  const attachmentNames = parent.files
+    .filter((file) => !inlineDiskFileIds.has(file.diskFileId))
+    .map((file) => file.name);
+
+  const heading = [header, ...metaLines].join('\n');
+  const body = [heading, formatBody(parent.description, forZip)].filter(Boolean).join('\n\n');
+  return `${body}${formatAttachmentsBlock(attachmentNames, 'Вложения', forZip)}`;
+}
+
+const parentTasksHeading = computed(() => parentTasks.value.length > 1 ? 'Родительские задачи' : 'Родительская задача');
+
 function buildText(forZip) {
   const isMarkdown = textFormat.value === 'markdown';
   const parts = [];
@@ -287,7 +340,11 @@ function buildText(forZip) {
   }
 
   if (includeTitle.value || includeDescription.value) {
-    const metaLines = buildTaskMetaLines(isMarkdown);
+    const metaLines = buildTaskMetaLines(isMarkdown, {
+      createdDate: taskCreatedDate.value,
+      statusLabel: taskStatusLabel.value,
+      stageName: taskStageName.value,
+    });
     if (metaLines.length) parts.push(metaLines.join('\n'));
   }
 
@@ -309,6 +366,12 @@ function buildText(forZip) {
   if (selectedComments.value.length) {
     const block = selectedComments.value.map((comment, index) => formatComment(comment, index, forZip)).join('\n\n');
     parts.push(`${isMarkdown ? '## Комментарии\n\n' : 'КОММЕНТАРИИ:\n'}${block}`);
+  }
+
+  if (includeParentTasks.value && parentTasks.value.length) {
+    const block = parentTasks.value.map((parent, index) => formatParentTask(parent, index, forZip)).join('\n\n');
+    const heading = isMarkdown ? `## ${parentTasksHeading.value}\n\n` : `${parentTasksHeading.value.toUpperCase()}:\n`;
+    parts.push(`${heading}${block}`);
   }
 
   if (includeSubtasks.value && subtasksTree.value.length) {
@@ -354,6 +417,18 @@ function buildJson(forZip) {
     }));
   }
 
+  if (includeParentTasks.value && parentTasks.value.length) {
+    result.parentTasks = parentTasks.value.map((parent) => ({
+      id: parent.id,
+      title: parent.title,
+      date: parent.createdDate || null,
+      daysSinceCreation: parent.createdDate ? dayjs().diff(dayjs(parent.createdDate), 'day') : null,
+      status: TASK_STATUS_LABELS[parent.status] ?? null,
+      body: formatBody(parent.description, forZip),
+      attachments: collectFiles(parent.files, parent.description).map((file) => jsonAttachment(file, forZip)),
+    }));
+  }
+
   if (includeSubtasks.value && subtasksTree.value.length) {
     result.subtasks = subtasksTree.value.map((node) => subtaskToJson(node, forZip));
   }
@@ -386,40 +461,106 @@ const exportFileExtension = computed(() => {
 const hasExportableContent = computed(() =>
   (includeDescription.value && (!!taskDescription.value || taskFileObjects.value.length > 0))
   || (includeComments.value && selectedComments.value.length > 0)
-  || (includeSubtasks.value && subtasksTree.value.length > 0),
+  || (includeSubtasks.value && subtasksTree.value.length > 0)
+  || (includeParentTasks.value && parentTasks.value.length > 0),
 );
 
-// Все файлы задачи (формальные вложения + инлайн-картинки в описании) — независимо от того,
-// упомянуты ли они уже отдельным плейсхолдером [Файл: ...] в тексте описания.
-function collectTaskAttachmentFiles() {
+// Сколько файлов уедет в архив при текущих переключателях. Кнопку при нуле не блокируем:
+// комментарии и подзадачи грузятся лениво, и до их загрузки ноль означает «пока не знаем»
+const attachmentFilesCount = computed(() => collectAttachmentFiles().length);
+
+// Изображения среди файлов архива: оценка по площади осмысленна только для них — у PDF и офисных
+// файлов размеров в пикселях нет, и считать их значило бы врать
+const imageAttachmentFiles = computed(() => collectAttachmentFiles().filter((file) => isImageFileName(file.name)));
+const measuredImageFiles = computed(() => imageAttachmentFiles.value.filter((file) => imageSizeByUrl.value.get(file.url)));
+const imageTokenEstimate = computed(() => measuredImageFiles.value.reduce((sum, file) => {
+  const { width, height } = imageSizeByUrl.value.get(file.url);
+  return sum + estimateImageTokenCount(width, height);
+}, 0));
+const totalTokenEstimate = computed(() => resultTokenEstimate.value + imageTokenEstimate.value);
+// Оценка по изображениям запрошена: либо нажата кнопка, либо она включена в настройках
+const imageTokensRequested = computed(() => autoCountImageTokens.value || imagesMeasured.value);
+const tokenEstimateTooltip = computed(() => {
+  const textEstimateTip = 'Приблизительная оценка без токенайзера: ~4 символа на токен для латиницы/цифр/JSON и ~2.3 символа на токен для кириллицы, пропорционально её доле в тексте — реальное число может отличаться';
+  if (!measuredImageFiles.value.length) return textEstimateTip;
+  return `${textEstimateTip}. Изображения (учтено: ${measuredImageFiles.value.length}) считаются по площади — ширина × высота, ~750 пикселей на токен, без поправки на то, как их обработает конкретная модель`;
+});
+
+// Размеры берём из самого изображения, а это его загрузка — потому только по кнопке. Декодируем
+// байты через createImageBitmap, а не через <img>: DOWNLOAD_URL Диска отдаёт файл как вложение,
+// и изображение в <img> по такой ссылке может не загрузиться
+async function loadImageSize(url) {
+  try {
+    const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+    const response = await fetch(fullUrl, { credentials: 'include' });
+    const bitmap = await createImageBitmap(await response.blob());
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  } catch {
+    return null;
+  }
+}
+
+// Замеров может идти несколько сразу (см. watch ниже), а спиннер один — гасим его, только когда
+// закончился последний, иначе первый же завершившийся снимал бы его с ещё работающих
+let runningMeasurements = 0;
+
+async function measureImageSizes() {
+  const unmeasuredFiles = imageAttachmentFiles.value.filter((file) => !imageSizeByUrl.value.has(file.url));
+  imagesMeasured.value = true;
+  if (!unmeasuredFiles.length) return;
+
+  // Ключ занимаем до запроса, а не после: список изображений догружается порциями, и следующий
+  // замер иначе счёл бы эти файлы неизмеренными и выкачал бы их второй раз. В подсчёт заглушка
+  // не попадёт — measuredImageFiles отбирает по непустому значению
+  unmeasuredFiles.forEach((file) => imageSizeByUrl.value.set(file.url, null));
+
+  runningMeasurements += 1;
+  measuringImages.value = true;
+  try {
+    const sizes = await Promise.all(unmeasuredFiles.map((file) => loadImageSize(file.url)));
+    unmeasuredFiles.forEach((file, index) => imageSizeByUrl.value.set(file.url, sizes[index]));
+  } finally {
+    runningMeasurements -= 1;
+    if (!runningMeasurements) measuringImages.value = false;
+  }
+}
+
+// После первой оценки состав файлов ещё меняется — комментарии и подзадачи грузятся лениво, да и
+// переключатели никто не отменял. Новые изображения домеряем сами, иначе цифра молча устареет
+watch(imageAttachmentFiles, () => {
+  if (imageTokensRequested.value) measureImageSizes();
+});
+
+// Файлы одной сущности (задачи, комментария, родительской задачи): формальные вложения плюс
+// инлайн-изображения из её текста. Map по имени — один и тот же файл Диска может быть и вложением,
+// и инлайн-изображением одновременно, имя у него одно.
+function collectFiles(attachmentFiles, text) {
   const filesByName = new Map();
   const addFile = (file) => {
     if (file && !filesByName.has(file.name)) filesByName.set(file.name, file);
   };
 
-  taskFileObjects.value.forEach(addFile);
-  if (includeDescription.value) {
-    extractInlineDiskFileIds(taskDescription.value).forEach((diskFileId) => addFile(diskFileByObjectId.value.get(diskFileId)));
-  }
+  attachmentFiles.forEach(addFile);
+  extractInlineDiskFileIds(text).forEach((diskFileId) => addFile(diskFileByObjectId.value.get(diskFileId)));
 
   return [...filesByName.values()];
 }
 
-// Все файлы одного комментария (формальные вложения + инлайн-картинки в тексте).
+// Все файлы задачи (формальные вложения + инлайн-изображения в описании) — независимо от того,
+// упомянуты ли они уже отдельным плейсхолдером [Файл: ...] в тексте описания.
+function collectTaskAttachmentFiles() {
+  return collectFiles(taskFileObjects.value, includeDescription.value ? taskDescription.value : '');
+}
+
+// Все файлы одного комментария (формальные вложения + инлайн-изображения в тексте).
 function collectCommentAttachmentFiles(comment) {
-  const filesByName = new Map();
-  const addFile = (file) => {
-    if (file && !filesByName.has(file.name)) filesByName.set(file.name, file);
-  };
+  const attachmentFiles = Object.values(comment.ATTACHED_OBJECTS ?? {})
+    .filter((attachment) => attachment.DOWNLOAD_URL)
+    .map((attachment) => ({ name: attachmentFileName(attachment.ATTACHMENT_ID, attachment.NAME), url: attachment.DOWNLOAD_URL }));
 
-  Object.values(comment.ATTACHED_OBJECTS ?? {}).forEach((attachment) => {
-    if (attachment.DOWNLOAD_URL) {
-      addFile({ name: attachmentFileName(attachment.ATTACHMENT_ID, attachment.NAME), url: attachment.DOWNLOAD_URL });
-    }
-  });
-  extractInlineDiskFileIds(comment.POST_MESSAGE).forEach((diskFileId) => addFile(diskFileByObjectId.value.get(diskFileId)));
-
-  return [...filesByName.values()];
+  return collectFiles(attachmentFiles, comment.POST_MESSAGE);
 }
 
 // Файлы всех подзадач дерева (рекурсивно, включая вложенные подзадачи подзадач).
@@ -428,8 +569,6 @@ function collectSubtaskAttachmentFiles(nodes) {
 }
 
 function collectAttachmentFiles() {
-  // Map по имени файла — один и тот же файл Диска может быть и вложением, и инлайн-картинкой
-  // в тексте одновременно (например, вставленное в комментарий изображение), имя у него одно.
   const filesByName = new Map();
   const addFile = (file) => {
     if (file && !filesByName.has(file.name)) filesByName.set(file.name, file);
@@ -443,6 +582,10 @@ function collectAttachmentFiles() {
 
   if (includeSubtasks.value) {
     collectSubtaskAttachmentFiles(subtasksTree.value).forEach(addFile);
+  }
+
+  if (includeParentTasks.value) {
+    parentTasks.value.forEach((parent) => collectFiles(parent.files, parent.description).forEach(addFile));
   }
 
   return [...filesByName.values()];
@@ -550,6 +693,66 @@ async function loadSubtasks() {
   }
 }
 
+// Поднимается по PARENT_ID от задачи к корневой. Следующий предок известен только из ответа по
+// предыдущему, поэтому запросы идут по одному; вложения всей цепочки добираются одним батчем.
+async function loadParentTasks() {
+  loadingParentTasks.value = true;
+  try {
+    const chain = [];
+    const visitedIds = new Set([String(props.taskId)]);
+    let currentParentId = taskParentId.value;
+
+    while (currentParentId && !visitedIds.has(currentParentId) && chain.length < MAX_PARENT_DEPTH) {
+      visitedIds.add(currentParentId);
+
+      const { data } = await api.getTask(currentParentId, ['ID', 'TITLE', 'DESCRIPTION', 'UF_TASK_WEBDAV_FILES', 'CREATED_DATE', 'STATUS', 'PARENT_ID']);
+      const parentTask = data?.result?.task;
+      if (!parentTask) break;
+
+      // unshift, а не push: цепочка хранится от корневой задачи к прямому родителю — так контекст
+      // читается сверху вниз, от общего к частному
+      chain.unshift({
+        id: String(parentTask.id ?? currentParentId),
+        title: parentTask.title ?? '',
+        description: parentTask.description ?? '',
+        createdDate: parentTask.createdDate ?? '',
+        status: parentTask.status ?? '',
+        attachmentIds: (parentTask.ufTaskWebdavFiles ?? []).map(String).filter(Boolean),
+        files: [],
+      });
+
+      currentParentId = String(parentTask.parentId ?? '');
+      if (currentParentId === '0') currentParentId = '';
+    }
+
+    const parentAttachmentIds = chain.flatMap((parent) => parent.attachmentIds);
+    if (parentAttachmentIds.length) {
+      const parentAttachedObjects = await api.getAttachedObjectsBatch(parentAttachmentIds).catch(() => []);
+      registerDiskIds(parentAttachedObjects);
+    }
+
+    chain.forEach((parent) => {
+      parent.files = parent.attachmentIds
+        .map((attachmentId) => {
+          const diskFileId = attachmentDiskIdMap.value.get(attachmentId);
+          const file = diskFileByObjectId.value.get(diskFileId);
+          return file && { ...file, diskFileId };
+        })
+        .filter(Boolean);
+    });
+
+    const inlineDiskFileIds = new Set(chain.flatMap((parent) => [...extractInlineDiskFileIds(parent.description)]));
+    await resolveInlineDiskFiles(inlineDiskFileIds);
+
+    parentTasks.value = chain;
+    parentTasksLoaded.value = true;
+  } catch {
+    showToast({ severity: 'error', summary: 'Ошибка загрузки родительской задачи', life: 3000 });
+  } finally {
+    loadingParentTasks.value = false;
+  }
+}
+
 onMounted(async () => {
   try {
     const storedSettings = await chrome.storage.local.get([SETTINGS_STORAGE_KEY]);
@@ -559,13 +762,16 @@ onMounted(async () => {
       includeDescription.value = settings.includeDescription ?? true;
       includeComments.value = settings.includeComments ?? true;
       includeSubtasks.value = settings.includeSubtasks ?? false;
+      includeParentTasks.value = settings.includeParentTasks ?? false;
       textFormat.value = settings.textFormat ?? 'bbcode';
       exportAsJson.value = settings.exportAsJson ?? false;
       archiveNameTemplate.value = settings.archiveNameTemplate || DEFAULT_ARCHIVE_NAME_TEMPLATE;
+      showArchiveNameInput.value = settings.showArchiveNameInput ?? false;
+      autoCountImageTokens.value = settings.autoCountImageTokens ?? false;
     }
 
     const [taskResponse] = await Promise.all([
-      api.getTask(props.taskId, ['TITLE', 'DESCRIPTION', 'UF_TASK_WEBDAV_FILES', 'GROUP_ID', 'CREATED_DATE', 'CREATED_BY', 'STATUS', 'STAGE_ID']),
+      api.getTask(props.taskId, ['TITLE', 'DESCRIPTION', 'UF_TASK_WEBDAV_FILES', 'GROUP_ID', 'CREATED_DATE', 'CREATED_BY', 'STATUS', 'STAGE_ID', 'PARENT_ID']),
       includeComments.value ? loadComments() : Promise.resolve(),
       includeSubtasks.value ? loadSubtasks() : Promise.resolve(),
     ]);
@@ -576,6 +782,8 @@ onMounted(async () => {
     taskCreatedDate.value = task.createdDate ?? '';
     taskStatus.value = task.status ?? '';
     taskAuthorId.value = String(task.createdBy ?? '');
+    // У корневой задачи Bitrix отдаёт parentId = 0 — приводим к пустой строке, чтобы тумблер скрылся
+    taskParentId.value = task.parentId && String(task.parentId) !== '0' ? String(task.parentId) : '';
     groupId.value = String(task.groupId ?? '');
 
     refreshArchiveName();
@@ -609,6 +817,9 @@ onMounted(async () => {
     }
 
     await resolveInlineDiskFiles(extractInlineDiskFileIds(taskDescription.value));
+
+    // Загружается последней: ID родителя известен только из ответа по самой задаче
+    if (includeParentTasks.value && taskParentId.value) await loadParentTasks();
   } catch (error) {
     console.error(error);
     showToast({ severity: 'error', summary: 'Ошибка загрузки данных задачи', life: 3000 });
@@ -654,8 +865,11 @@ async function refreshArchiveName() {
   archiveName.value = renderArchiveName(archiveNameTemplate.value, props.taskId, translatedSlug);
 }
 
-function onSaveSettings({ archiveNameTemplate: template }) {
+function onSaveSettings({ archiveNameTemplate: template, showArchiveNameInput: showInput, autoCountImageTokens: autoCount }) {
   archiveNameTemplate.value = template;
+  showArchiveNameInput.value = showInput;
+  autoCountImageTokens.value = autoCount;
+  if (autoCountImageTokens.value) measureImageSizes();
   refreshArchiveName();
   isSettingsOpened.value = false;
   showToast({ severity: 'success', summary: 'Настройки сохранены', life: 3000 });
@@ -824,6 +1038,28 @@ async function downloadZip() {
       </label>
     </div>
 
+    <div
+      v-if="taskParentId"
+      class="flex items-center gap-2 select-none"
+    >
+      <ToggleSwitch
+        v-model="includeParentTasks"
+        input-id="toggle-parent-tasks"
+      />
+      <label
+        for="toggle-parent-tasks"
+        class="text-sm font-medium cursor-pointer"
+      >
+        {{ parentTasksHeading }}
+        <span
+          v-if="parentTasksLoaded"
+          class="text-xs font-normal text-surface-400 dark:text-surface-500"
+        >
+          {{ parentTasks.length }}
+        </span>
+      </label>
+    </div>
+
     <div class="flex items-center gap-2 select-none">
       <ToggleSwitch
         v-model="includeSubtasks"
@@ -844,6 +1080,7 @@ async function downloadZip() {
     </div>
 
     <FormField
+      v-if="showArchiveNameInput"
       id="export-task-archive-name"
       label="Название архива"
       tip="Формируется по шаблону из настроек, можно изменить перед скачиванием"
@@ -863,19 +1100,12 @@ async function downloadZip() {
       </IconField>
     </FormField>
 
-    <Message
-      severity="info"
-      size="small"
-    >
-      Макеты из Figma автоматически не экспортируются — выгрузите PDF вручную из Figma и приложите его в папку задачи на Диске.
-    </Message>
-
     <div class="flex gap-2 flex-wrap pt-1 border-t border-surface-200 dark:border-surface-700 items-center">
       <Button
         label="Скопировать"
         icon="pi pi-copy"
         size="small"
-        :disabled="loadingComments || loadingSubtasks || !hasExportableContent"
+        :disabled="loadingComments || loadingSubtasks || loadingParentTasks || !hasExportableContent"
         @click="copyToClipboard"
       />
       <Button
@@ -883,23 +1113,35 @@ async function downloadZip() {
         icon="pi pi-file"
         severity="secondary"
         size="small"
-        :disabled="loadingComments || loadingSubtasks || !hasExportableContent"
+        :disabled="loadingComments || loadingSubtasks || loadingParentTasks || !hasExportableContent"
         @click="downloadTxt"
       />
       <Button
-        label="ZIP + файлы"
+        :label="attachmentFilesCount ? `ZIP + файлы (${attachmentFilesCount})` : 'ZIP + файлы'"
         icon="pi pi-file-import"
         severity="secondary"
         size="small"
         :loading="downloadingZip"
-        :disabled="loadingComments || loadingSubtasks || !hasExportableContent"
+        :disabled="loadingComments || loadingSubtasks || loadingParentTasks || !hasExportableContent"
         @click="downloadZip"
       />
-      <span class="ml-auto flex items-center gap-1 text-xs text-surface-400 dark:text-surface-500 whitespace-nowrap">
-        {{ resultCharCount.toLocaleString('ru') }} {{ pluralize(resultCharCount, ['символ', 'символа', 'символов']) }} / ≈{{ resultTokenEstimate.toLocaleString('ru') }} {{ pluralize(resultTokenEstimate, ['токен', 'токена', 'токенов']) }}
+      <span class="ml-auto flex flex-wrap items-center justify-end gap-1 text-xs text-surface-400 dark:text-surface-500 whitespace-nowrap">
+        {{ resultCharCount.toLocaleString('ru') }} симв. / ≈{{ resultTokenEstimate.toLocaleString('ru') }} ткн.<template v-if="measuredImageFiles.length">
+          / ≈{{ totalTokenEstimate.toLocaleString('ru') }} ткн. с изображениями
+        </template>
         <i
-          v-tooltip="'Приблизительная оценка без токенайзера: ~4 символа на токен для латиницы/цифр/JSON и ~2.3 символа на токен для кириллицы, пропорционально её доле в тексте — реальное число может отличаться'"
+          v-tooltip="tokenEstimateTooltip"
           class="pi pi-question-circle"
+        />
+        <Button
+          v-if="!imageTokensRequested && imageAttachmentFiles.length"
+          :label="`Учесть изображения (${imageAttachmentFiles.length})`"
+          icon="pi pi-image"
+          severity="secondary"
+          variant="text"
+          size="small"
+          :loading="measuringImages"
+          @click="measureImageSizes"
         />
       </span>
     </div>
@@ -912,7 +1154,7 @@ async function downloadZip() {
     modal
   >
     <SettingsForm
-      :initial="{ archiveNameTemplate }"
+      :initial="{ archiveNameTemplate, showArchiveNameInput, autoCountImageTokens }"
       @success="onSaveSettings"
     />
   </Dialog>

@@ -36,6 +36,7 @@ defineEmits(['cell-click']);
     striped-rows
     sort-field="totalPoints"
     :sort-order="-1"
+    :default-sort-order="-1"
     removable-sort
   >
     <Column

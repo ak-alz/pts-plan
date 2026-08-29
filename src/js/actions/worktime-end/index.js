@@ -90,8 +90,9 @@ function applyContent(root, endText, overtimeText) {
 /**
  * Показывает расчётное время окончания рабочего дня рядом с таймером «Начать/Закончить работу»
  * в попапе профиля Bitrix: текущее время + оставшееся до конца рабочего дня (длительность дня минус
- * уже отработанное) + неотгулянный остаток обеда. При переработке показывает момент выработки нормы
- * и красную иконку с величиной переработки в подсказке. Считается один раз при каждом структурном изменении попапа (открытие,
+ * уже отработанное) + неотгулянный остаток обеда. При переработке показывает момент, когда норма дня
+ * вместе с обедом была выработана, и красную иконку с величиной переработки в подсказке.
+ * Считается один раз при каждом структурном изменении попапа (открытие,
  * пауза/продолжение/завершение) — не тикает вместе с таймером каждую секунду.
  * @param {number} [dayHours=8] - Длительность рабочего дня в часах.
  * @param {number} [lunchHours=0] - Длительность обеда в часах; 0 — не учитывать обед.
@@ -125,10 +126,13 @@ export function worktimeEnd(dayHours, lunchHours) {
     const breakSeconds = pauseTimer ? getClockSeconds(pauseTimer) : 0;
     const remainingLunchSeconds = Math.max(0, lunchDurationSeconds - breakSeconds);
     // Без Math.max: при переработке остаток отрицательный, поэтому время окончания уходит в прошлое —
-    // это момент, когда норма дня была выработана. Модуль отрицательного остатка — величина переработки.
+    // это момент, когда день был выработан. Модуль отрицательного остатка — величина переработки.
     const remainingWorkSeconds = dayDurationSeconds - workedSeconds;
-    const endText = formatEndTime(dayjs().add(remainingWorkSeconds + remainingLunchSeconds, 'second'));
-    const overtimeText = remainingWorkSeconds < 0 ? `Переработка ${formatDuration(-remainingWorkSeconds)}` : '';
+    const remainingTotalSeconds = remainingWorkSeconds + remainingLunchSeconds;
+    const endText = formatEndTime(dayjs().add(remainingTotalSeconds, 'second'));
+    // Переработка считается от того же момента, что и время окончания: неотгулянный обед прошёл
+    // внутри рабочего таймера, поэтому до его выработки переработки ещё нет
+    const overtimeText = remainingTotalSeconds < 0 ? `Переработка ${formatDuration(-remainingTotalSeconds)}` : '';
 
     // Обновляем текст на месте, чтобы hover не мигал при пересоздании узла на каждый тик таймера.
     if (existing) {

@@ -3,13 +3,14 @@ import Ripple from 'primevue/ripple';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
+import { resolveKanbanContext } from '../../kanbanContext.js';
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, refreshActionBarButtonGroup } from '../../utils.js';
+import { refreshActionBarButtonGroup } from '../../utils.js';
 import TaskDynamicsApp from './TaskDynamicsApp.vue';
 
-export function taskDynamics(sessionId, options) {
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+export async function taskDynamics(sessionId, options) {
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   const buttonsContainer = document.querySelector('.ui-actions-bar__buttons');
   if (!buttonsContainer) return;
@@ -18,7 +19,7 @@ export function taskDynamics(sessionId, options) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-task-dynamics pts-actions-bar-btn',
+    className: 'js-task-dynamics pts-actions-bar-btn pts-app',
     style: 'order: 5;',
   });
 
@@ -26,7 +27,7 @@ export function taskDynamics(sessionId, options) {
 
   const app = createApp(TaskDynamicsApp, {
     sessionId,
-    groupId,
+    context,
     options,
   });
   app.use(PrimeVue, primeVueOptions);

@@ -1,7 +1,8 @@
 <script setup>
 import dayjs from 'dayjs';
+import {Button} from 'primevue';
 import Chart from 'primevue/chart';
-import {computed} from 'vue';
+import {computed, ref, watch} from 'vue';
 
 import {getDistinctLineDashes} from '../../../utils.js';
 
@@ -17,6 +18,23 @@ const props = defineProps({
     default: false,
   },
 });
+
+const chartRef = ref(null);
+const allHidden = ref(false);
+
+// Прячем линии через Chart.js, а не выкидыванием датасетов: так они остаются в легенде
+// перечёркнутыми и любую можно вернуть кликом по ней
+function toggleAllLines() {
+  const chart = chartRef.value?.chart;
+  if (!chart) return;
+
+  const shouldHide = !allHidden.value;
+  chart.data.datasets.forEach((dataset, index) => {
+    if (shouldHide) chart.hide(index);
+    else chart.show(index);
+  });
+  allHidden.value = shouldHide;
+}
 
 const chartData = computed(() => {
   const lineDashes = getDistinctLineDashes(props.users.map((user) => user.color));
@@ -35,6 +53,9 @@ const chartData = computed(() => {
     })),
   };
 });
+
+// Смена периода или режима трендов пересоздаёт график, и Chart.js возвращает все линии
+watch(chartData, () => { allHidden.value = false; });
 
 const chartOptions = computed(() => {
   const isTrend = props.trendMode;
@@ -115,11 +136,27 @@ const chartOptions = computed(() => {
 </script>
 
 <template>
-  <Chart
-    style="min-height: 400px; width: 1000px;"
-    type="scatter"
-    :data="chartData"
-    :options="chartOptions"
-  />
+  <div>
+    <div
+      v-if="users.length > 1"
+      class="flex justify-end mb-2"
+    >
+      <Button
+        v-tooltip="'Отдельную линию можно вернуть кликом по имени в легенде'"
+        size="small"
+        severity="secondary"
+        variant="text"
+        :icon="allHidden ? 'pi pi-eye' : 'pi pi-eye-slash'"
+        :label="allHidden ? 'Показать все' : 'Скрыть все'"
+        @click="toggleAllLines"
+      />
+    </div>
+    <Chart
+      ref="chartRef"
+      style="min-height: 400px; width: 1000px;"
+      type="scatter"
+      :data="chartData"
+      :options="chartOptions"
+    />
+  </div>
 </template>
-

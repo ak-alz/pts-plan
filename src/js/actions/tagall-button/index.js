@@ -34,19 +34,19 @@ function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
   const userNameCache = new Map();
 
   async function addKanbanButtons() {
-    const items = [...kanbanGrid.querySelectorAll('.main-kanban-item[data-id]:not([data-tagall-processed])')];
-    if (!items.length) return;
+    const cards = [...kanbanGrid.querySelectorAll('.main-kanban-item[data-id] .tasks-kanban-item:not([data-tagall-processed])')];
+    if (!cards.length) return;
 
     // Помечаем сразу, синхронно — до await, иначе повторный вызов rehydrateOnChanges (например,
     // от собственной подгрузки карточек) успеет обработать те же карточки ещё раз
-    items.forEach((item) => {
-      item.dataset.tagallProcessed = '1';
+    cards.forEach((card) => {
+      card.dataset.tagallProcessed = '1';
     });
 
     let createdByByTaskId = {};
     if (authorOnly) {
       try {
-        const taskIds = items.map((item) => item.dataset.id).filter(Boolean);
+        const taskIds = cards.map((card) => card.closest('.main-kanban-item[data-id]')?.dataset.id).filter(Boolean);
         const tasks = await bitrixApi.getTasksByIdsBatch(taskIds, ['ID', 'CREATED_BY']);
         createdByByTaskId = Object.fromEntries(taskIds.map((taskId) => [taskId, tasks[taskId]?.createdBy]));
 
@@ -57,11 +57,11 @@ function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
       }
     }
 
-    items.forEach((item) => {
-      const taskId = item.dataset.id;
+    cards.forEach((card) => {
+      const taskId = card.closest('.main-kanban-item[data-id]')?.dataset.id;
       if (!taskId) return;
 
-      const control = item.querySelector('.tasks-kanban-item-control');
+      const control = card.querySelector('.tasks-kanban-item-control');
       if (!control) return;
 
       const createdBy = createdByByTaskId[taskId];

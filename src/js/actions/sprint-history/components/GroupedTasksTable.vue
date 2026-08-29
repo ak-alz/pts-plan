@@ -13,9 +13,16 @@ const props = defineProps({
       return [];
     },
   },
+  // Ссылки на задачи: на групповом канбане через группу, на личном плане — через пользователя.
+  // Bitrix там рендерит карточки как /company/personal/user/{id}/tasks/task/view/{id}/ даже у
+  // задач с настоящей группой, поэтому groupId для личного плана приходит пустым
   groupId: {
     type: String,
-    required: true,
+    default: null,
+  },
+  userId: {
+    type: String,
+    default: null,
   },
   stages: {
     type: Array,
@@ -81,7 +88,7 @@ const modalTasks = computed(() => {
       <template #body="{ data }">
         <a
           class="pts-blur"
-          :href="getTaskUrl(groupId, data.parentId)"
+          :href="getTaskUrl(groupId, data.parentId, userId)"
           target="_top"
         >
           {{ data.parentTitle }}
@@ -161,6 +168,7 @@ const modalTasks = computed(() => {
       v-if="selectedRow"
       :tasks="modalTasks"
       :group-id="groupId"
+      :user-id="userId"
       :highlight-ids="selectedRow.parentTask ? [selectedRow.parentId] : []"
     />
   </Dialog>

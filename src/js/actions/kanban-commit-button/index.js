@@ -6,18 +6,18 @@ import {getCommitMessage, rehydrateOnChanges} from '../../utils.js';
   if (!kanbanGrid) return;
 
   function addButtons() {
-    const kanbanItems = kanbanGrid.querySelectorAll('.main-kanban-item[data-id]:not([data-kanban-commit-processed])');
+    const kanbanCards = kanbanGrid.querySelectorAll('.main-kanban-item[data-id] .tasks-kanban-item:not([data-kanban-commit-processed])');
 
-    kanbanItems.forEach((item) => {
-      item.dataset.kanbanCommitProcessed = '1';
+    kanbanCards.forEach((card) => {
+      card.dataset.kanbanCommitProcessed = '1';
 
-      const taskId = item.dataset.id;
+      const taskId = card.closest('.main-kanban-item[data-id]')?.dataset.id;
       if (!taskId) return;
 
-      const titleElement = item.querySelector('.tasks-kanban-item-title');
+      const titleElement = card.querySelector('.tasks-kanban-item-title');
       if (!titleElement) return;
 
-      const control = item.querySelector('.tasks-kanban-item-control');
+      const control = card.querySelector('.tasks-kanban-item-control');
       if (!control) return;
 
       const button = Object.assign(document.createElement('button'), {

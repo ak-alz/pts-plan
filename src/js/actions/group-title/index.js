@@ -1,15 +1,18 @@
-import {getGroupIdFromUrl, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getGroupIdFromUrl, getPersonalPlanUserIdFromUrl, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
   const ids = getTaskIdFromUrl(window.location.href);
   const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId && !ids?.taskId) return;
+  const isPersonalPlan = !!getPersonalPlanUserIdFromUrl(window.location.href);
+  if (!groupId && !ids?.taskId && !isPersonalPlan) return;
 
   const metaTitle = document.querySelector('title');
   if (!metaTitle) return;
 
-  const groupName = document.querySelector('.task-group-field-inner a')?.textContent?.trim()
-    || document.querySelector('.profile-menu-name')?.textContent?.trim();
+  const groupName = isPersonalPlan
+    ? 'Мой план'
+    : document.querySelector('.task-group-field-inner a')?.textContent?.trim()
+      || document.querySelector('.profile-menu-name')?.textContent?.trim();
   if (!groupName) return;
 
   function updateTitle() {

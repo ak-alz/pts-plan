@@ -1,5 +1,7 @@
 <script setup>
-defineProps({
+import { computed } from 'vue';
+
+const props = defineProps({
   id: {
     type: String,
     default: '',
@@ -12,7 +14,15 @@ defineProps({
     type: String,
     default: '',
   },
+  tipInteractive: {
+    type: Boolean,
+    default: false,
+  },
 });
+
+// autoHide: false оставляет подсказку открытой, пока курсор внутри неё — иначе из подсказки
+// ничего нельзя выделить и скопировать
+const tooltipOptions = computed(() => ({ value: props.tip, autoHide: !props.tipInteractive }));
 </script>
 
 <template>
@@ -26,7 +36,7 @@ defineProps({
       {{ label }}
       <i
         v-if="tip"
-        v-tooltip="tip"
+        v-tooltip="tooltipOptions"
         class="pi pi-question-circle text-surface-500 dark:text-surface-400"
       />
     </component>

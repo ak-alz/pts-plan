@@ -17,9 +17,12 @@ import {
 import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
+import { collectStagesFromTasks } from '../../../personalPlan.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
+import PersonalScopeWarning from '../../../ui/PersonalScopeWarning.vue';
 import {getTaskUrl, isHotfixTask, pluralize} from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 
@@ -28,11 +31,13 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
 });
+
+const isPersonal = computed(() => props.context.type === 'personal');
 
 const STATUS_OPTIONS = [
   {label: 'Все', value: null},
@@ -69,6 +74,16 @@ function migrateHiddenFilters(storedSettings) {
 
 const bitrixApi = new BitrixApi(props.sessionId);
 
+// В личный план попадают задачи разных групп — фильтр сужает поиск до одной. Пусто означает
+// «все группы». Выбранная группа заодно возвращает фильтры, которых на личном плане не было:
+// её колонки и её участников
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  bitrixApi,
+  `task-search-group-${props.context.id}`,
+);
+// Фильтры по группе доступны либо на групповом канбане, либо когда на личном выбрана группа
+const hasGroupScope = computed(() => !isPersonal.value || !!selectedGroupId.value);
+
 const settings = ref({});
 const isSettingsModalOpened = ref(false);
 
@@ -76,7 +91,7 @@ function getDefaults() {
   return {
     title: '',
     excludeTitle: settings.value.defaultExcludeTitle ?? '',
-    excludeHotfixes: false,
+    excludeHotfixes: settings.value.defaultExcludeHotfixes ?? false,
     smartTitleSearch: settings.value.defaultSmartSearch !== false,
     extendedSearch: settings.value.defaultExtendedSearch ?? false,
     status: settings.value.defaultStatus !== undefined ? settings.value.defaultStatus : 'active',
@@ -113,24 +128,39 @@ const isInitialLoading = computed(() => isUsersLoading.value || isStagesLoading.
 const isHiddenExcludeTitleActive = computed(
   () => !!settings.value.hiddenFilters?.includes('excludeTitle') && !!settings.value.defaultExcludeTitle?.trim(),
 );
+// Фильтр скрыт настройками, но включён по умолчанию — иначе задачи резались бы без видимой причины
+const isHiddenExcludeHotfixesActive = computed(
+  () => !!settings.value.hiddenFilters?.includes('excludeHotfixes') && form.excludeHotfixes,
+);
+// Поле сортировки — общее для запроса и для таблицы результатов, иначе сервер отдаст топ-N
+// по одному полю, а таблица покажет его отсортированным по другому
+const sortField = computed(() => settings.value.sortField ?? 'CREATED_DATE');
+const tableSortField = computed(() => (sortField.value === 'CHANGED_DATE' ? 'changedDate' : 'createdDate'));
 const displayedTasks = computed(
   () => form.excludeHotfixes ? tasks.value.filter((task) => !isHotfixTask(task.title)) : tasks.value,
 );
+const groupFilterLabel = computed(() => isPersonal.value ? 'Только мой план' : 'Только текущая группа');
 
 onMounted(async () => {
   isUsersLoading.value = true;
   isStagesLoading.value = true;
   try {
     const [groupUsersResult, stagesResponse, stored, currentUser] = await Promise.all([
-      bitrixApi.getGroupUsers(props.groupId),
-      bitrixApi.getStages(props.groupId),
+      // На личном плане списка участников группы нет — фильтры «Постановщик»/«Исполнитель» скрыты
+      isPersonal.value ? Promise.resolve([]) : bitrixApi.getGroupUsers(props.context.id),
+      isPersonal.value ? Promise.resolve(null) : bitrixApi.getStages(props.context.id),
       chrome.storage.local.get(SETTINGS_KEY),
       bitrixApi.getCurrentUser(),
+      isPersonal.value ? restoreGroupFilter() : Promise.resolve(),
     ]);
     groupUsers.value = groupUsersResult;
-    stages.value = Object.values(stagesResponse.data?.result ?? {})
-      .sort((a, b) => a.SORT - b.SORT)
-      .map((stage) => ({id: stage.ID, title: stage.TITLE, color: `#${stage.COLOR}`}));
+    // На личном плане stagesResponse нет — там колонки грузит loadGroupReferences() по выбранной
+    // группе, и присваивание пустого массива затёрло бы их
+    if (stagesResponse) {
+      stages.value = Object.values(stagesResponse.data?.result ?? {})
+        .sort((a, b) => a.SORT - b.SORT)
+        .map((stage) => ({id: stage.ID, title: stage.TITLE, name: stage.TITLE, color: `#${stage.COLOR}`}));
+    }
     currentUserId.value = currentUser?.ID ? String(currentUser.ID) : null;
     if (stored[SETTINGS_KEY]) {
       settings.value = {
@@ -145,6 +175,43 @@ onMounted(async () => {
     isUsersLoading.value = false;
     isStagesLoading.value = false;
   }
+});
+
+// Справочники выбранной группы: без них на личном плане нечем наполнить фильтры по колонке и
+// по участникам. Один раз на смену группы, а не на каждый поиск
+async function loadGroupReferences() {
+  if (!selectedGroupId.value) {
+    stages.value = [];
+    groupUsers.value = [];
+    return;
+  }
+
+  isStagesLoading.value = true;
+  isUsersLoading.value = true;
+  try {
+    const [stagesResponse, users] = await Promise.all([
+      bitrixApi.getStages(selectedGroupId.value),
+      bitrixApi.getGroupUsers(selectedGroupId.value),
+    ]);
+    stages.value = Object.values(stagesResponse.data?.result ?? {})
+      .sort((a, b) => a.SORT - b.SORT)
+      .map((stage) => ({id: stage.ID, title: stage.TITLE, name: stage.TITLE, color: `#${stage.COLOR}`}));
+    groupUsers.value = users;
+  } catch (e) {
+    console.warn('[task-search] failed to load group references:', e);
+  } finally {
+    isStagesLoading.value = false;
+    isUsersLoading.value = false;
+  }
+}
+
+// Колонки и участники прошлой группы к новой отношения не имеют — иначе оставшийся выбор
+// отфильтровал бы выдачу в ноль
+watch(selectedGroupId, async () => {
+  form.stageIds = [];
+  form.createdBy = null;
+  form.responsibleId = null;
+  await loadGroupReferences();
 });
 
 function onSettingsSaved(newSettings) {
@@ -183,8 +250,17 @@ async function toggleFavorite(task) {
 
 watch(filterFavorites, () => search());
 
+// На личном плане тогл «Только мой план» переключает не GROUP_ID (там его нет), а то, применять ли
+// объединение 4 ролей (ответственный/соисполнитель/наблюдатель/постановщик) — см. searchMyTasks()
+// в BitrixApi.js. Выключенный тогл — обычный глобальный поиск, как и для группы
+function runSearch(params) {
+  return isPersonal.value && form.useGroupFilter
+    ? bitrixApi.searchMyTasks(props.context.id, params)
+    : bitrixApi.searchTasks(params);
+}
+
 async function search() {
-  if (!filterFavorites.value && isEqual(form, getDefaults())) {
+  if (!filterFavorites.value && !selectedGroupId.value && isEqual(form, getDefaults())) {
     tasks.value = [];
     hasSearched.value = false;
     return;
@@ -205,10 +281,12 @@ async function search() {
       smartTitleSearch: form.smartTitleSearch,
       status: form.status,
       parentType: form.parentType,
-      groupId: form.useGroupFilter ? props.groupId : null,
+      groupId: isPersonal.value ? selectedGroupId.value : (form.useGroupFilter ? props.context.id : null),
       createdBy: form.createdBy,
       responsibleId: form.responsibleId,
-      stageIds: form.useGroupFilter ? form.stageIds : [],
+      // Колонки берутся из канбана конкретной группы: на групповом канбане это текущая группа,
+      // на личном — выбранная в фильтре. Своих колонок у «Моего плана» нет
+      stageIds: hasGroupScope.value && (isPersonal.value || form.useGroupFilter) ? form.stageIds : [],
       createdDateFrom: form.createdDateRange?.[0]
         ? dayjs(form.createdDateRange[0]).format('YYYY-MM-DD 00:00:00')
         : null,
@@ -222,9 +300,12 @@ async function search() {
         ? dayjs(form.changedDateRange[1]).format('YYYY-MM-DD 23:59:59')
         : null,
       limit,
+      // Без сортировки Bitrix отдаёт задачи в своём порядке, и limit отрезает случайный срез,
+      // а не самые старые задачи
+      order: { field: sortField.value, direction: 'DESC' },
     };
 
-    const requests = [bitrixApi.searchTasks(baseParams)];
+    const requests = [runSearch(baseParams)];
 
     if (form.extendedSearch && form.title.trim()) {
       requests.push(
@@ -232,7 +313,9 @@ async function search() {
           const items = (data?.data?.items ?? []).filter((item) => item.type === 'TASK');
           if (!items.length) return [];
           const ids = limit ? items.slice(0, limit).map((item) => item.id) : items.map((item) => item.id);
-          return bitrixApi.searchTasks({...baseParams, ids, title: null});
+          // Тот же runSearch, что и в основной ветке: полнотекстовый поиск сам по себе ничего не
+          // знает про «мой план» и без этого возвращал бы чужие задачи при включённом тогле
+          return runSearch({...baseParams, ids, title: null});
         }),
       );
     }
@@ -244,6 +327,14 @@ async function search() {
       tasks.value = [...standardResults, ...fulltextResults.filter((task) => !existingIds.has(task.id))];
     } else {
       tasks.value = standardResults;
+    }
+
+    // Когда группа не выбрана, результаты приходят из разных канбанов и колонки известны только
+    // из самих задач — нужны для столбца «Колонка» в таблице, у каждой в названии есть группа.
+    // С выбранной группой её колонки уже загружены (loadGroupReferences), перезаписывать нельзя:
+    // список колонок в фильтре схлопнулся бы до попавших в выдачу
+    if (isPersonal.value && !selectedGroupId.value) {
+      stages.value = await collectStagesFromTasks(bitrixApi, tasks.value).catch(() => []);
     }
   } catch (e) {
     console.warn('[task-search]', e);
@@ -287,6 +378,11 @@ function formatDate(dateString) {
         <i
           v-if="isHiddenExcludeTitleActive"
           v-tooltip.top="`Скрытый фильтр активен: из результатов исключены задачи с «${settings.defaultExcludeTitle}» в названии`"
+          class="pi pi-exclamation-triangle text-yellow-500"
+        />
+        <i
+          v-if="isHiddenExcludeHotfixesActive"
+          v-tooltip.top="'Скрытый фильтр активен: из результатов исключены хотфиксы'"
           class="pi pi-exclamation-triangle text-yellow-500"
         />
       </div>
@@ -340,7 +436,28 @@ function formatDate(dateString) {
             class="w-full"
           />
         </FormField>
-        <FormField label="Постановщик">
+        <FormField
+          v-if="isPersonal"
+          label="Группа"
+          tip="В личный план попадают задачи разных групп. Пусто — ищем по всем. Выбор группы включает фильтры по её колонке и участникам"
+        >
+          <Select
+            v-model="selectedGroupId"
+            :options="groupOptions"
+            option-label="name"
+            option-value="id"
+            placeholder="Все группы"
+            show-clear
+            filter
+            filter-placeholder="Поиск"
+            size="small"
+            class="w-full"
+          />
+        </FormField>
+        <FormField
+          v-if="hasGroupScope"
+          label="Постановщик"
+        >
           <Select
             v-model="form.createdBy"
             :options="userOptions"
@@ -358,14 +475,16 @@ function formatDate(dateString) {
                   v-if="option.avatar"
                   :image="option.avatar"
                   shape="circle"
-                  size="small"
                 />
                 {{ option.name }}
               </div>
             </template>
           </Select>
         </FormField>
-        <FormField label="Исполнитель">
+        <FormField
+          v-if="hasGroupScope"
+          label="Исполнитель"
+        >
           <Select
             v-model="form.responsibleId"
             :options="userOptions"
@@ -383,7 +502,6 @@ function formatDate(dateString) {
                   v-if="option.avatar"
                   :image="option.avatar"
                   shape="circle"
-                  size="small"
                 />
                 {{ option.name }}
               </div>
@@ -391,8 +509,9 @@ function formatDate(dateString) {
           </Select>
         </FormField>
         <FormField
+          v-if="hasGroupScope"
           label="Колонка канбана"
-          :tip="!form.useGroupFilter ? 'Доступно только при включённом фильтре «Только текущая группа»' : ''"
+          :tip="!isPersonal && !form.useGroupFilter ? 'Доступно только при включённом фильтре «Только текущая группа»' : ''"
         >
           <MultiSelect
             v-model="form.stageIds"
@@ -404,7 +523,7 @@ function formatDate(dateString) {
             filter-placeholder="Поиск"
             :max-selected-labels="3"
             :loading="isStagesLoading"
-            :disabled="!form.useGroupFilter"
+            :disabled="!isPersonal && !form.useGroupFilter"
             show-clear
             size="small"
             class="w-full"
@@ -445,8 +564,9 @@ function formatDate(dateString) {
             for="group-filter-toggle"
             class="text-sm cursor-pointer"
           >
-            Только текущая группа
+            {{ groupFilterLabel }}
           </label>
+          <PersonalScopeWarning v-if="isPersonal && form.useGroupFilter" />
         </div>
         <div class="flex gap-2 items-center self-end">
           <ToggleSwitch
@@ -531,7 +651,7 @@ function formatDate(dateString) {
         :value="displayedTasks"
         :loading="isLoading"
         data-key="id"
-        sort-field="changedDate"
+        :sort-field="tableSortField"
         :sort-order="-1"
         paginator
         :rows="25"
@@ -564,7 +684,7 @@ function formatDate(dateString) {
             />
             <a
               class="pts-blur"
-              :href="getTaskUrl(data.groupId, data.id, currentUserId)"
+              :href="getTaskUrl(isPersonal ? null : data.groupId, data.id, currentUserId)"
               target="_top"
             >
               {{ data.title }}
@@ -598,7 +718,7 @@ function formatDate(dateString) {
             <template v-if="stageMap[data.stageId]">
               <div class="flex gap-2 items-center">
                 <Badge :style="`background-color: ${stageMap[data.stageId].color};`" />
-                {{ stageMap[data.stageId].title }}
+                {{ stageMap[data.stageId].name }}
               </div>
             </template>
             <span v-else>—</span>

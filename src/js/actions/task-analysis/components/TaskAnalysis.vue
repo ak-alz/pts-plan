@@ -15,6 +15,7 @@ import {
 import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
@@ -35,8 +36,8 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  groupId: {
-    type: String,
+  context: {
+    type: Object,
     required: true,
   },
   options: {
@@ -45,7 +46,31 @@ const props = defineProps({
   },
 });
 
+const isPersonal = computed(() => props.context.type === 'personal');
+// Ключ для chrome.storage — обязательно разный неймспейс, иначе настройки личного плана
+// схлопнутся с несуществующей группой с тем же числовым id, что и userId
+const contextKey = computed(() => isPersonal.value ? `personal-${props.context.id}` : props.context.id);
+// На личном канбане ссылки строятся через userId (Bitrix сам так их рендерит), а не через реальный
+// GROUP_ID задачи — этот виджет не хранит GROUP_ID отдельной задачи, только контекст страницы
+const linkGroupId = computed(() => isPersonal.value ? '0' : props.context.id);
+const linkUserId = computed(() => isPersonal.value ? props.context.id : null);
+
 const bitrixApi = new BitrixApi(props.sessionId);
+
+// В личный план попадают задачи разных групп — фильтр позволяет сузить статистику до одной.
+// Пусто означает «все группы»
+const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
+  bitrixApi,
+  `task-analysis-group-${props.context.id}`,
+);
+
+// Исполнители набираются из загруженных задач (см. registerPerformers), поэтому при смене группы
+// список надо обнулить: иначе в фильтре остались бы люди из прошлой группы, а уже выбранные
+// отсекли бы всю выдачу — их id в новой группе может не быть вовсе
+watch(selectedGroupId, () => {
+  users.value = [];
+  form.selectedUserIds = [];
+});
 
 const groupFilterOptions = [
   {label: 'Текущая группа', value: 'current'},
@@ -57,14 +82,16 @@ const POINTS_LINE_DASHES = [[], [2, 2], [8, 4], [1, 4]];
 const TASKS_LINE_DASHES = [[5, 5], [8, 2, 2, 2], [2, 2], [8, 3]];
 
 
-const settingsStorageKey = `task-analysis-settings-${props.groupId}`;
+const settingsStorageKey = computed(() => `task-analysis-settings-${contextKey.value}`);
 const settings = ref({});
 const isSettingsOpened = ref(false);
 
 function getDefaults() {
   const savedSettings = settings.value;
   const months = savedSettings.defaultMonths ?? 1;
-  let userIds = props.options?.userId ? [String(props.options.userId)] : [];
+  // На личном плане пустой выбор означает «все исполнители»: состав известен только после загрузки
+  // задач, поэтому предвыбрать конкретных людей заранее нечем
+  let userIds = !isPersonal.value && props.options?.userId ? [String(props.options.userId)] : [];
   if (savedSettings.defaultUserIds?.length) userIds = savedSettings.defaultUserIds;
   else if (savedSettings.defaultUserId != null) userIds = [savedSettings.defaultUserId];
   const dateRange = [dayjs().subtract(months, 'month').toDate(), dayjs().toDate()];
@@ -408,7 +435,14 @@ const timelineChartData = computed(() => {
 });
 
 async function loadUsers() {
-  const groupUsers = await bitrixApi.getGroupUsers(props.groupId);
+  // На личном плане состава участников не существует — исполнители набираются из самих задач,
+  // см. registerPerformers(). До первой загрузки список пуст, и это значит «все»
+  if (isPersonal.value) {
+    users.value = [];
+    return;
+  }
+
+  const groupUsers = await bitrixApi.getGroupUsers(props.context.id);
   users.value = groupUsers.map((user) => ({
     id: String(user.ID),
     name: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
@@ -438,13 +472,20 @@ function findRootId(taskId, taskMap) {
 
 async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
   const userTasks = await bitrixApi.searchTasks({
-    groupId: groupFilter === 'current' ? props.groupId : null,
+    groupId: groupFilter === 'current' ? props.context.id : null,
     responsibleId: userId,
     closedDateFrom: dateFrom,
     closedDateTo: dateTo,
     status: 'closed',
   });
 
+  return buildUserRows(userId, userName, userTasks);
+}
+
+// Достраивает дерево до корневых задач и сворачивает выборку в строки по корню.
+// Вынесено из fetchUserData: на личном плане задачи приходят одной общей выборкой и делятся
+// по исполнителям на клиенте, то есть запрос нужен один, а сборка — на каждого исполнителя
+async function buildUserRows(userId, userName, userTasks) {
   const taskMap = new Map(userTasks.map((task) => [String(task.id), task]));
 
   let unknownParentIds = new Set();
@@ -480,7 +521,7 @@ async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
         userId,
         userName,
         title: rootTask?.title ?? `Задача #${rootId}`,
-        url: getTaskUrl(props.groupId, rootId),
+        url: getTaskUrl(linkGroupId.value, rootId, linkUserId.value),
         createdDate: rootTask?.createdDate ?? null,
         closedDate: rootTask?.closedDate ?? null,
         maxDate: rootTask?.closedDate ?? null,
@@ -497,7 +538,7 @@ async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
     entry.tasks.push({
       id: task.id,
       title: task.title,
-      url: getTaskUrl(props.groupId, task.id),
+      url: getTaskUrl(linkGroupId.value, task.id, linkUserId.value),
       closedDate: task.closedDate ?? null,
       points,
       isRootTask: String(task.parentId ?? 0) === '0',
@@ -507,8 +548,69 @@ async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
   return {userId, tasks: userTasks, rows: [...rootMap.values()]};
 }
 
+// Исполнители личного плана известны только из самих задач — своего состава участников у «Моего
+// плана» нет. Копим объединение по всем загруженным периодам: иначе человек, у которого задачи
+// есть только в периоде сравнения, пропал бы из фильтра. Имя и аватарка приходят прямо в задаче
+// (task.responsible), так что дополнительных запросов не нужно
+function registerPerformers(tasks) {
+  const performerById = new Map(users.value.map((user) => [user.id, user]));
+
+  tasks.forEach((task) => {
+    const performer = task.responsible;
+    const performerId = String(performer?.id ?? '');
+    if (!performerId || performerById.has(performerId)) return;
+    performerById.set(performerId, {
+      id: performerId,
+      name: performer.name ?? performerId,
+      photo: performer.icon || null,
+    });
+  });
+
+  users.value = [...performerById.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+}
+
+// Задачи за период. Для группы — по запросу на каждого выбранного исполнителя, как и было.
+// Для личного плана запрос на исполнителя невозможен: «мой план» — объединение 4 ролей текущего
+// пользователя, и сузить его до «ответственный X, а я участник» одним фильтром нельзя (OR между
+// ACCOMPLICE и AUDITOR Bitrix молча превращает в пересечение). Поэтому берём выборку целиком
+// и делим по исполнителям на клиенте — заодно это один запрос вместо запроса на человека
+async function fetchPeriodData(dateFrom, dateTo) {
+  if (!isPersonal.value) {
+    return Promise.all(form.selectedUserIds.map((userId) => {
+      const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
+      return fetchUserData(userId, userName, dateFrom, dateTo, form.groupFilter);
+    }));
+  }
+
+  const poolTasks = await bitrixApi.searchMyTasks(props.context.id, {
+    groupId: selectedGroupId.value,
+    closedDateFrom: dateFrom,
+    closedDateTo: dateTo,
+    status: 'closed',
+  });
+  registerPerformers(poolTasks);
+
+  const selectedIds = new Set(form.selectedUserIds);
+  const tasksByPerformer = new Map();
+  poolTasks.forEach((task) => {
+    const performerId = String(task.responsible?.id ?? '');
+    // Пустой выбор означает «все исполнители»
+    if (!performerId || (selectedIds.size && !selectedIds.has(performerId))) return;
+    if (!tasksByPerformer.has(performerId)) tasksByPerformer.set(performerId, []);
+    tasksByPerformer.get(performerId).push(task);
+  });
+
+  return Promise.all([...tasksByPerformer].map(([performerId, performerTasks]) => buildUserRows(
+    performerId,
+    users.value.find((user) => user.id === performerId)?.name ?? performerId,
+    performerTasks,
+  )));
+}
+
 async function fetchData() {
-  if (!form.dateRange?.[0] || !form.selectedUserIds.length) return;
+  if (!form.dateRange?.[0]) return;
+  // На личном плане пустой выбор — это «все исполнители», а не «никто»
+  if (!isPersonal.value && !form.selectedUserIds.length) return;
 
   isLoading.value = true;
   rows.value = [];
@@ -522,12 +624,7 @@ async function fetchData() {
     const dateFrom = dayjs(form.dateRange[0]).format('YYYY-MM-DD 00:00:00');
     const dateTo = dayjs(form.dateRange[1] ?? form.dateRange[0]).format('YYYY-MM-DD 23:59:59');
 
-    const results = await Promise.all(
-      form.selectedUserIds.map((userId) => {
-        const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
-        return fetchUserData(userId, userName, dateFrom, dateTo, form.groupFilter);
-      }),
-    );
+    const results = await fetchPeriodData(dateFrom, dateTo);
 
     allUserTasksPerUser.value = results.map((result) => ({userId: result.userId, tasks: result.tasks}));
     rows.value = orderBy(
@@ -543,12 +640,7 @@ async function fetchData() {
     if (compareRequestRange) {
       const compareDateFrom = dayjs(compareRequestRange[0]).format('YYYY-MM-DD 00:00:00');
       const compareDateTo = dayjs(compareRequestRange[1]).format('YYYY-MM-DD 23:59:59');
-      const prevResults = await Promise.all(
-        form.selectedUserIds.map((userId) => {
-          const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
-          return fetchUserData(userId, userName, compareDateFrom, compareDateTo, form.groupFilter);
-        }),
-      );
+      const prevResults = await fetchPeriodData(compareDateFrom, compareDateTo);
       prevUserTasksPerUser.value = prevResults.map((result) => ({userId: result.userId, tasks: result.tasks}));
       prevRows.value = prevResults.flatMap((result) => result.rows);
     }
@@ -568,10 +660,11 @@ async function fetchData() {
 onMounted(async () => {
   const [, stored] = await Promise.all([
     loadUsers(),
-    chrome.storage.local.get([settingsStorageKey]),
+    chrome.storage.local.get([settingsStorageKey.value]),
+    isPersonal.value ? restoreGroupFilter() : Promise.resolve(),
   ]);
-  if (stored[settingsStorageKey]) {
-    settings.value = stored[settingsStorageKey];
+  if (stored[settingsStorageKey.value]) {
+    settings.value = stored[settingsStorageKey.value];
     applyDefaults();
   }
   isInitialLoading.value = false;
@@ -593,7 +686,7 @@ onMounted(async () => {
       <Skeleton height="200px" />
     </template>
     <template v-else>
-      <div class="flex gap-2 mb-3">
+      <div class="flex gap-2 mb-3 items-center">
         <Button
           label="Настройки"
           size="small"
@@ -635,7 +728,7 @@ onMounted(async () => {
               :options="visibleUsers"
               option-label="name"
               option-value="id"
-              placeholder="Выберите исполнителей"
+              :placeholder="isPersonal ? 'Все исполнители' : 'Выберите исполнителей'"
               :max-selected-labels="1"
               filter
               filter-placeholder="Поиск"
@@ -648,7 +741,6 @@ onMounted(async () => {
                     v-if="option.photo"
                     :image="option.photo"
                     shape="circle"
-                    size="small"
                   />
                   {{ option.name }}
                 </div>
@@ -656,12 +748,34 @@ onMounted(async () => {
             </MultiSelect>
           </FormField>
 
-          <FormField label="Группа">
+          <FormField
+            v-if="!isPersonal"
+            label="Группа"
+          >
             <Select
               v-model="form.groupFilter"
               :options="groupFilterOptions"
               option-label="label"
               option-value="value"
+              size="small"
+              fluid
+            />
+          </FormField>
+
+          <FormField
+            v-else
+            label="Группа"
+            tip="В личный план попадают задачи разных групп. Пусто — считаем по всем"
+          >
+            <Select
+              v-model="selectedGroupId"
+              :options="groupOptions"
+              option-label="name"
+              option-value="id"
+              placeholder="Все группы"
+              show-clear
+              filter
+              filter-placeholder="Поиск"
               size="small"
               fluid
             />
@@ -710,7 +824,7 @@ onMounted(async () => {
         :copy-separator="settings.copySeparator ?? '\t'"
         :csv-separator="settings.csvSeparator ?? ','"
         :default-tab="settings.defaultTab ?? 'summary'"
-        :group-id="groupId"
+        :context-key="contextKey"
         :date-range="fetchedDateRange"
         :compare-date-range="form.compareEnabled ? fetchedCompareRange : null"
         class="mb-4"

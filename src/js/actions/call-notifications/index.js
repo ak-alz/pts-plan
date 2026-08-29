@@ -14,7 +14,7 @@ export function callNotifications() {
   if (document.querySelector('.js-call-notifications')) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-call-notifications',
+    className: 'js-call-notifications pts-app',
   });
   document.body.appendChild(appContainer);
 

@@ -3,8 +3,9 @@ import Ripple from 'primevue/ripple';
 import Tooltip from 'primevue/tooltip';
 import { createApp } from 'vue';
 
+import { resolveKanbanContext } from '../../kanbanContext.js';
 import primeVueOptions from '../../primeVueOptions.js';
-import { getGroupIdFromUrl, insertCSS, refreshActionBarButtonGroup } from '../../utils.js';
+import { insertCSS, refreshActionBarButtonGroup } from '../../utils.js';
 import ScrumSummaryApp from './ScrumSummaryApp.vue';
 
 insertCSS(`
@@ -13,9 +14,9 @@ insertCSS(`
   .pts-ai-result > *:last-child { margin-bottom: 0; }
 `, 'pts-ai-result');
 
-export function scrumSummary(sessionId) {
-  const groupId = getGroupIdFromUrl(window.location.href);
-  if (!groupId) return;
+export async function scrumSummary(sessionId) {
+  const context = await resolveKanbanContext(sessionId);
+  if (!context) return;
 
   const buttonsContainer = document.querySelector('.ui-actions-bar__buttons');
   if (!buttonsContainer) return;
@@ -24,7 +25,7 @@ export function scrumSummary(sessionId) {
   if (initialized) return;
 
   const appContainer = Object.assign(document.createElement('div'), {
-    className: 'js-scrum-summary pts-actions-bar-btn',
+    className: 'js-scrum-summary pts-actions-bar-btn pts-app',
     style: 'order: 3;',
   });
 
@@ -32,7 +33,7 @@ export function scrumSummary(sessionId) {
 
   const app = createApp(ScrumSummaryApp, {
     sessionId,
-    groupId,
+    context,
   });
   app.use(PrimeVue, primeVueOptions);
   app.directive('tooltip', Tooltip);
