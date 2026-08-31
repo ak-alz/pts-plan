@@ -5,6 +5,11 @@ import axios from 'axios';
 // ресурсоёмкости, после которого метод блокируется на 10 минут, так что короткий повтор бесполезен.
 const RATE_LIMIT_RETRY_DELAYS = [3000, 10000, 30000];
 
+// Повторов по отдельным командам батча меньше, и они короче: requestWithRateLimitRetry уже
+// отработал свои паузы на весь запрос, а здесь повторяется небольшой остаток команд, причём
+// последовательно. Без урезания суммарное ожидание одного вызова доходило бы до трёх минут
+const PER_COMMAND_RETRY_DELAYS = RATE_LIMIT_RETRY_DELAYS.slice(0, 2);
+
 const RATE_LIMIT_ERROR_CODES = ['QUERY_LIMIT_EXCEEDED', 'OPERATION_TIME_LIMIT'];
 
 /** Текст для пользователя, когда повторы кончились: из «Request failed with status code 503» непонятно, что делать. */
@@ -198,6 +203,23 @@ export default class BitrixApi {
     return this.http.postForm('/rest/task.stages.get.json', {
       sessid: this.sessionId,
       entityId: groupId,
+    });
+  }
+
+  /**
+   * Переносит задачу в стадию канбана. Нужен там, где стадию нельзя передать прямо в tasks.task.add:
+   * стадии «Моего плана» — отдельная сущность (ENTITY_TYPE=U), и поле STAGE_ID задачи их не принимает,
+   * а task.stages.movetask работает и с канбаном группы, и с личным планом.
+   * В батч этот метод складывать нельзя — Bitrix отвечает ERROR_BATCH_METHOD_NOT_ALLOWED.
+   * @param {string|number} taskId
+   * @param {string|number} stageId
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  moveTaskToStage(taskId, stageId) {
+    return this.http.postForm('/rest/task.stages.movetask.json', {
+      sessid: this.sessionId,
+      id: taskId,
+      stageId,
     });
   }
 
@@ -928,36 +950,124 @@ export default class BitrixApi {
   }
 
   /**
-   * Batch-запрос tasks.task.get для нескольких задач (до 50 за раз).
+   * Задаёт список связанных задач — блок «Связанные задачи» в карточке.
+   * REST-метода для него нет (`SE_RELATEDTASK` в списке полей задачи отсутствует, а
+   * `task.dependence.add` создаёт другую сущность — связи диаграммы Ганта), поэтому пишем
+   * операцией task.update внутреннего диспетчера модуля tasks — тем же запросом, который шлёт
+   * форма редактирования задачи. Проверено экспериментом: остальные поля задачи не затрагиваются.
+   *
+   * Две особенности контракта: список перезаписывается целиком (чтобы добавить связь к
+   * существующим, надо передать и их), а связь односторонняя — чтобы задачи видели друг друга,
+   * метод вызывается для каждой из них.
+   *
+   * Ответ — HTML формы, и разобрать его целиком незачем, но отличить явный отказ можно: нет доступа
+   * или истекла сессия — Bitrix уводит на другую страницу, и это видно по итоговому адресу запроса,
+   * без привязки к вёрстке. Мягкий отказ, при котором форма перерисовалась с сообщением об ошибке,
+   * так не поймать: REST-метода для чтения связей нет (`SE_RELATEDTASK` в полях задачи отсутствует),
+   * так что проверить результат обратным запросом нечем.
+   * @param {string|number} taskId
+   * @param {Array<string|number>} relatedTaskIds Полный новый список связей
+   * @param {string|number} userId ID текущего пользователя: Bitrix проверяет доступ по сегменту URL
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  async setRelatedTasks(taskId, relatedTaskIds, userId) {
+    const params = new URLSearchParams({
+      sessid: this.sessionId,
+      'ACTION[0][OPERATION]': 'task.update',
+      'ACTION[0][PARAMETERS][CODE]': 'task_action',
+      'ACTION[0][ARGUMENTS][id]': taskId,
+      'ACTION[0][ARGUMENTS][data][SE_RELATEDTASK][]': '',
+    });
+    relatedTaskIds.forEach((id) => params.set(`ACTION[0][ARGUMENTS][data][SE_RELATEDTASK][${id}][ID]`, id));
+
+    const editPath = `/company/personal/user/${userId}/tasks/task/edit/${taskId}/`;
+    const response = await this.http.post(editPath, params);
+
+    // responseURL может быть недоступен (не XHR-адаптер) — тогда проверку пропускаем, а не считаем
+    // отказом: ложное «связать не удалось» на успешном запросе хуже, чем неполная проверка
+    const finalUrl = response.request?.responseURL ?? '';
+    if (typeof response.data !== 'string' || !response.data
+      || (finalUrl && !finalUrl.includes('/tasks/task/edit/'))) {
+      throw new Error('Bitrix не принял запрос на связывание задач — нет доступа или истекла сессия');
+    }
+
+    return response;
+  }
+
+  /**
+   * Отправляет одну порцию команд batch.json (до BATCH_COMMAND_LIMIT штук).
+   * @param {Record<string, string>} cmd - Карта «ключ команды → метод?параметры».
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  postBatchCommands(cmd) {
+    return this.requestWithRateLimitRetry(
+      () => this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd}),
+    );
+  }
+
+  /**
+   * Batch-запрос tasks.task.get для нескольких задач.
    * Поля ответа в camelCase: id, responsibleId, createdBy, groupId, stageId.
+   * Задачи, по которым ответ не пришёл, в карту не попадают — вызывающий код не может отличить
+   * удалённую задачу от сбоя, поэтому отсутствие задачи нельзя считать окончательным ответом.
    * @param {string[]} taskIds
+   * @param {string[]} [select] - Поля задачи, только нужные.
    * @return {Promise<Record<string, object>>} Карта taskId → task
    */
-  getTasksByIdsBatch(taskIds, select = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_BY', 'GROUP_ID', 'STAGE_ID', 'CREATED_DATE', 'CHANGED_DATE']) {
-    if (!taskIds.length) return Promise.resolve({});
-    const CHUNK_SIZE = 50;
-    const chunks = [];
-    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
-      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
-    }
-    return Promise.all(chunks.map((chunk, ci) => {
-      const cmd = {};
-      chunk.forEach((id, i) => {
-        const params = new URLSearchParams({taskId: id});
-        select.forEach((f) => params.append('select[]', f));
-        cmd[`t${ci * CHUNK_SIZE + i}`] = `tasks.task.get?${params.toString()}`;
-      });
-      return this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd});
-    })).then((responses) => {
-      const result = {};
-      responses.forEach((response) => {
-        Object.values(response.data?.result?.result ?? {}).forEach((val) => {
-          const task = val?.task;
-          if (task?.id) result[task.id] = task;
+  async getTasksByIdsBatch(taskIds, select = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_BY', 'GROUP_ID', 'STAGE_ID', 'CREATED_DATE', 'CHANGED_DATE']) {
+    if (!taskIds.length) return {};
+
+    const commands = {};
+    taskIds.forEach((taskId, index) => {
+      const params = new URLSearchParams({taskId});
+      select.forEach((field) => params.append('select[]', field));
+      commands[`t${index}`] = `tasks.task.get?${params.toString()}`;
+    });
+
+    const tasksById = {};
+    let pending = commands;
+
+    for (let attempt = 0; ; attempt++) {
+      const chunks = chunkBatchCommands(pending);
+      const responses = [];
+
+      if (attempt === 0) {
+        // В норме лимит не срабатывает, поэтому первый проход идёт порциями параллельно — так заметно
+        // быстрее на сотне карточек. Повторы, наоборот, последовательно: одновременные порции лимит
+        // и провоцируют, и повторять их тем же способом бессмысленно
+        responses.push(...await Promise.all(chunks.map((chunk) => this.postBatchCommands(chunk))));
+      } else {
+        for (const chunk of chunks) {
+          responses.push(await this.postBatchCommands(chunk));
+        }
+      }
+
+      const limited = {};
+      responses.forEach((response, chunkIndex) => {
+        Object.values(response.data?.result?.result ?? {}).forEach((commandResult) => {
+          const task = commandResult?.task;
+          if (task?.id) tasksById[task.id] = task;
+        });
+
+        // Ограничение приходит и по отдельной команде батча — со статусом 200 и без общей ошибки,
+        // так что requestWithRateLimitRetry его не видит
+        Object.entries(response.data?.result?.result_error ?? {}).forEach(([key, commandError]) => {
+          if (isRateLimitResponse(commandError) && chunks[chunkIndex][key]) {
+            limited[key] = chunks[chunkIndex][key];
+          }
         });
       });
-      return result;
-    });
+
+      if (!Object.keys(limited).length) return tasksById;
+
+      // Повторяем только упавшие команды: пришедшее из тех же порций уже лежит в карте и заново
+      // не запрашивается. Когда повторы кончились — бросаем: молча вернуть неполную карту нельзя,
+      // вызывающий код принял бы сбой за отсутствие задачи
+      if (attempt >= PER_COMMAND_RETRY_DELAYS.length) throw new Error(RATE_LIMIT_ERROR_MESSAGE);
+
+      await delay(PER_COMMAND_RETRY_DELAYS[attempt]);
+      pending = limited;
+    }
   }
 
   /**
@@ -969,9 +1079,7 @@ export default class BitrixApi {
    */
   runBatchCommands(commands) {
     return Promise.all(
-      chunkBatchCommands(commands).map((cmd) => this.requestWithRateLimitRetry(
-        () => this.http.postForm('/rest/batch.json', {sessid: this.sessionId, halt: false, cmd}),
-      )),
+      chunkBatchCommands(commands).map((cmd) => this.postBatchCommands(cmd)),
     ).then((responses) => Object.assign({}, ...responses.map((response) => response.data?.result?.result ?? {})));
   }
 

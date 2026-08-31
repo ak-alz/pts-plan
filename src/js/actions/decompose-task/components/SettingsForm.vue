@@ -38,6 +38,9 @@ const form = reactive({
   showCommitCheckbox: props.initial.showCommitCheckbox ?? false,
   copyCommitDefault: props.initial.copyCommitDefault ?? false,
   copyPreviousRow: props.initial.copyPreviousRow ?? false,
+  showLinkCheckboxes: props.initial.showLinkCheckboxes ?? false,
+  linkCreatedTasks: props.initial.linkCreatedTasks ?? false,
+  linkExistingSubtasks: props.initial.linkExistingSubtasks ?? false,
 });
 
 async function saveSettings() {
@@ -229,6 +232,59 @@ const auditorOptions = [
         for="dt_copy_previous_row"
         class="text-sm cursor-pointer select-none"
       >При добавлении копировать предыдущую строку</label>
+    </div>
+
+    <div class="flex gap-1 items-start">
+      <Checkbox
+        v-model="form.showLinkCheckboxes"
+        binary
+        input-id="dt_show_link_checkboxes"
+        class="mt-0.5 shrink-0"
+      />
+      <label
+        for="dt_show_link_checkboxes"
+        class="text-sm cursor-pointer select-none"
+      >Показывать «Связать подзадачи между собой»</label>
+      <i
+        v-tooltip.top="'Две галки появятся рядом с кнопкой создания задач во всех трёх режимах — значение можно будет менять перед каждым созданием. Без них связи всё равно проставляются, по значениям из настроек ниже'"
+        class="pi pi-question-circle mt-0.5 shrink-0"
+      />
+    </div>
+
+    <div class="flex gap-1 items-start">
+      <Checkbox
+        v-model="form.linkCreatedTasks"
+        binary
+        input-id="dt_link_created_tasks"
+        class="mt-0.5 shrink-0"
+      />
+      <label
+        for="dt_link_created_tasks"
+        class="text-sm cursor-pointer select-none"
+      >«Связать подзадачи между собой» по умолчанию</label>
+      <i
+        v-tooltip.top="'После создания каждая подзадача попадёт в блок «Связанные задачи» остальных. Работает и когда галки не показаны — тогда это просто всегда включённое связывание'"
+        class="pi pi-question-circle mt-0.5 shrink-0"
+      />
+    </div>
+
+    <div class="flex gap-1 items-start">
+      <Checkbox
+        v-model="form.linkExistingSubtasks"
+        binary
+        :disabled="!form.linkCreatedTasks"
+        input-id="dt_link_existing_subtasks"
+        class="mt-0.5 shrink-0"
+      />
+      <label
+        for="dt_link_existing_subtasks"
+        class="text-sm cursor-pointer select-none"
+        :class="{'opacity-60': !form.linkCreatedTasks}"
+      >«Связать и с прежними подзадачами» по умолчанию</label>
+      <i
+        v-tooltip.top="'Незавершённые подзадачи этой задачи, созданные ранее, попадут в блок «Связанные задачи» новых. Сами прежние подзадачи при этом не изменяются, поэтому у них новые в списке не появятся'"
+        class="pi pi-question-circle mt-0.5 shrink-0"
+      />
     </div>
 
     <Button

@@ -13,6 +13,7 @@ import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import {stringToPastelColor} from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import { buildCacheSignature, clearCache, getCacheSizeBytes, loadCache, saveCache } from '../cache.js';
 import { aggregateTeamSprints, computePointsStats, computeTrend, defaultIgnorePoints, defaultMonths, normalizeSprintsToFullTeam } from '../variables.js';
 import CreateTaskTemplate from './CreateTaskTemplate.vue';
 import SettingsForm from './SettingsForm.vue';
@@ -35,10 +36,28 @@ const bitrixApi = new BitrixApi(props.sessionId);
 const settings = ref({});
 const settingsStorageKey = computed(() => `scrum-summary-settings-${props.groupId}`);
 const isLoading = ref(false);
+const cachedAt = ref(null);
+const cacheSizeBytes = ref(0);
 const sprintDates = ref([]);
 const minSprintDate = computed(() => sprintDates.value.length ? new Date(Math.min(...sprintDates.value.map((d) => d.getTime()))) : undefined);
 const maxSprintDate = computed(() => sprintDates.value.length ? new Date(Math.max(...sprintDates.value.map((d) => d.getTime()))) : undefined);
 const users = ref([]);
+
+// Пока показывать нечего — скелетоны; поверх восстановленных из кэша итогов их быть не должно
+const isInitialLoading = computed(() => isLoading.value && !users.value.length);
+
+const cacheSignature = computed(() => buildCacheSignature(settings.value));
+
+const cacheSizeLabel = computed(() => {
+  const kilobytes = cacheSizeBytes.value / 1024;
+  return kilobytes >= 1024 ? `${(kilobytes / 1024).toFixed(1)} МБ` : `${Math.round(kilobytes)} КБ`;
+});
+
+const cachedAtLabel = computed(() => {
+  if (!cachedAt.value) return '';
+  const savedAt = dayjs(cachedAt.value);
+  return savedAt.isSame(dayjs(), 'day') ? savedAt.format('HH:mm') : savedAt.format('DD.MM HH:mm');
+});
 
 function getDefaults() {
   const months = settings.value.defaultMonths ?? defaultMonths;
@@ -156,6 +175,48 @@ async function loadSettings() {
   }
 }
 
+// Даты спринтов выводятся из самих итогов, поэтому в кэше их держать незачем
+function collectSprintDates(loadedUsers) {
+  const dateSet = new Set();
+  loadedUsers.forEach((user) => {
+    user.sprints.forEach((sprint) => {
+      dateSet.add(dayjs(sprint.x).startOf('day').valueOf());
+    });
+  });
+  return Array.from(dateSet).map((timestamp) => new Date(timestamp));
+}
+
+async function refreshCacheSize() {
+  cacheSizeBytes.value = await getCacheSizeBytes(props.groupId);
+}
+
+async function resetCache() {
+  await clearCache(props.groupId);
+  await refreshCacheSize();
+  showToast({
+    severity: 'success',
+    summary: 'Кэш очищен',
+    detail: 'Сохранённые итоги спринтов удалены. При следующем открытии виджет дождётся загрузки.',
+    life: 5000,
+  });
+}
+
+async function restoreFromCache() {
+  const cache = await loadCache(props.groupId, cacheSignature.value);
+  if (!cache?.users?.length) return;
+
+  users.value = cache.users;
+  sprintDates.value = collectSprintDates(cache.users);
+  cachedAt.value = cache.savedAt;
+}
+
+async function persistCache() {
+  if (!settings.value.taskId || !users.value.length) return;
+
+  await saveCache(props.groupId, cacheSignature.value, {users: users.value});
+  await refreshCacheSize();
+}
+
 async function fetchData() {
   if (!settings.value.taskId) {
     return;
@@ -212,17 +273,12 @@ async function fetchData() {
       }
     });
 
-    const dateSet = new Set();
-    Object.values(usersMap).forEach((user) => {
-      user.sprints.forEach((sprint) => {
-        dateSet.add(dayjs(sprint.x).startOf('day').valueOf());
-      });
-    });
-    sprintDates.value = Array.from(dateSet).map((ts) => new Date(ts));
-
     users.value = orderBy(Object.values(usersMap), [(user) => user.sprints.length], 'desc');
+    sprintDates.value = collectSprintDates(users.value);
 
     dateUpdated.value = `Последнее обновление: ${dayjs().format('HH:mm:ss')}`;
+    cachedAt.value = null;
+    await persistCache();
   } catch (e) {
     console.warn(e);
     showToast({
@@ -405,6 +461,8 @@ onMounted(async () => {
   Object.assign(form, getDefaults());
   const stored = await chrome.storage.local.get([aiContextStorageKey.value]);
   if (stored[aiContextStorageKey.value]) aiContext.value = stored[aiContextStorageKey.value];
+  // Прошлые итоги рисуем сразу, свежие догружаются следом и заменяют их
+  await Promise.all([restoreFromCache(), refreshCacheSize()]);
   fetchData();
 
   const job = await aiJob.getPendingJob();
@@ -434,8 +492,18 @@ onMounted(async () => {
         variant="text"
         @click="fetchData"
       />
+      <Button
+        v-if="cacheSizeBytes > 0"
+        v-tooltip="'Виджет запоминает разобранные итоги спринтов, чтобы при открытии не ждать загрузки комментариев задачи. Кнопка удаляет их для этой группы — на экране всё останется, но следующее открытие снова будет ждать загрузки.'"
+        :label="`Сбросить кэш (${cacheSizeLabel})`"
+        size="small"
+        severity="secondary"
+        icon="pi pi-trash"
+        variant="text"
+        @click="resetCache"
+      />
       <ToggleButton
-        v-if="!isLoading"
+        v-if="!isInitialLoading"
         v-model="trendMode"
         on-label="Тренды"
         off-label="Тренды"
@@ -444,7 +512,7 @@ onMounted(async () => {
         size="small"
       />
       <div
-        v-if="!isLoading"
+        v-if="!isInitialLoading"
         class="w-52"
       >
         <DateRangePicker
@@ -455,7 +523,7 @@ onMounted(async () => {
         />
       </div>
       <ButtonGroup
-        v-if="!isLoading && computedUsers.length"
+        v-if="!isInitialLoading && computedUsers.length"
         :pt="{root: {style: {width: 'auto'}}}"
       >
         <Button
@@ -482,10 +550,16 @@ onMounted(async () => {
           @click="isPromptPreviewModalOpened = true"
         />
       </ButtonGroup>
+      <span
+        v-if="cachedAt"
+        class="text-xs text-surface-500 dark:text-surface-400"
+      >
+        Сохранённые данные от {{ cachedAtLabel }}{{ isLoading ? ' — обновляем…' : '' }}
+      </span>
     </div>
 
     <Skeleton
-      v-if="isLoading"
+      v-if="isInitialLoading"
       style="height: 100px; width: 1000px;"
       class="mb-3"
     />
@@ -499,12 +573,12 @@ onMounted(async () => {
     />
 
     <Skeleton
-      v-if="isLoading"
+      v-if="isInitialLoading"
       style="height: 300px; width: 1000px;"
     />
 
     <SummaryChart
-      v-show="!isLoading"
+      v-show="!isInitialLoading"
       :users="computedUsers"
       :trend-mode="trendMode"
     />

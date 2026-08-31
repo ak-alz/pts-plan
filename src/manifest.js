@@ -39,6 +39,7 @@ export default defineManifest({
     {
       resources: [
         'src/content-scripts/main.js',
+        'src/content-scripts/editor-bridge.js',
         'assets/*',
         'img/logo.png',
       ],

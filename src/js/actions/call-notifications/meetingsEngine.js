@@ -6,6 +6,7 @@ import {
   MEETING_TYPE,
   MEETINGS_MAX_AGE_DAYS,
   PRESENCE_TTL_MS,
+  PRESENCE_VISIBLE_TTL_MS,
   REMINDER_AT_START,
   SHOWN_REMINDERS_MAX_AGE_DAYS,
 } from './variables.js';
@@ -180,15 +181,27 @@ export function pruneStaleMeetings(meetings, now, maxAgeDays = MEETINGS_MAX_AGE_
 }
 
 // Выбор «ведущей» вкладки среди живых записей присутствия: приоритет у видимой (на неё смотрит
-// пользователь), иначе любая живая; тай-брейк — лексикографически меньший tabId, чтобы все вкладки
-// независимо выбрали одну и ту же. Только ведущая показывает напоминание — так на несколько
-// открытых вкладок Bitrix приходит один рингтон/модалка/тост, а не по одному на вкладку
-export function selectLeaderTabId(presence, now, ttlMs = PRESENCE_TTL_MS) {
-  const live = Object.entries(presence).filter(([, entry]) => entry && now - entry.at < ttlMs);
+// пользователь); тай-брейк — лексикографически меньший tabId, чтобы все вкладки независимо выбрали
+// одну и ту же. Только ведущая показывает напоминание — так на несколько открытых вкладок Bitrix
+// приходит один рингтон/модалка/тост, а не по одному на вкладку
+export function selectLeaderTabId(presence, now, ttlMs = PRESENCE_TTL_MS, visibleTtlMs = PRESENCE_VISIBLE_TTL_MS) {
+  // TTL у записи свой в зависимости от того, видимой ли объявляла себя вкладка: скрытую Chrome
+  // будит редко и ей нужен запас, видимая же обязана отвечать хартбитом — и если молчит, она мёртвая
+  const live = Object.entries(presence)
+    .filter(([, entry]) => entry && now - entry.at < (entry.visible ? visibleTtlMs : ttlMs));
   if (!live.length) return null;
+
   const visible = live.filter(([, entry]) => entry.visible);
-  const pool = visible.length ? visible : live;
-  return pool.map(([tabId]) => tabId).sort()[0];
+  if (visible.length) return visible.map(([tabId]) => tabId).sort()[0];
+
+  // Видимых нет вовсе — браузер свёрнут или пользователь ушёл в другую программу. Тогда ведущей
+  // делаем ту вкладку, в которой он сидел последней: вернувшись в браузер, он попадёт именно в неё
+  // и увидит напоминание. У скрытой вкладки lastVisibleAt больше не меняется, так что выбор
+  // остаётся стабильным, а не перескакивает с каждым хартбитом
+  const byLastVisible = [...live].sort(([leftId, left], [rightId, right]) => {
+    return (right.lastVisibleAt ?? 0) - (left.lastVisibleAt ?? 0) || (leftId < rightId ? -1 : 1);
+  });
+  return byLastVisible[0][0];
 }
 
 // Единая точка входа для одного конкретного момента триггера (разовая встреча или сегодняшнее

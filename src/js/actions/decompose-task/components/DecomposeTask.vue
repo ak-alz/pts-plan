@@ -1,7 +1,7 @@
 <script setup>
 import { jsonrepair } from 'jsonrepair';
 import { Avatar, Badge, Button, Checkbox, Column, DataTable, Dialog, InputGroup, MultiSelect, Password, Select, SelectButton, Textarea } from 'primevue';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { useAiJob } from '../../../composables/useAiJob.js';
@@ -12,6 +12,7 @@ import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 import {parseAiDecompositions} from '../parseAiDecompositions.js';
 import DecomposeCard from './DecomposeCard.vue';
 import DecomposeQuickMode from './DecomposeQuickMode.vue';
+import LinkOptions from './LinkOptions.vue';
 import SettingsForm from './SettingsForm.vue';
 
 const props = defineProps({
@@ -57,6 +58,9 @@ const isLoading = ref(false);
 
 const settings = ref({});
 const settingsStorageKey = computed(() => `decompose-task-settings-${groupId.value}`);
+// Именно let, а не const: LinkOptions висит на v-model, а тот компилируется в присваивание самому
+// биндингу — с const компилятор ругается «v-model cannot update a const reactive binding»
+let linkOptions = reactive({ linkCreated: false, linkExisting: false });
 const isSettingsModalOpened = ref(false);
 const parentAuditorIds = ref([]);
 
@@ -181,6 +185,8 @@ async function loadSettings() {
   if (res[settingsStorageKey.value]) {
     settings.value = res[settingsStorageKey.value];
   }
+  linkOptions.linkCreated = settings.value.linkCreatedTasks ?? false;
+  linkOptions.linkExisting = settings.value.linkExistingSubtasks ?? false;
 }
 
 async function onSaveSettings() {
@@ -245,6 +251,34 @@ async function submit(overrideRows) {
       }
     }
 
+    let linkFailed = false;
+    if (linkOptions.linkCreated && createdTasks.length > 0) {
+      const createdIdsToLink = createdTasks.map((task) => task.id);
+      try {
+        const relatedIds = [...createdIdsToLink];
+        if (linkOptions.linkExisting) {
+          // Связи пишутся только в новые подзадачи, где список изначально пуст, поэтому
+          // перезапись списка целиком не задевает прежние подзадачи — их не трогаем вовсе
+          const siblings = await bitrixApi.searchTasks({parentIds: [props.taskId], status: 'active', selectFields: ['ID']});
+          siblings.forEach((task) => {
+            const id = String(task.id);
+            if (!relatedIds.includes(id)) relatedIds.push(id);
+          });
+        }
+
+        // Связь односторонняя, поэтому полный список пишется каждой подзадаче отдельно.
+        // Запросы идут последовательно: это не REST-батч, а обычная форма — каждый ответ тяжёлый
+        if (relatedIds.length > 1) {
+          for (const taskId of createdIdsToLink) {
+            await bitrixApi.setRelatedTasks(taskId, relatedIds.filter((id) => id !== taskId), userId.value);
+          }
+        }
+      } catch (error) {
+        console.warn(error);
+        linkFailed = true;
+      }
+    }
+
     const failedCount = total - createdTasks.length;
     const showTasks = settings.value.showCreatedTasks && createdTasks.length > 0;
     showToast({
@@ -256,6 +290,17 @@ async function submit(overrideRows) {
       links: showTasks ? createdTasks : undefined,
       life: showTasks ? 15000 : 5000,
     });
+
+    // Отдельным уведомлением: связывание — самостоятельный шаг после создания, и в одном сообщении
+    // его отказ ставил бы предупреждение рядом с заголовком «Готово»
+    if (linkFailed) {
+      showToast({
+        severity: 'warn',
+        summary: 'Не удалось связать подзадачи',
+        detail: 'Сами подзадачи созданы. Связи можно добавить вручную в блоке «Связанные задачи».',
+        life: 8000,
+      });
+    }
 
     emit('success');
   } catch (e) {
@@ -699,6 +744,12 @@ onMounted(async () => {
       </Column>
 
       <template #footer>
+        <LinkOptions
+          v-if="settings.showLinkCheckboxes"
+          v-model="linkOptions"
+          :disabled="isLoading || aiLoading"
+          class="mb-3"
+        />
         <div class="flex gap-2 items-center">
           <Button
             label="Добавить"
@@ -748,6 +799,12 @@ onMounted(async () => {
         />
       </template>
 
+      <LinkOptions
+        v-if="settings.showLinkCheckboxes"
+        v-model="linkOptions"
+        :disabled="isLoading || aiLoading"
+      />
+
       <div class="flex gap-2 items-center">
         <Button
           label="Добавить"
@@ -796,7 +853,15 @@ onMounted(async () => {
         :stages="stages"
         :is-loading="isLoading"
         @submit="submit($event)"
-      />
+      >
+        <template #options>
+          <LinkOptions
+            v-if="settings.showLinkCheckboxes"
+            v-model="linkOptions"
+            :disabled="isLoading"
+          />
+        </template>
+      </DecomposeQuickMode>
     </div>
   </form>
 

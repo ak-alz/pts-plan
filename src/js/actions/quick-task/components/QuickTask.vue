@@ -1,8 +1,9 @@
 <script setup>
 import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select, Textarea} from 'primevue';
-import {computed, onMounted, reactive, ref} from 'vue';
+import {computed, onMounted, reactive, ref, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
+import {usePersonalGroupFilter} from '../../../composables/usePersonalGroupFilter.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 import {getCommitMessage, getTaskUrl} from '../../../utils.js';
@@ -27,18 +28,43 @@ const isLoadingData = ref(false);
 const isSubmitting = ref(false);
 
 const userId = ref(null);
+const currentUser = ref(null);
 const users = ref([]);
-const stages = ref([]);
+// Стадии канбана выбранной группы и стадии «Моего плана» — разные сущности и живут независимо:
+// задача группы попадает и в канбан группы, и в личный план её постановщика
+const groupStages = ref([]);
+const personalStages = ref([]);
 const settings = ref({});
+
+const {groupOptions, selectedGroupId, restoreGroupFilter} = usePersonalGroupFilter(
+  api,
+  `quick-task-group-${props.context.id}`,
+);
+
+// Группа, в которой создаётся задача: на групповом канбане это сам канбан, на личном плане —
+// выбранный проект. Проект не выбран — задача уходит без группы, прямо в «Мой план»
+const targetGroupId = computed(() => (isPersonal.value ? selectedGroupId.value : props.context.id) || null);
+// Исполнителя и наблюдателей выбираем только когда группа известна: без неё состав участников
+// взять негде, да и задача без группы всё равно достаётся текущему пользователю
+const hasGroupScope = computed(() => !!targetGroupId.value);
 
 const form = reactive({
   title: '',
   description: '',
-  stageId: props.stageId,
+  // Клик по «+» приходит из колонки той доски, на которой открыт виджет: на групповом канбане это
+  // стадия группы, на личном плане — стадия «Моего плана»
+  stageId: isPersonal.value ? null : props.stageId,
+  personalStageId: isPersonal.value ? props.stageId : null,
   responsibleId: null,
   auditorIds: [],
   copyCommit: false,
 });
+
+function mapStages(stagesResponse) {
+  return Object.values(stagesResponse.data?.result ?? {})
+    .sort((a, b) => a.SORT - b.SORT)
+    .map((stage) => ({id: stage.ID, title: stage.TITLE, color: `#${stage.COLOR}`}));
+}
 
 async function loadSettings() {
   try {
@@ -49,9 +75,79 @@ async function loadSettings() {
 
 function applyDefaults() {
   form.copyCommit = !!(settings.value.showCommitCheckbox && settings.value.copyCommitDefault);
+  // Значения по умолчанию заданы для участников канбана этой страницы. На личном плане состав
+  // зависит от выбранного проекта и заранее неизвестен — там исполнитель сам пользователь
   form.responsibleId = isPersonal.value ? userId.value : (settings.value.defaultResponsible ?? userId.value);
   form.auditorIds = isPersonal.value ? [] : (settings.value.defaultAuditors ?? []);
 }
+
+// Без группы исполнитель всегда сам пользователь: селект скрыт, но значение формы должно
+// на кого-то ссылаться
+function getCurrentUserOptions() {
+  const user = currentUser.value;
+  if (!user) return [];
+  return [{
+    id: Number(user.ID),
+    title: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
+    avatar: user.PERSONAL_PHOTO ?? '',
+  }];
+}
+
+// Под какую группу уже загружены участники и стадии. Первая загрузка идёт через этот же вызов,
+// поэтому наблюдатель за selectedGroupId её не дублирует
+let loadedGroupId;
+let latestScopeRequestId = 0;
+
+async function loadGroupScope() {
+  const groupId = targetGroupId.value;
+  if (loadedGroupId === groupId) return;
+  loadedGroupId = groupId;
+
+  // Без группы участников и её стадий не существует, запрашивать нечего
+  if (!groupId) {
+    users.value = getCurrentUserOptions();
+    groupStages.value = [];
+    return;
+  }
+
+  const requestId = ++latestScopeRequestId;
+  isLoadingData.value = true;
+  try {
+    const [groupUsers, stagesResponse] = await Promise.all([
+      api.getGroupUsers(groupId),
+      api.getStages(groupId),
+    ]);
+    // Проект успели сменить, пока шёл запрос — ответ уже не о той группе
+    if (requestId !== latestScopeRequestId) return;
+
+    users.value = groupUsers.map((user) => ({
+      id: Number(user.ID),
+      title: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
+      avatar: user.PERSONAL_PHOTO ?? '',
+    }));
+    groupStages.value = mapStages(stagesResponse);
+    // Первая колонка канбана как значение по умолчанию. Только если стадия ещё не выбрана: на
+    // групповом канбане она уже пришла из колонки, по которой кликнули «+»
+    if (!form.stageId) form.stageId = groupStages.value[0]?.id ?? null;
+  } catch (error) {
+    // Группа не должна запомниться загруженной, иначе повторный выбор той же группы ничего не даст
+    if (requestId === latestScopeRequestId) loadedGroupId = undefined;
+    console.warn(error);
+    showToast({severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
+  } finally {
+    if (requestId === latestScopeRequestId) isLoadingData.value = false;
+  }
+}
+
+// Участники и стадии прошлого проекта к новому отношения не имеют: оставшийся выбор ссылался бы
+// на чужую группу, а форма отправила бы стадию, которой в новой группе нет. Стадию «Моего плана»
+// не трогаем — она от проекта не зависит
+watch(selectedGroupId, () => {
+  form.stageId = null;
+  form.responsibleId = userId.value;
+  form.auditorIds = [];
+  loadGroupScope();
+});
 
 async function onSettingsSaved() {
   await loadSettings();
@@ -61,41 +157,51 @@ async function onSettingsSaved() {
 onMounted(async () => {
   isLoadingData.value = true;
   try {
-    const [groupUsers, stagesResponse, currentUser] = await Promise.all([
-      // На личном плане список участников группы не имеет смысла — исполнитель всегда сам пользователь
-      isPersonal.value ? Promise.resolve([]) : api.getGroupUsers(props.context.id),
+    const [loadedUser, personalStagesResponse] = await Promise.all([
+      api.getCurrentUser(),
+      // Стадии «Моего плана» от выбранного проекта не зависят, поэтому грузятся один раз.
       // task.stages.get всегда отдаёт «Мой план» ТЕКУЩЕГО пользователя строго по entityId=0,
       // а не по его userId — иначе ACCESS_DENIED (проверено на реальном канбане)
-      api.getStages(isPersonal.value ? '0' : props.context.id),
-      api.getCurrentUser(),
+      isPersonal.value ? api.getStages('0') : Promise.resolve(null),
+      loadSettings(),
+      // Выбранный в прошлый раз проект запоминается композаблом — восстанавливаем до загрузки
+      // участников и стадий, чтобы они сразу пришли по нужной группе
+      isPersonal.value ? restoreGroupFilter() : Promise.resolve(),
     ]);
-    await loadSettings();
 
-    userId.value = currentUser ? Number(currentUser.ID) : null;
-    users.value = isPersonal.value && currentUser
-      ? [{id: userId.value, title: [currentUser.NAME, currentUser.LAST_NAME].filter(Boolean).join(' '), avatar: currentUser.PERSONAL_PHOTO ?? ''}]
-      : groupUsers.map((user) => ({
-        id: Number(user.ID),
-        title: [user.NAME, user.LAST_NAME].filter(Boolean).join(' '),
-        avatar: user.PERSONAL_PHOTO ?? '',
-      }));
-    stages.value = Object.values(stagesResponse.data?.result ?? {})
-      .sort((a, b) => a.SORT - b.SORT)
-      .map((stage) => ({id: stage.ID, title: stage.TITLE, color: `#${stage.COLOR}`}));
-
+    currentUser.value = loadedUser;
+    userId.value = loadedUser ? Number(loadedUser.ID) : null;
+    if (personalStagesResponse) {
+      personalStages.value = mapStages(personalStagesResponse);
+      // Обычно стадия уже пришла из колонки, по которой кликнули «+», — подстраховка на случай,
+      // когда её не удалось определить
+      if (!form.personalStageId) form.personalStageId = personalStages.value[0]?.id ?? null;
+    }
     applyDefaults();
-  } catch {
+  } catch (error) {
+    console.warn(error);
     showToast({severity: 'error', summary: 'Не удалось загрузить данные', life: 3000});
   } finally {
     isLoadingData.value = false;
   }
+
+  // Свой индикатор загрузки внутри — поэтому вне try выше
+  await loadGroupScope();
 });
 
 async function submit() {
   const title = form.title.trim();
   if (!title) return;
-  if (!form.stageId) {
-    showToast({severity: 'warn', summary: 'Выберите стадию', life: 3000});
+  if (isPersonal.value && !form.personalStageId) {
+    showToast({severity: 'warn', summary: 'Выберите стадию в «Мой план»', life: 3000});
+    return;
+  }
+  if (hasGroupScope.value && !form.stageId) {
+    showToast({
+      severity: 'warn',
+      summary: isPersonal.value ? 'Выберите стадию в проекте' : 'Выберите стадию',
+      life: 3000,
+    });
     return;
   }
   if (!form.responsibleId) {
@@ -104,14 +210,32 @@ async function submit() {
   }
   isSubmitting.value = true;
   try {
-    const fields = {TITLE: title, GROUP_ID: isPersonal.value ? '0' : props.context.id};
-    if (form.stageId) fields.STAGE_ID = form.stageId;
+    const groupId = targetGroupId.value;
+    const fields = {TITLE: title, GROUP_ID: groupId ?? '0'};
+    // Стадию канбана группы tasks.task.add принимает сам. Стадию «Моего плана» — нет: она отдельная
+    // сущность, и задача с ней не создаётся вовсе, поэтому ставится переносом после создания
+    if (form.stageId && groupId) fields.STAGE_ID = form.stageId;
     if (form.responsibleId) fields.RESPONSIBLE_ID = form.responsibleId;
     if (form.description.trim()) fields.DESCRIPTION = form.description.trim();
     if (form.auditorIds.length) fields.AUDITORS = form.auditorIds;
 
     const {data} = await api.addTask(fields);
     const taskId = String(data?.result?.task?.id ?? data?.result?.task?.ID ?? '');
+    // Успех — только когда Bitrix вернул ID созданной задачи: 4xx поймает axios, но отказ приходит
+    // и как 200 с полем error, и тогда виджет отчитался бы о создании впустую
+    if (!taskId) throw new Error(data?.error_description || 'Bitrix не подтвердил создание задачи');
+
+    // Задача уже создана, поэтому неудавшийся перенос её не отменяет — только предупреждаем
+    let stageFailed = false;
+    if (form.personalStageId) {
+      try {
+        const {data: moveData} = await api.moveTaskToStage(taskId, form.personalStageId);
+        if (!moveData?.result) throw new Error(moveData?.error_description || 'Bitrix не подтвердил перенос задачи');
+      } catch (error) {
+        console.warn(error);
+        stageFailed = true;
+      }
+    }
 
     if (form.copyCommit && taskId) {
       const commitMessage = getCommitMessage(title, taskId);
@@ -122,17 +246,21 @@ async function submit() {
     }
 
     const taskUrl = taskId && settings.value.showCreatedTask
-      ? getTaskUrl(isPersonal.value ? '0' : props.context.id, taskId, userId.value)
+      ? getTaskUrl(groupId ?? '0', taskId, userId.value)
       : null;
     showToast({
-      severity: 'success',
+      severity: stageFailed ? 'warn' : 'success',
       summary: 'Задача создана',
+      detail: stageFailed
+        ? 'Перенести её в выбранную колонку «Моего плана» не удалось — колонку можно задать перетаскиванием.'
+        : undefined,
       links: taskUrl ? [{ url: taskUrl, label: title }] : undefined,
       life: taskUrl ? 8000 : 3000,
     });
     emit('success');
-  } catch {
-    showToast({severity: 'error', summary: 'Ошибка создания задачи', life: 3000});
+  } catch (error) {
+    console.warn(error);
+    showToast({severity: 'error', summary: 'Ошибка создания задачи', detail: error.message, life: 5000});
   } finally {
     isSubmitting.value = false;
   }
@@ -171,11 +299,55 @@ async function submit() {
       />
     </FormField>
 
-    <div :class="isPersonal ? 'grid grid-cols-1 max-w-[240px] gap-3' : 'grid grid-cols-3 gap-3'">
+    <div
+      v-if="isPersonal"
+      class="grid grid-cols-2 gap-3"
+    >
       <FormField
-        v-if="!isPersonal"
-        label="Исполнитель"
+        label="Проект"
+        tip="Задача создаётся в выбранном проекте: стадия, исполнитель и наблюдатели берутся из его канбана. Пусто — задача уходит без проекта, прямо в «Мой план»"
       >
+        <Select
+          v-model="selectedGroupId"
+          :options="groupOptions"
+          option-value="id"
+          option-label="name"
+          placeholder="Без проекта"
+          show-clear
+          filter
+          filter-placeholder="Поиск"
+          fluid
+        />
+      </FormField>
+
+      <FormField
+        label="Стадия в «Мой план»"
+        tip="Колонка личного канбана, в которую попадёт задача. От проекта не зависит: задача проекта видна и в его канбане, и в личном плане постановщика"
+      >
+        <Select
+          v-model="form.personalStageId"
+          option-value="id"
+          option-label="title"
+          :options="personalStages"
+          :loading="isLoadingData"
+          fluid
+          placeholder="Выбрать"
+        >
+          <template #option="{ option }">
+            <div class="flex gap-2 items-center">
+              <Badge :style="`background-color: ${option.color};`" />
+              {{ option.title }}
+            </div>
+          </template>
+        </Select>
+      </FormField>
+    </div>
+
+    <div
+      v-if="hasGroupScope"
+      class="grid grid-cols-3 gap-3"
+    >
+      <FormField label="Исполнитель">
         <Select
           v-model="form.responsibleId"
           option-value="id"
@@ -200,12 +372,12 @@ async function submit() {
         </Select>
       </FormField>
 
-      <FormField label="Стадия">
+      <FormField :label="isPersonal ? 'Стадия в проекте' : 'Стадия'">
         <Select
           v-model="form.stageId"
           option-value="id"
           option-label="title"
-          :options="stages"
+          :options="groupStages"
           :loading="isLoadingData"
           fluid
           placeholder="Выбрать"
@@ -219,10 +391,7 @@ async function submit() {
         </Select>
       </FormField>
 
-      <FormField
-        v-if="!isPersonal"
-        label="Наблюдатели"
-      >
+      <FormField label="Наблюдатели">
         <MultiSelect
           v-model="form.auditorIds"
           option-value="id"

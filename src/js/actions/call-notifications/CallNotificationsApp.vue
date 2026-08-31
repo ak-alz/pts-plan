@@ -24,6 +24,7 @@ import {
   PRESENCE_CHANNEL_NAME,
   PRESENCE_HEARTBEAT_MS,
   PRESENCE_HELLO_WAIT_MS,
+  PRESENCE_TTL_MS,
   RINGTONE_ASSET_PATH,
   SETTINGS_STORAGE_KEY,
   SHOWN_REMINDERS_STORAGE_KEY,
@@ -46,17 +47,45 @@ const presenceChannel = new BroadcastChannel(PRESENCE_CHANNEL_NAME);
 // чтобы вовремя заметить смену ведущей вкладки
 const isLeaderView = computed(() => selectLeaderTabId(presenceMap.value, Date.now()) === tabId);
 
+// Когда вкладка объявлялась о себе в прошлый раз. Разрыв больше TTL значит, что Chrome
+// дросселировал её таймеры или вовсе замораживал вкладку: чужие объявления в это время прошли мимо
+let lastAnnouncedAt = 0;
+let presenceStale = false;
+// Когда на эту вкладку в последний раз смотрели — по нему выбирается ведущая, если видимых нет
+// вообще (см. selectLeaderTabId)
+let lastVisibleAt = 0;
+
 // hello — «я открылась, представьтесь» (в ответ каждый шлёт обычное presence), presence — хартбит
 function announcePresence(type) {
+  const now = Date.now();
+  // Пока вкладка спала, карта присутствия не пополнялась, и все чужие записи в ней протухли.
+  // По такой карте вкладка сочла бы себя единственной живой, то есть ведущей, и забрала бы
+  // напоминание себе у той вкладки, где сидит пользователь
+  if (lastAnnouncedAt && now - lastAnnouncedAt > PRESENCE_TTL_MS) presenceStale = true;
+  lastAnnouncedAt = now;
+
   const visible = document.visibilityState === 'visible';
-  presenceMap.value = {...presenceMap.value, [tabId]: {at: Date.now(), visible}};
-  presenceChannel.postMessage({type, tabId, visible});
+  if (visible) lastVisibleAt = now;
+
+  presenceMap.value = {...presenceMap.value, [tabId]: {at: now, visible, lastVisibleAt}};
+  presenceChannel.postMessage({type, tabId, visible, lastVisibleAt});
 }
 
-function handlePresenceMessage({data}) {
+function handleTabMessage({data}) {
   // Канал живёт на origin страницы, поэтому теоретически слышен и самому Bitrix — принимаем
   // только сообщения своей формы, чтобы посторонние не влияли на выбор ведущей вкладки
   if (typeof data?.tabId !== 'string' || data.tabId === tabId) return;
+
+  // Ведущая вкладка решила показать напоминание — тост показываем и мы, не трогая карту присутствия.
+  // Замороженной вкладке сообщение достаётся только при пробуждении, к тому времени тост могли уже
+  // закрыть в другой вкладке — тогда показывать его заново незачем
+  if (data.type === 'toast') {
+    const reminderKey = data.toast?.reminderKey;
+    if (typeof reminderKey === 'string' && !shownMap.value[getToastDismissedKey(reminderKey)]) {
+      showReminderToast(data.toast);
+    }
+    return;
+  }
 
   const wasLeader = isLeaderView.value;
   const next = {...presenceMap.value};
@@ -64,8 +93,9 @@ function handlePresenceMessage({data}) {
   if (data.type === 'bye') {
     delete next[data.tabId];
   } else {
-    // Время получения, а не присланное: часы у вкладок общие, но так запись точно не «из будущего»
-    next[data.tabId] = {at: Date.now(), visible: !!data.visible};
+    // Время получения, а не присланное: часы у вкладок общие, но так запись точно не «из будущего».
+    // lastVisibleAt — исключение: это отметка из прошлого чужой вкладки, своей замены у неё нет
+    next[data.tabId] = {at: Date.now(), visible: !!data.visible, lastVisibleAt: Number(data.lastVisibleAt) || 0};
   }
 
   presenceMap.value = next;
@@ -83,9 +113,18 @@ async function joinPresence() {
   await new Promise((resolve) => setTimeout(resolve, PRESENCE_HELLO_WAIT_MS));
 }
 
+// Устаревшую карту присутствия восстанавливаем тем же приветствием, что и при открытии вкладки:
+// живые вкладки отвечают своим presence, и решение «я ведущая?» принимается уже по полной карте
+async function ensureFreshPresence() {
+  if (!presenceStale) return;
+  await joinPresence();
+  presenceStale = false;
+}
+
 function onVisibilityChange() {
   announcePresence('presence');
-  if (isLeaderView.value) evaluate();
+  // Без проверки лидерства: карта могла устареть, пока вкладка была скрыта, — разбирается evaluate()
+  evaluate();
 }
 
 function onPageHide() {
@@ -175,27 +214,41 @@ function sendBrowserNotification(meeting, reminderKey, title) {
   });
 }
 
+// Ключи напоминаний, тосты которых показала эта вкладка. Хост тостов один на всё расширение,
+// поэтому в handleReminderToastClosed прилетает закрытие любого тоста любой фичи: у чужих id
+// проставляет сам PrimeVue — это счётчик с нуля в каждой вкладке, и без проверки по этому набору
+// мы бы записали его в свою карту, а другая вкладка по нему закрыла бы посторонний тост с тем же
+// номером. Собственный shownMap для проверки не годится: неведущая вкладка показывает тост по
+// сообщению из канала, а запись ведущей приходит к ней позже, через chrome.storage.onChanged
+const shownToastKeys = new Set();
+
 // id тоста — это же ключ напоминания (meetingId+offset[+дата]), уникален глобально благодаря
 // UUID встречи. Без life — тост не скрывается сам, висит до ручного закрытия (тут это
 // осознанное решение, а не забытый таймер)
-function showReminderToast(meeting, reminderKey, title) {
+function showReminderToast({reminderKey, title, link}) {
+  shownToastKeys.add(reminderKey);
   showToast({
     id: reminderKey,
     severity: 'warn',
     summary: title,
-    links: meeting.link ? [{url: meeting.link, label: 'Присоединиться'}] : [],
+    links: link ? [{url: link, label: 'Присоединиться'}] : [],
   });
+}
+
+// Тост — единственная поверхность напоминания, которую показывают все открытые вкладки сразу:
+// дубли всплывающего уведомления не мешают (в отличие от рингтона и окна), зато оно точно окажется
+// перед глазами. Решение «пора показать» при этом остаётся за ведущей вкладкой — иначе вкладки
+// передрались бы за shownMap, а неведущие увидели бы там «уже показано» и не показали бы ничего
+function broadcastReminderToast(toast) {
+  showReminderToast(toast);
+  presenceChannel.postMessage({type: 'toast', tabId, toast});
 }
 
 // Тост закрыли вручную или он сам скрылся по истечении life — в обоих случаях транслируем
 // это в остальные открытые вкладки через shownMap, чтобы там тоже закрылся тот же тост
 function handleReminderToastClosed(message) {
   const reminderKey = message?.id;
-  // Хост тостов один на всё расширение, поэтому сюда прилетает закрытие любого тоста любой фичи.
-  // У чужих тостов id проставляет сам PrimeVue — это счётчик с нуля в каждой вкладке, и без
-  // проверки ниже мы бы записали его в свою карту, а другая вкладка по нему закрыла бы
-  // собственный посторонний тост с тем же номером. Свои ключи — строки, уже лежащие в shownMap
-  if (typeof reminderKey !== 'string' || !shownMap.value[reminderKey]) return;
+  if (typeof reminderKey !== 'string' || !shownToastKeys.has(reminderKey)) return;
 
   const dismissedKey = getToastDismissedKey(reminderKey);
   if (shownMap.value[dismissedKey]) return;
@@ -223,7 +276,19 @@ function persistActiveReminders(next) {
   chrome.storage.local.set({[ACTIVE_REMINDERS_STORAGE_KEY]: toRaw(next)});
 }
 
+// Вызовы выстраиваются в очередь: ensureFreshPresence() внутри уходит в ожидание hello-раунда,
+// и без очереди второй вызов, попавший в это окно, прочитал бы тот же shownMap — одно напоминание
+// показалось бы дважды и дважды разослалось по остальным вкладкам
+let evaluateQueue = Promise.resolve();
+
 function evaluate() {
+  evaluateQueue = evaluateQueue.then(runEvaluate).catch((error) => console.warn(error));
+  return evaluateQueue;
+}
+
+async function runEvaluate() {
+  await ensureFreshPresence();
+
   const result = evaluateMeetings({
     meetings: meetings.value,
     shownMap: shownMap.value,
@@ -231,8 +296,9 @@ function evaluate() {
     now: new Date(),
   });
 
-  // Показывает и фиксирует напоминание только ведущая вкладка — иначе на нескольких открытых
-  // вкладках Bitrix одно напоминание задвоилось бы (рингтон/модалка/тост на каждую)
+  // Решает и фиксирует напоминание только ведущая вкладка — иначе на нескольких открытых вкладках
+  // Bitrix рингтон и окно задвоились бы, а запись в shownMap ушла бы в гонку. Тост из этого правила
+  // выведен: его ведущая рассылает остальным (см. broadcastReminderToast)
   if (!isLeaderView.value) return;
 
   if (result.meetingsChanged) {
@@ -253,7 +319,7 @@ function evaluate() {
     const title = getReminderTitle(meeting, {remainingMinutes, elapsedMinutes});
 
     if (settings.value.browserNotificationEnabled) sendBrowserNotification(meeting, reminderKey, title);
-    if (settings.value.toastEnabled) showReminderToast(meeting, reminderKey, title);
+    if (settings.value.toastEnabled) broadcastReminderToast({reminderKey, title, link: meeting.link ?? ''});
 
     if (!settings.value.modalEnabled) return;
 
@@ -335,9 +401,9 @@ let unsubscribeToastClosed = null;
 
 onMounted(async () => {
   await loadState();
-  presenceChannel.addEventListener('message', handlePresenceMessage);
+  presenceChannel.addEventListener('message', handleTabMessage);
   await joinPresence();
-  evaluate();
+  await evaluate();
 
   pollIntervalId = setInterval(evaluate, POLL_INTERVAL_MS);
   presenceIntervalId = setInterval(() => announcePresence('presence'), PRESENCE_HEARTBEAT_MS);

@@ -22,12 +22,15 @@ import {
   BBCODE_URL_LABELED_RE,
   BBCODE_URL_PLAIN_RE,
   BBCODE_USER_RE,
+  FIRST_LINK_RE,
+  HTML_IMG_TAG_RE,
   OUTSIDE_HTML_TAG_LOOKAHEAD,
   SYSTEM_COMMENT_PHRASES,
   TAGALL_LEADING_RE,
   TAGALL_NAMED_OUTSIDE_TAG_RE,
   TAGALL_NAMED_RE,
   TAGALL_TOKEN,
+  TRAILING_PUNCTUATION_RE,
 } from './patterns.js';
 
 /**
@@ -142,6 +145,22 @@ export function getTagallCommentText(suffix, mention = TAGALL_TOKEN) {
   const withoutLeadingTagall = (suffix ?? '').trim().replace(TAGALL_LEADING_RE, '');
   const normalizedSuffix = withoutLeadingTagall.trim().replace(/^[,\s]+/, '') || 'на проде';
   return `${mention}, ${normalizedSuffix}`;
+}
+
+/**
+ * Первая ссылка из текста задачи — описание приходит и в BBCode, и в HTML, поэтому учитываются оба
+ * формата и просто адрес в тексте. Картинки не считаются ссылкой и вырезаются до поиска.
+ * @param {string} text - сырой текст описания задачи
+ * @returns {string} адрес первой ссылки или пустая строка, если ссылок нет
+ */
+export function getFirstLink(text) {
+  if (typeof text !== 'string' || !text) return '';
+
+  const withoutImages = text.replace(BBCODE_IMG_RE, '').replace(HTML_IMG_TAG_RE, '');
+  const match = withoutImages.match(FIRST_LINK_RE);
+  if (!match) return '';
+
+  return (match[1] ?? match[2] ?? match[3] ?? '').trim().replace(TRAILING_PUNCTUATION_RE, '');
 }
 
 /**

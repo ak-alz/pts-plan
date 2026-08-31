@@ -31,7 +31,7 @@ const steps = [
     type: 'multi',
     default: ['notifications'],
     options: [
-      { label: 'Канбан-доска', value: 'kanban', description: 'Доска задач с колонками по стадиям', features: ['taskSearch', 'quickTask', 'kanbanCommitButton', 'tagallButton'] },
+      { label: 'Канбан-доска', value: 'kanban', description: 'Доска задач с колонками по стадиям', features: ['taskSearch', 'quickTask', 'kanbanCommitButton', 'tagallButton', 'taskStageSelect'] },
       { label: 'Панель уведомлений', value: 'notifications', description: 'Колокольчик, всплывающие оповещения Битрикса и страница всех уведомлений', features: ['notificationDetails', 'removeSystemNotifications', 'closeNotifications', 'removeNotifications', 'browserNotifications', 'alertPage'] },
       { label: 'Работа с задачами и комментариями', value: 'automation', description: 'Автовыбор при упоминании через «+», наблюдатели по умолчанию при создании задачи, автоподстановка названия подзадачи, исправление багов Bitrix, действия в новой вкладке, название группы во вкладке браузера', features: ['autoChoiceUser', 'autoAuditor', 'autoTaskTitle', 'bitrixBugfixes', 'openInNewTab', 'groupTitle'] },
     ],

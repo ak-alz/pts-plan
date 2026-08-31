@@ -119,6 +119,8 @@ function onSubmit() {
       </MultiSelect>
     </div>
 
+    <slot name="options" />
+
     <div>
       <Button
         label="Создать задачи"

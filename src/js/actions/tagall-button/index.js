@@ -1,6 +1,10 @@
 import BitrixApi from '../../BitrixApi.js';
+import {insertCommentText} from '../../commentEditorBridge.js';
+import {REVIEW_LINK_PLACEHOLDER_RE, REVIEW_LINK_WITH_SEPARATORS_RE} from '../../patterns.js';
 import {showToast} from '../../toastHost/showToast.js';
-import {getTagallCommentText, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getFirstLink, getTagallCommentText, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
+
+const DEFAULT_REVIEW_TEMPLATE = 'готово, можно проверять - {FIRST_LINK}';
 
 /**
  * Имя пользователя по ID. Кэш нужен канбану — там имена постановщиков повторяются от карточки
@@ -24,7 +28,7 @@ export function tagallButton(sessionId, options) {
   if (options?.tagallButtonKanban) {
     setupKanbanButton(bitrixApi, commentSuffix, authorOnly);
   }
-  setupTaskCommentButton(bitrixApi, commentSuffix, authorOnly);
+  setupTaskCommentButton(bitrixApi, options);
 }
 
 function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
@@ -68,14 +72,17 @@ function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
       // Постановщик не определён (ошибка запроса или задача без CREATED_BY) — тегать некого
       if (authorOnly && !createdBy) return;
 
+      const userName = authorOnly ? userNameCache.get(createdBy) : '';
       const commentText = authorOnly
-        ? getTagallCommentText(commentSuffix, `[USER=${createdBy}]${userNameCache.get(createdBy)}[/USER]`)
+        ? getTagallCommentText(commentSuffix, `[USER=${createdBy}]${userName}[/USER]`)
         : getTagallCommentText(commentSuffix);
+      // В интерфейсе показываем имя, а не BBCode-обёртку вокруг него: она нужна только редактору
+      const displayText = authorOnly ? getTagallCommentText(commentSuffix, userName) : commentText;
 
       const button = Object.assign(document.createElement('button'), {
         className: 'tagall-button',
         type: 'button',
-        title: `Опубликовать комментарий: «${commentText}»`,
+        title: `Опубликовать комментарий: «${displayText}»`,
         innerHTML: '<i class="pi pi-check-circle"></i>',
       });
 
@@ -93,7 +100,7 @@ function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
 
           button.classList.add('tagall-button--success');
           button.title = 'Комментарий уже опубликован — обновите страницу, чтобы отправить ещё раз';
-          showToast({severity: 'success', summary: 'Комментарий опубликован', detail: commentText, life: 3000});
+          showToast({severity: 'success', summary: 'Комментарий опубликован', detail: displayText, life: 3000});
           return;
         } catch (error) {
           console.warn(error);
@@ -115,46 +122,109 @@ function setupKanbanButton(bitrixApi, commentSuffix, authorOnly) {
   rehydrateOnChanges(addKanbanButtons, kanbanGrid);
 }
 
-// Комментарий рендерится в rich-text iframe (Bitrix "LHE"-редактор) — вставляем через
-// execCommand в его contentDocument, тот же приём, что использует сам редактор для bold/italic.
-// Если текст уже вставлен (повторный клик), не дублируем его.
-function insertTextIntoEditor(form, text) {
+// Вставляем через мост в main world: только сам редактор умеет разобрать BBCode упоминания
+// ([USER=123]Имя[/USER]) и зарегистрировать его у себя — вставленный со стороны текст остался бы
+// в комментарии тегом как есть. Фолбэк на случай, когда моста не хватило: rich-text iframe
+// (Bitrix "LHE"-редактор) и execCommand в его contentDocument, тот же приём, что использует сам
+// редактор для bold/italic.
+//
+// В фолбэк уходит displayText — с именем вместо BBCode. Упоминания из него не выйдет, зато и
+// разметки в опубликованном комментарии не будет: execCommand кладёт строку как обычный текст,
+// и в визуальном режиме [USER=123] уехало бы в комментарий буквально. По нему же идёт проверка
+// на повторную вставку: сравнивать надо с тем, что видно в редакторе, — если мост успел вставить
+// упоминание и лишь потом отвалился по таймауту, в iframe лежит отрисованное имя, и проверка
+// сойдётся, а не добавит текст вторым куском.
+async function insertTextIntoEditor(form, text, displayText) {
+  if (await insertCommentText(form, text)) return;
+
   const iframeDocument = form.querySelector('.bx-editor-iframe')?.contentDocument;
   if (!iframeDocument?.body) return;
 
-  if (iframeDocument.body.textContent.includes(text)) return;
+  if (iframeDocument.body.textContent.includes(displayText)) return;
 
   iframeDocument.body.focus();
-  iframeDocument.execCommand('insertText', false, text);
+  iframeDocument.execCommand('insertText', false, displayText);
 }
 
-async function setupTaskCommentButton(bitrixApi, commentSuffix, authorOnly) {
+/**
+ * Текст кнопки «готово, можно проверять» из пользовательского шаблона. Ссылки в описании может
+ * не быть — тогда переменная уходит вместе с прилегающими разделителями. Шаблон при этом может
+ * свестись к пустой строке (например, если он состоит из одной переменной), и это валидный ответ:
+ * вставлять нечего, кнопку показывать не за чем.
+ */
+function renderReviewText(template, link) {
+  const source = template?.trim() || DEFAULT_REVIEW_TEMPLATE;
+
+  // Ссылка подставляется функцией, а не строкой: в строке замены `$&`, `$'` и прочие `$`-подстановки
+  // раскрылись бы, а в адресе `$` — обычный символ
+  if (link) return source.replace(REVIEW_LINK_PLACEHOLDER_RE, () => link).trim();
+
+  return source.replace(REVIEW_LINK_WITH_SEPARATORS_RE, ' ').trim();
+}
+
+async function setupTaskCommentButton(bitrixApi, options) {
   const ids = getTaskIdFromUrl(window.location.href);
   if (!ids?.taskId) return;
 
   const commentsBlock = document.querySelector('.feed-comments-block');
   if (!commentsBlock) return;
 
-  let commentText;
-  if (authorOnly) {
-    try {
-      const {data} = await bitrixApi.getTask(ids.taskId, ['CREATED_BY']);
-      const createdBy = data?.result?.task?.createdBy;
-      if (!createdBy) return; // постановщик неизвестен — вставлять нечего
+  const commentSuffix = options?.tagallButtonSuffix;
+  const authorOnly = options?.tagallButtonAuthorOnly;
+  const withReviewButton = options?.tagallButtonReview;
 
-      const userName = await resolveUserName(bitrixApi, createdBy);
-      commentText = getTagallCommentText(commentSuffix, `[USER=${createdBy}]${userName}[/USER]`);
+  let mention = '';
+  // Имя постановщика без BBCode-обёртки: та нужна только редактору, в интерфейсе показываем имя
+  let mentionName = '';
+  let description = '';
+
+  // Постановщик нужен обеим кнопкам, которые его тегают, описание — только кнопке «можно проверять»
+  if (authorOnly || withReviewButton) {
+    try {
+      const select = withReviewButton ? ['CREATED_BY', 'DESCRIPTION'] : ['CREATED_BY'];
+      const {data} = await bitrixApi.getTask(ids.taskId, select);
+      const createdBy = data?.result?.task?.createdBy;
+      description = data?.result?.task?.description ?? '';
+
+      if (createdBy) {
+        const userName = await resolveUserName(bitrixApi, createdBy);
+        mention = `[USER=${createdBy}]${userName}[/USER]`;
+        mentionName = userName;
+      }
     } catch (error) {
       console.warn(error);
-      return;
     }
-  } else {
-    commentText = getTagallCommentText(commentSuffix);
   }
+
+  const buttons = [];
+
+  // Постановщик не определён (ошибка запроса или задача без CREATED_BY) — тегать некого
+  if (!authorOnly || mention) {
+    buttons.push({
+      icon: 'pi-check-circle',
+      text: authorOnly ? getTagallCommentText(commentSuffix, mention) : getTagallCommentText(commentSuffix),
+      displayText: authorOnly ? getTagallCommentText(commentSuffix, mentionName) : getTagallCommentText(commentSuffix),
+    });
+  }
+
+  if (withReviewButton && mention) {
+    const reviewText = renderReviewText(options?.tagallButtonReviewText, getFirstLink(description));
+    // Пустой шаблон в getTagallCommentText нельзя: он подставил бы свой фолбэк «на проде», и кнопка
+    // «готово, можно проверять» вставила бы совсем не тот комментарий
+    if (reviewText) {
+      buttons.push({
+        icon: 'pi-eye',
+        text: getTagallCommentText(reviewText, mention),
+        displayText: getTagallCommentText(reviewText, mentionName),
+      });
+    }
+  }
+
+  if (!buttons.length) return;
 
   function addCommentButtons() {
     // .bx-b-pixeplus-tag-all — нативная кнопка тегания всех участников в тулбаре редактора комментария,
-    // рядом с ней располагаем свою
+    // рядом с ней располагаем свои
     const tagAllIcons = commentsBlock.querySelectorAll('.bx-b-pixeplus-tag-all');
 
     tagAllIcons.forEach((tagAllIcon) => {
@@ -166,18 +236,24 @@ async function setupTaskCommentButton(bitrixApi, commentSuffix, authorOnly) {
       const form = toolbarItem.closest('.feed-add-post');
       if (!form) return;
 
-      const button = Object.assign(document.createElement('div'), {
-        className: 'tagall-comment-button',
-        title: `Вставить «${commentText}»`,
-        innerHTML: '<i class="pi pi-check-circle"></i>',
-      });
+      // Каждая следующая кнопка встаёт за предыдущей — иначе порядок в тулбаре был бы обратным
+      let previousElement = toolbarItem;
 
-      button.addEventListener('click', (event) => {
-        event.stopPropagation();
-        insertTextIntoEditor(form, commentText);
-      });
+      buttons.forEach(({icon, text, displayText}) => {
+        const button = Object.assign(document.createElement('div'), {
+          className: 'tagall-comment-button',
+          title: `Вставить «${displayText}»`,
+          innerHTML: `<i class="pi ${icon}"></i>`,
+        });
 
-      toolbarItem.insertAdjacentElement('afterend', button);
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          insertTextIntoEditor(form, text, displayText).catch((error) => console.warn(error));
+        });
+
+        previousElement.insertAdjacentElement('afterend', button);
+        previousElement = button;
+      });
     });
   }
 

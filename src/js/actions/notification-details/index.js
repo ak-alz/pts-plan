@@ -30,6 +30,7 @@ import {NOTIF_TYPES} from './notifTypes.js';
 const SELECTORS = {
   container: '.bx-im-content-notification__elements',
   newItem: '.bx-im-content-notification-item__container[data-id]:not([data-pts-details])',
+  errorItem: '.bx-im-content-notification-item__container[data-pts-details="error"]',
   anyItem: '.bx-im-content-notification-item__container',
   taskLink: 'a[href*="/tasks/task/view/"]',
   titleContainer: '.bx-im-content-notification-item-header__title-container',
@@ -44,6 +45,17 @@ const DEFAULT_STAGE_COLOR = '#888888';
 
 // Защита от бесконечной подгрузки, если у выбранной группы никогда не наберётся достаточно уведомлений
 const FILTER_LOAD_MORE_MAX_ATTEMPTS = 30;
+
+// Отсутствие задачи в ответе батча неотличимо от сбоя: лимиты Bitrix, обрыв сети и сон машины
+// отдают ровно такой же пустой результат, как удалённая или недоступная задача. Поэтому провал
+// считаем временным и перезапрашиваем задачу, но ограниченное число раз
+const TASK_FETCH_MAX_ATTEMPTS = 2;
+
+// Контрольный прогон после того, который оставил необработанные карточки: своей мутации DOM может
+// больше не быть, а window focus (см. rehydrateOnChanges) не приходит, если окно фокус не теряло —
+// именно так выглядит долгое отсутствие за компьютером
+const RETRY_PASS_DELAY_MS = 3000;
+const RETRY_PASS_MAX_ATTEMPTS = 3;
 
 const BASE_CSS = `
   .bx-im-content-notification-item-header__title-container {
@@ -248,6 +260,14 @@ export function notificationDetails(sessionId, options = {}) {
     stageGroups: new Set(), // groupId, для которых стадии уже загружены
     authorAvatars: new Map(), // имя автора → URL аватара, ключом служит имя за отсутствием ID
   };
+
+  // taskId → число неудачных попыток загрузки. Пока попытки не кончились, ни null в cache.tasks,
+  // ни метка data-pts-details не фиксируются: с ними карточка навсегда выпала бы из выборки новых
+  // (SELECTORS.newItem) и осталась бы без подсветки и меток до перезагрузки страницы
+  const taskFetchAttempts = new Map();
+
+  let retryPassAttempts = 0;
+  let retryPassTimer = null;
 
   const FILTER_STYLE_ID = 'pts-nd-active-filters';
   const FILTER_STATE_STORAGE_KEY = 'notification-details-filter';
@@ -603,12 +623,65 @@ export function notificationDetails(sessionId, options = {}) {
     }));
   }
 
+  /**
+   * Отмечает неудачную попытку загрузки задачи.
+   * @param {string} taskId
+   * @returns {boolean} `true`, если попытки ещё остались и провал считается временным.
+   */
+  function registerFailedTaskFetch(taskId) {
+    const attempts = (taskFetchAttempts.get(taskId) ?? 0) + 1;
+    taskFetchAttempts.set(taskId, attempts);
+    return attempts < TASK_FETCH_MAX_ATTEMPTS;
+  }
+
+  function scheduleRetryPass() {
+    if (retryPassTimer || retryPassAttempts >= RETRY_PASS_MAX_ATTEMPTS) return;
+
+    retryPassAttempts += 1;
+    retryPassTimer = setTimeout(() => {
+      retryPassTimer = null;
+      init();
+    }, RETRY_PASS_DELAY_MS);
+  }
+
+  // Амнистия окончательных провалов: сеть вернулась или пользователь вернулся к вкладке — прошлый
+  // отказ уже ничего не говорит о задачах. Снимаем терминальные метки и негативный кэш, чтобы
+  // карточки прошли обработку заново
+  function retryFailedItems() {
+    const failedElements = [...document.querySelectorAll(SELECTORS.errorItem)];
+    // Терминальных карточек может не быть, а исчерпанный бюджет контрольных прогонов — остаться:
+    // тогда карточка, снявшая метку под повтор, больше не дождётся ни прогона, ни этой амнистии
+    const hasFailures = failedElements.length
+      || taskFetchAttempts.size
+      || retryPassAttempts
+      || [...cache.tasks.values()].some((task) => !task);
+    if (!hasFailures) return;
+
+    failedElements.forEach((element) => element.removeAttribute('data-pts-details'));
+    [...cache.tasks].forEach(([taskId, task]) => {
+      if (!task) cache.tasks.delete(taskId);
+    });
+    taskFetchAttempts.clear();
+    retryPassAttempts = 0;
+    init();
+  }
+
   // Двухфазная батч-загрузка: задачи, затем связанные группы, стадии и пользователи
   async function loadDetails(taskIds) {
     const uncachedTaskIds = taskIds.filter((id) => !cache.tasks.has(id));
     if (uncachedTaskIds.length) {
       const fetched = await bitrixApi.getTasksByIdsBatch(uncachedTaskIds);
-      uncachedTaskIds.forEach((id) => cache.tasks.set(id, fetched[id] ?? null));
+      uncachedTaskIds.forEach((id) => {
+        const task = fetched[id];
+        if (task) {
+          cache.tasks.set(id, task);
+          taskFetchAttempts.delete(id);
+          return;
+        }
+
+        // null в кэш — только когда попытки кончились: иначе следующий прогон перезапросит задачу
+        if (!registerFailedTaskFetch(id)) cache.tasks.set(id, null);
+      });
     }
 
     const tasks = taskIds.map((id) => cache.tasks.get(id)).filter(Boolean);
@@ -836,9 +909,17 @@ export function notificationDetails(sessionId, options = {}) {
 
   function renderItem({el, skeleton, taskId}) {
     skeleton.remove();
-    el.setAttribute('data-pts-details', 'done');
 
     const task = cache.tasks.get(taskId);
+
+    // Задача не пришла, но попытки ещё остались: метку не ставим — карточка снова попадёт
+    // в выборку новых и получит подсветку с метками на контрольном прогоне
+    if (!task && !cache.tasks.has(taskId)) {
+      el.removeAttribute('data-pts-details');
+      return;
+    }
+
+    el.setAttribute('data-pts-details', 'done');
     if (!task) return;
 
     el.setAttribute('data-pts-group', task.groupId || '0');
@@ -890,8 +971,16 @@ export function notificationDetails(sessionId, options = {}) {
         await loadDetails(taskItems.map((item) => item.taskId));
         taskItems.forEach(renderItem);
       } catch {
-        taskItems.forEach(({el, skeleton}) => {
+        taskItems.forEach(({el, skeleton, taskId}) => {
           skeleton.remove();
+
+          // Запрос упал целиком (лимит Bitrix, обрыв сети, сон машины). Пока попытки не кончились,
+          // метку снимаем: с терминальным 'error' карточка навсегда осталась бы сырой
+          if (registerFailedTaskFetch(taskId)) {
+            el.removeAttribute('data-pts-details');
+            return;
+          }
+
           el.setAttribute('data-pts-details', 'error');
         });
       }
@@ -911,6 +1000,15 @@ export function notificationDetails(sessionId, options = {}) {
     // Проверяем даже когда новых карточек не было — например, сразу после выбора фильтра
     // или когда предыдущая попытка подгрузки ничего не добавила (см. maybeTriggerFilterLoadMore)
     maybeTriggerFilterLoadMore(container);
+
+    // Остались непомеченные карточки — либо загрузка провалилась и метка снята под повтор, либо
+    // Bitrix добавил их, пока наблюдатель был отключён на время этого прогона (rehydrateOnChanges
+    // не буферизует мутации). Ни того, ни другого следующая мутация может не исправить — сверяемся сами
+    if (container.querySelector(SELECTORS.newItem)) {
+      scheduleRetryPass();
+    } else {
+      retryPassAttempts = 0;
+    }
   }
 
   injectStyles();
@@ -940,4 +1038,9 @@ export function notificationDetails(sessionId, options = {}) {
       },
     },
   );
+
+  window.addEventListener('online', retryFailedItems);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') retryFailedItems();
+  });
 }

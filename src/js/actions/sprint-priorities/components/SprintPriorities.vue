@@ -7,6 +7,7 @@ import { backgroundFetch } from '../../../backgroundFetch.js';
 import BitrixApi from '../../../BitrixApi.js';
 import { showToast } from '../../../toastHost/showToast.js';
 import { getTaskIdFromUrl, getTaskPointsFromName, getTaskUrl, simplifyColumnName } from '../../../utils.js';
+import { buildCacheSignature, clearCache, getCacheSizeBytes, loadCache, saveCache } from '../cache.js';
 import SettingsForm from './SettingsForm.vue';
 import TeamPoints from './TeamPoints.vue';
 
@@ -48,6 +49,8 @@ const isTasksLoading = ref(false);
 const isTeamLoading = ref(false);
 const isLoading = computed(() => isSheetLoading.value || isTasksLoading.value);
 const dateUpdated = ref(null);
+const cachedAt = ref(null);
+const cacheSizeBytes = ref(0);
 const isSettingsModalOpened = ref(false);
 
 const REFRESH_STORAGE_KEY = 'sprint-priorities-last-refresh';
@@ -75,6 +78,19 @@ const visibleColumnKeys = computed(() => {
   const configured = settings.value?.visibleColumns
     ?? CONFIGURABLE_COLUMNS.map((column) => column.key).filter((key) => !DEFAULT_HIDDEN_COLUMNS.includes(key));
   return [...LOCKED_COLUMN_KEYS, ...configured];
+});
+
+const cacheSignature = computed(() => buildCacheSignature(settings.value, visibleColumnKeys.value));
+
+const cacheSizeLabel = computed(() => {
+  const kilobytes = cacheSizeBytes.value / 1024;
+  return kilobytes >= 1024 ? `${(kilobytes / 1024).toFixed(1)} МБ` : `${Math.round(kilobytes)} КБ`;
+});
+
+const cachedAtLabel = computed(() => {
+  if (!cachedAt.value) return '';
+  const savedAt = dayjs(cachedAt.value);
+  return savedAt.isSame(dayjs(), 'day') ? savedAt.format('HH:mm') : savedAt.format('DD.MM HH:mm');
 });
 
 const stageOptions = computed(() => {
@@ -166,6 +182,51 @@ async function restoreMarkedRow() {
 async function loadSettings() {
   const stored = await chrome.storage.local.get([settingsStorageKey.value]);
   settings.value = stored[settingsStorageKey.value] ?? null;
+}
+
+async function refreshCacheSize() {
+  cacheSizeBytes.value = await getCacheSizeBytes(props.groupId);
+}
+
+async function resetCache() {
+  await clearCache(props.groupId);
+  await refreshCacheSize();
+  showToast({
+    severity: 'success',
+    summary: 'Кэш очищен',
+    detail: 'Сохранённый результат удалён. При следующем открытии таблица дождётся загрузки.',
+    life: 5000,
+  });
+}
+
+async function restoreFromCache() {
+  const cache = await loadCache(props.groupId, cacheSignature.value);
+  if (!cache) return;
+
+  sheetRows.value = cache.sheetRows ?? [];
+  enrichedRows.value = cache.enrichedRows ?? [];
+  teamRows.value = cache.teamRows ?? [];
+  teamTasksRaw.value = cache.teamTasksRaw ?? [];
+  groupUsers.value = cache.groupUsers ?? [];
+  groupStages.value = cache.groupStages ?? [];
+  cachedAt.value = cache.savedAt;
+  await restoreMarkedRow();
+}
+
+async function persistCache() {
+  if (!settings.value?.sheetUrl || !enrichedRows.value.length) return;
+  // На экране всё ещё прошлый результат — загрузка не дошла до конца, перезаписывать его нечем
+  if (cachedAt.value) return;
+
+  await saveCache(props.groupId, cacheSignature.value, {
+    sheetRows: sheetRows.value,
+    enrichedRows: enrichedRows.value,
+    teamRows: teamRows.value,
+    teamTasksRaw: teamTasksRaw.value,
+    groupUsers: groupUsers.value,
+    groupStages: groupStages.value,
+  });
+  await refreshCacheSize();
 }
 
 async function fetchGroupMeta() {
@@ -322,6 +383,7 @@ async function fetchTasksData() {
 
     await restoreMarkedRow();
     dateUpdated.value = `Обновлено: ${dayjs().format('HH:mm:ss')}`;
+    cachedAt.value = null;
   } catch (error) {
     console.warn(error);
     showToast({
@@ -414,6 +476,7 @@ async function fetchSheetRows() {
 }
 
 async function fetchAll() {
+  cachedAt.value = null;
   sheetRows.value = [];
   enrichedRows.value = [];
   teamRows.value = [];
@@ -438,6 +501,7 @@ async function onSaveSettings() {
   await loadSettings();
   stageFilter.value = settings.value?.defaultStageFilter ?? [];
   await Promise.all([fetchSheetRows(), fetchTeamPoints()]);
+  await persistCache();
 }
 
 async function fetchTasksAndTeam() {
@@ -462,10 +526,15 @@ const refreshMenuItems = refreshActions.map((action) => ({
   command: () => selectRefreshAction(action),
 }));
 
+async function runRefresh(action) {
+  await action.command();
+  await persistCache();
+}
+
 function selectRefreshAction(action) {
   lastRefreshKey.value = action.key;
   chrome.storage.local.set({ [REFRESH_STORAGE_KEY]: action.key });
-  action.command();
+  runRefresh(action);
 }
 
 onMounted(async () => {
@@ -474,7 +543,10 @@ onMounted(async () => {
   lastRefreshKey.value = storedRefresh[REFRESH_STORAGE_KEY] ?? 'all';
   stageFilter.value = settings.value?.defaultStageFilter ?? [];
   if (settings.value?.sheetUrl) {
+    // Сохранённый результат рисуем сразу, свежие данные догружаются следом и заменяют его
+    await Promise.all([restoreFromCache(), refreshCacheSize()]);
     await Promise.all([fetchGroupMeta(), fetchSheetRows(), fetchTeamPoints()]);
+    await persistCache();
   } else {
     await fetchGroupMeta();
   }
@@ -496,6 +568,16 @@ onMounted(async () => {
         variant="text"
         @click="isSettingsModalOpened = true"
       />
+      <Button
+        v-if="cacheSizeBytes > 0"
+        v-tooltip="'Виджет запоминает последний показанный результат, чтобы при открытии таблица не стояла пустой. Кнопка удаляет его для этого канбана — на экране всё останется, но следующее открытие снова будет ждать загрузки.'"
+        :label="`Сбросить кэш (${cacheSizeLabel})`"
+        size="small"
+        severity="secondary"
+        icon="pi pi-trash"
+        variant="text"
+        @click="resetCache"
+      />
       <SplitButton
         v-tooltip="dateUpdated"
         :label="activeRefreshAction.label"
@@ -506,7 +588,7 @@ onMounted(async () => {
         size="small"
         severity="secondary"
         outlined
-        @click="activeRefreshAction.command()"
+        @click="runRefresh(activeRefreshAction)"
       />
       <Button
         v-tooltip="'Открыть Google Таблицу'"
@@ -519,13 +601,19 @@ onMounted(async () => {
         severity="secondary"
         variant="text"
       />
+      <span
+        v-if="cachedAt"
+        class="text-xs text-surface-500 dark:text-surface-400"
+      >
+        Сохранённые данные от {{ cachedAtLabel }}{{ isLoading ? ' — обновляем…' : '' }}
+      </span>
     </div>
 
     <TeamPoints
       v-if="settings.showTeamPoints"
       :rows="teamRows"
       :selected-stages="teamSelectedStages"
-      :loading="isTeamLoading"
+      :loading="isTeamLoading && !teamRows.length"
       :hide-user-avatar="settings.hideUserAvatar"
       class="mb-4"
       @cell-click="onTeamCellClick"
@@ -566,7 +654,7 @@ onMounted(async () => {
     <DataTable
       v-model:first="firstRow"
       :value="filteredRows"
-      :loading="isLoading"
+      :loading="isLoading && !enrichedRows.length"
       data-key="taskId"
       size="small"
       row-hover

@@ -82,9 +82,12 @@ watch(
   (opts) => {
     const seen = new Set();
     const result = [];
+    // Наверх выносим только зависимости из других групп: тумблер соседа по этому же списку и так
+    // отрисован на своём месте, и без проверки он показался бы дважды
+    const localKeys = new Set(opts.map((option) => option.key));
     for (const option of opts) {
       for (const needed of missingNeeds(option)) {
-        if (!seen.has(needed.key)) {
+        if (!seen.has(needed.key) && !localKeys.has(needed.key)) {
           seen.add(needed.key);
           result.push(needed);
         }
@@ -245,6 +248,12 @@ watch(
         :option-key="option.key"
         :author="option.author"
       />
+    </div>
+    <div
+      v-if="option.hint"
+      class="text-xs text-surface-500 dark:text-surface-400"
+    >
+      {{ option.hint }}
     </div>
     <div
       v-if="option.settingsUrl && model[option.key]"
