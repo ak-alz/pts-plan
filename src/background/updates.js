@@ -1,15 +1,18 @@
-function compareVersions(a, b) {
-  const aParts = a.split('.').map((part) => parseInt(part, 10) || 0);
-  const bParts = b.split('.').map((part) => parseInt(part, 10) || 0);
-  const length = Math.max(aParts.length, bParts.length);
+import {INSTALLED_VERSION_STORAGE_KEY} from '../js/installInfo.js';
+import {compareVersions} from '../js/utils.js';
 
-  for (let i = 0; i < length; i++) {
-    const diff = (aParts[i] || 0) - (bParts[i] || 0);
-    if (diff !== 0) return diff;
-  }
+// С какой версии пользователь начал пользоваться расширением — от неё считаются новые опции
+// (красные точки в попапе). При обновлении точной версии установки уже не узнать: берём ту, с
+// которой обновились, — всё, что появилось позже неё, пользователь точно ещё не видел
+chrome.runtime.onInstalled.addListener(async (details) => {
+  if (details.reason !== 'install' && details.reason !== 'update') return;
 
-  return 0;
-}
+  const stored = await chrome.storage.local.get([INSTALLED_VERSION_STORAGE_KEY]);
+  if (stored[INSTALLED_VERSION_STORAGE_KEY]) return;
+
+  const installedVersion = details.reason === 'install' ? chrome.runtime.getManifest().version : details.previousVersion;
+  if (installedVersion) await chrome.storage.local.set({[INSTALLED_VERSION_STORAGE_KEY]: installedVersion});
+});
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason !== 'install') return;

@@ -7,7 +7,8 @@ import { createWidgetCache } from '../../widgetCache.js';
  */
 const cache = createWidgetCache({
   keyPrefix: 'sprint-priorities-cache-',
-  version: 1,
+  // 2 — у строк всегда есть исполнитель с ID (фильтр и распределение приоритетов), даже при скрытой колонке
+  version: 2,
   maxAgeDays: 7,
   // Список задач команды — самая тяжёлая часть и нужен только для окна со списком задач исполнителя
   trimPayload: (payload) => ({...payload, teamTasksRaw: []}),

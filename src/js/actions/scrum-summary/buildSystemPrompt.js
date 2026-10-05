@@ -44,16 +44,23 @@ export function buildPromptPreview(ignorePoints, dateRange, extraContext) {
   return buildSystemPrompt(previewData, previewIgnorePoints, null, previewContext, periodLabelChip);
 }
 
-export function buildSystemPrompt(aiData, ignorePoints, dateRange, extraContext = '', periodLabelOverride = null) {
+// Подпись периода для промпта: «N дней (начало — конец)». Нужна и стандартному промпту, и своим
+// шаблонам из библиотеки промптов (переменная period)
+export function buildPeriodLabel(dateRange) {
   const [dateFrom, dateTo] = dateRange ?? [];
-  const _start = dayjs(dateFrom);
-  const _end = dayjs(dateTo);
-  const durationDays = (_start.isValid() && _end.isValid()) ? _end.diff(_start, 'day') + 1 : null;
-  const periodLabel = periodLabelOverride ?? (dateFrom && dateTo
-    ? (durationDays !== null
+  const start = dayjs(dateFrom);
+  const end = dayjs(dateTo);
+  const durationDays = (start.isValid() && end.isValid()) ? end.diff(start, 'day') + 1 : null;
+  if (dateFrom && dateTo) {
+    return durationDays !== null
       ? `${durationDays} ${pluralize(durationDays, ['день', 'дня', 'дней'])} (${formatDate(dateFrom)} — ${formatDate(dateTo)})`
-      : `${formatDate(dateFrom)} — ${formatDate(dateTo)}`)
-    : (dateFrom ? `с ${formatDate(dateFrom)}` : null));
+      : `${formatDate(dateFrom)} — ${formatDate(dateTo)}`;
+  }
+  return dateFrom ? `с ${formatDate(dateFrom)}` : null;
+}
+
+export function buildSystemPrompt(aiData, ignorePoints, dateRange, extraContext = '', periodLabelOverride = null) {
+  const periodLabel = periodLabelOverride ?? buildPeriodLabel(dateRange);
 
   const extraSection = extraContext?.trim()
     ? `\nДополнительный контекст:\n${extraContext.trim()}\n`

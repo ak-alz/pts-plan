@@ -24,6 +24,8 @@ import {
   BBCODE_USER_RE,
   FIRST_LINK_RE,
   HTML_IMG_TAG_RE,
+  NOTIF_NEW_TASK_RE,
+  NOTIF_NEW_TASK_RESPONSIBLE_RE,
   OUTSIDE_HTML_TAG_LOOKAHEAD,
   SYSTEM_COMMENT_PHRASES,
   TAGALL_LEADING_RE,
@@ -881,7 +883,8 @@ export function markTagallAndMentions(html, firstName, lastName) {
 
 /**
  * Проверяет, упомянут ли пользователь в тексте уведомления.
- * Считается упоминанием: имя+фамилия (в любом порядке) или TAGALL.
+ * Считается упоминанием: имя+фамилия (в любом порядке) или TAGALL. В уведомлении о новой задаче
+ * имя ищется только в строке «Исполнитель:» — соисполнители и наблюдатели упоминанием не считаются.
  * @param {string} text
  * @param {string} firstName
  * @param {string} lastName
@@ -890,9 +893,14 @@ export function markTagallAndMentions(html, firstName, lastName) {
 export function isUserMentioned(text, firstName, lastName) {
   if (!text || !firstName || !lastName) return false;
   if (text.includes('TAGALL')) return true;
-  if (text.includes(`${firstName} ${lastName}`)) return true;
-  if (text.includes(`${lastName} ${firstName}`)) return true;
-  return false;
+
+  const nameVariants = getNameVariants(firstName, lastName);
+  if (NOTIF_NEW_TASK_RE.test(text)) {
+    const responsible = text.match(NOTIF_NEW_TASK_RESPONSIBLE_RE)?.[1];
+    return !!responsible && nameVariants.includes(responsible);
+  }
+
+  return nameVariants.some((name) => text.includes(name));
 }
 
 /**
@@ -904,6 +912,70 @@ export function isUserMentioned(text, firstName, lastName) {
 export function isSystemComment(comment) {
   const text = (comment.POST_MESSAGE || '').toLowerCase();
   return SYSTEM_COMMENT_PHRASES.some((phrase) => text.includes(phrase));
+}
+
+/**
+ * Подпись задачи, которую Bitrix не отдал: нет доступа (задача чужой группы, личная задача
+ * коллеги) или она удалена. Без пометки голое «Задача #123» выглядело как недогруженное название.
+ * @param {string|number} taskId - ID задачи.
+ * @returns {string} Например, `Задача #123 (нет доступа)`.
+ */
+export function getInaccessibleTaskTitle(taskId) {
+  return `Задача #${taskId} (нет доступа)`;
+}
+
+/**
+ * ID корневой задачи: подъём по `parentId` через уже известные задачи (см. `BitrixApi.getAncestorTasks`).
+ * Родитель, которого среди известных нет (нет доступа, не догружен), сам считается корнем — выше
+ * подняться не по чему. Цикл в данных обрывается на задаче, с которой он замкнулся бы.
+ * @param {{id: string|number, parentId?: string|number}} task - Задача, чей корень ищем.
+ * @param {Record<string, {id: string|number, parentId?: string|number}>} tasksById - Известные задачи по ID.
+ * @returns {string} ID корневой задачи (у корневой — её собственный).
+ */
+export function findRootTaskId(task, tasksById) {
+  const visited = new Set([String(task.id)]);
+  let current = task;
+
+  while (true) {
+    const parentId = String(current.parentId ?? 0);
+    if (parentId === '0' || visited.has(parentId)) return String(current.id);
+
+    const parent = tasksById[parentId];
+    if (!parent) return parentId;
+
+    visited.add(parentId);
+    current = parent;
+  }
+}
+
+/**
+ * Сравнивает две версии вида `2.13.0` по числовым частям слева направо; недостающие части — нули.
+ * @param {string} a - Первая версия.
+ * @param {string} b - Вторая версия.
+ * @returns {number} Меньше нуля, если `a` раньше `b`; ноль, если равны; больше нуля, если `a` позже.
+ */
+export function compareVersions(a, b) {
+  const aParts = a.split('.').map((part) => parseInt(part, 10) || 0);
+  const bParts = b.split('.').map((part) => parseInt(part, 10) || 0);
+  const length = Math.max(aParts.length, bParts.length);
+
+  for (let index = 0; index < length; index++) {
+    const difference = (aParts[index] || 0) - (bParts[index] || 0);
+    if (difference !== 0) return difference;
+  }
+
+  return 0;
+}
+
+/**
+ * Размер данных для интерфейса: до мегабайта — в КБ (целыми), дальше — в МБ с одним знаком.
+ * @param {number} bytes - Размер в байтах.
+ * @returns {string} Например, `340 КБ` или `1,2 МБ`.
+ */
+export function formatBytes(bytes) {
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) return `${Math.round(kilobytes)} КБ`;
+  return `${(kilobytes / 1024).toLocaleString('ru', {maximumFractionDigits: 1})} МБ`;
 }
 
 /**

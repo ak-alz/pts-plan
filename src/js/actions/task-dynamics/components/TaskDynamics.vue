@@ -19,7 +19,7 @@ import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFil
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import {computeDefaultCompareRange, getCompareRequestRange, pluralize} from '../../../utils.js';
+import {computeDefaultCompareRange, formatBytes, getCompareRequestRange, pluralize} from '../../../utils.js';
 import {
   clearCache,
   getCacheSizeBytes,
@@ -147,8 +147,7 @@ const pendingConfirmation = ref(null);
 const cacheSizeBytes = ref(0);
 
 const cacheSizeLabel = computed(() => {
-  const kilobytes = cacheSizeBytes.value / 1024;
-  return kilobytes >= 1024 ? `${(kilobytes / 1024).toFixed(1)} МБ` : `${Math.round(kilobytes)} КБ`;
+  return formatBytes(cacheSizeBytes.value);
 });
 
 async function refreshCacheSize() {

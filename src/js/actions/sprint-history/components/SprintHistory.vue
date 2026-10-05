@@ -9,7 +9,7 @@ import { collectStagesFromTasks, groupStagesByGroup } from '../../../personalPla
 import { showToast } from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import { getTaskPointsFromName, isHotfixTask, pluralize } from '../../../utils.js';
+import { findRootTaskId, getInaccessibleTaskTitle, getTaskPointsFromName, isHotfixTask, pluralize } from '../../../utils.js';
 import { getPeriodRange, ROOT_STATUS_OPTIONS } from '../variables.js';
 import GroupedTasksTable from './GroupedTasksTable.vue';
 import SettingsForm from './SettingsForm.vue';
@@ -121,17 +121,16 @@ const allTasksById = computed(() => {
   return map;
 });
 
+// Задачи спринта и догруженные родители — всё, по чему можно подняться к корню
+const knownTasksById = computed(() => ({ ...parentTasksMap.value, ...allTasksById.value }));
+
 const groupedRows = computed(() => {
   const groups = {};
 
   filteredTasks.value.forEach((task) => {
-    const parentId = String(task.parentId ?? 0);
-    const key = parentId !== '0' ? parentId : String(task.id);
-
-    if (!groups[key]) {
-      groups[key] = { key, isOwnRoot: parentId === '0', tasks: [] };
-    }
-    if (parentId !== '0') groups[key].isOwnRoot = false;
+    // Группа — по корню, а не по прямому родителю: у подзадачи второго уровня он сам подзадача
+    const key = findRootTaskId(task, knownTasksById.value);
+    if (!groups[key]) groups[key] = { key, tasks: [] };
     groups[key].tasks.push(task);
   });
 
@@ -148,7 +147,7 @@ const groupedRows = computed(() => {
       }, {}),
     );
 
-    const subtasks = group.tasks.filter((task) => String(task.parentId ?? 0) === group.key);
+    const subtasks = group.tasks.filter((task) => String(task.id) !== group.key);
     const parentIsInTasks = group.tasks.some((task) => String(task.id) === group.key);
     const parentPoints = getTaskPointsFromName(parentData?.title ?? '');
     const totalTaskPoints = group.tasks.reduce((sum, task) => sum + task.points, 0) + (parentIsInTasks ? 0 : parentPoints);
@@ -163,7 +162,9 @@ const groupedRows = computed(() => {
 
     return {
       parentId: group.key,
-      parentTitle: parentData?.title ?? `Задача #${group.key}`,
+      // Корень не нашёлся ни среди задач спринта, ни среди догруженных — Bitrix его не отдал
+      parentTitle: parentData?.title ?? getInaccessibleTaskTitle(group.key),
+      parentAccessible: !!parentData,
       parentClosedDate: parentData?.closedDate || null,
       parentStageId: parentData?.stageId ? String(parentData.stageId) : null,
       responsibles,
@@ -224,18 +225,7 @@ async function refreshPersonalStages() {
 }
 
 async function fetchGroupedData() {
-  const knownIds = new Set(Object.keys(allTasksById.value));
-  const parentIds = [...new Set(
-    allTasks.value
-      .filter((task) => {
-        const parentId = String(task.parentId ?? 0);
-        return parentId !== '0' && !knownIds.has(parentId);
-      })
-      .map((task) => String(task.parentId)),
-  )];
-
-  const parentTasksList = parentIds.length ? await bitrixApi.searchTasks({ ids: parentIds }) : [];
-  parentTasksMap.value = Object.fromEntries(parentTasksList.map((task) => [String(task.id), task]));
+  parentTasksMap.value = await bitrixApi.getAncestorTasks(allTasks.value);
   groupedDataLoaded.value = true;
 
   if (isPersonal.value) await refreshPersonalStages();

@@ -6,8 +6,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { backgroundFetch } from '../../../backgroundFetch.js';
 import BitrixApi from '../../../BitrixApi.js';
 import { showToast } from '../../../toastHost/showToast.js';
-import { getTaskIdFromUrl, getTaskPointsFromName, getTaskUrl, simplifyColumnName } from '../../../utils.js';
+import { formatBytes, getInaccessibleTaskTitle, getTaskIdFromUrl, getTaskPointsFromName, getTaskUrl, simplifyColumnName } from '../../../utils.js';
 import { buildCacheSignature, clearCache, getCacheSizeBytes, loadCache, saveCache } from '../cache.js';
+import PriorityDistribution from './PriorityDistribution.vue';
 import SettingsForm from './SettingsForm.vue';
 import TeamPoints from './TeamPoints.vue';
 
@@ -43,6 +44,8 @@ const bitrixApi = new BitrixApi(props.sessionId);
 
 const settingsStorageKey = computed(() => `sprint-priorities-settings-${props.groupId}`);
 const markedRowStorageKey = computed(() => `sprint-priorities-mark-${props.groupId}`);
+// Фильтр по исполнителю запоминаем: типичный сценарий — каждый раз открыть «мои задачи в спринте»
+const responsibleFilterStorageKey = computed(() => `sprint-priorities-responsible-filter-${props.groupId}`);
 const settings = ref(null);
 const isSheetLoading = ref(false);
 const isTasksLoading = ref(false);
@@ -67,6 +70,8 @@ const rowsPerPage = ref(25);
 
 const titleFilter = ref('');
 const stageFilter = ref([]);
+const responsibleFilter = ref([]);
+const isDistributionModalOpened = ref(false);
 
 const selectedTeamUser = ref(null);
 const selectedTeamStage = ref(null);
@@ -83,8 +88,7 @@ const visibleColumnKeys = computed(() => {
 const cacheSignature = computed(() => buildCacheSignature(settings.value, visibleColumnKeys.value));
 
 const cacheSizeLabel = computed(() => {
-  const kilobytes = cacheSizeBytes.value / 1024;
-  return kilobytes >= 1024 ? `${(kilobytes / 1024).toFixed(1)} МБ` : `${Math.round(kilobytes)} КБ`;
+  return formatBytes(cacheSizeBytes.value);
 });
 
 const cachedAtLabel = computed(() => {
@@ -113,7 +117,15 @@ const stageOptions = computed(() => {
     .sort((a, b) => stageOrderIndex(a.name) - stageOrderIndex(b.name));
 });
 
-const filteredRows = computed(() => {
+const responsibleOptions = computed(() => {
+  const byId = new Map();
+  enrichedRows.value.forEach((row) => {
+    if (row.responsible?.id && !byId.has(row.responsible.id)) byId.set(row.responsible.id, row.responsible);
+  });
+  return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name));
+});
+
+const scopeRows = computed(() => {
   let rows = enrichedRows.value;
 
   const query = titleFilter.value.trim().toLowerCase();
@@ -126,6 +138,11 @@ const filteredRows = computed(() => {
   }
 
   return rows;
+});
+
+const filteredRows = computed(() => {
+  if (!responsibleFilter.value.length) return scopeRows.value;
+  return scopeRows.value.filter((row) => responsibleFilter.value.includes(row.responsible?.id));
 });
 
 const teamSelectedStages = computed(() => {
@@ -153,8 +170,12 @@ const selectedUserStageTasks = computed(() => {
     .sort((a, b) => b.points - a.points);
 });
 
-watch([titleFilter, stageFilter], () => {
+watch([titleFilter, stageFilter, responsibleFilter], () => {
   firstRow.value = 0;
+});
+
+watch(responsibleFilter, (value) => {
+  chrome.storage.local.set({ [responsibleFilterStorageKey.value]: [...value] });
 });
 
 async function toggleRowMark(taskId) {
@@ -330,8 +351,8 @@ async function fetchTasksData() {
 
   // Запрашиваем только поля для видимых колонок
   const visibleKeys = visibleColumnKeys.value;
-  const selectFields = ['ID', 'TITLE', 'GROUP_ID', 'STAGE_ID', 'PARENT_ID'];
-  if (visibleKeys.includes('responsible')) selectFields.push('RESPONSIBLE_ID');
+  // Исполнитель нужен всегда, не только для его колонки: по нему фильтр и распределение приоритетов
+  const selectFields = ['ID', 'TITLE', 'GROUP_ID', 'STAGE_ID', 'PARENT_ID', 'RESPONSIBLE_ID'];
   if (visibleKeys.includes('createdBy')) selectFields.push('CREATED_BY');
   if (visibleKeys.includes('createdDate')) selectFields.push('CREATED_DATE');
   if (visibleKeys.includes('changedDate')) selectFields.push('CHANGED_DATE');
@@ -343,7 +364,7 @@ async function fetchTasksData() {
     const groupIds = [...new Set(Object.values(tasksMap).map((task) => task.groupId).filter(Boolean))];
     const userIds = [
       ...new Set([
-        ...(visibleKeys.includes('responsible') ? Object.values(tasksMap).map((task) => task.responsibleId) : []),
+        ...Object.values(tasksMap).map((task) => task.responsibleId),
         ...(visibleKeys.includes('createdBy') ? Object.values(tasksMap).map((task) => task.createdBy) : []),
       ].filter(Boolean)),
     ];
@@ -361,7 +382,7 @@ async function fetchTasksData() {
       }
 
       const stage = stagesData[task.stageId];
-      const responsible = visibleKeys.includes('responsible') ? usersData[String(task.responsibleId)] : null;
+      const responsible = usersData[String(task.responsibleId)];
       const creator = visibleKeys.includes('createdBy') ? usersData[String(task.createdBy)] : null;
 
       return {
@@ -372,7 +393,7 @@ async function fetchTasksData() {
         isRootTask: String(task.parentId ?? 0) === '0',
         stage: stage ? { name: stage.TITLE, color: stage.COLOR ? `#${stage.COLOR}` : null } : null,
         stageName: stage?.TITLE ?? null,
-        responsible: responsible ? { name: responsible.name, url: `/company/personal/user/${responsible.id}/`, photo: responsible.avatar || null } : null,
+        responsible: responsible ? { id: String(responsible.id), name: responsible.name, url: `/company/personal/user/${responsible.id}/`, photo: responsible.avatar || null } : null,
         createdBy: creator ? { name: creator.name, url: `/company/personal/user/${creator.id}/` } : null,
         createdDate: task.createdDate,
         formattedCreatedDate: task.createdDate ? dayjs(task.createdDate).format('DD.MM.YYYY') : null,
@@ -542,6 +563,8 @@ onMounted(async () => {
   const storedRefresh = await chrome.storage.local.get([REFRESH_STORAGE_KEY]);
   lastRefreshKey.value = storedRefresh[REFRESH_STORAGE_KEY] ?? 'all';
   stageFilter.value = settings.value?.defaultStageFilter ?? [];
+  const storedResponsibleFilter = await chrome.storage.local.get(responsibleFilterStorageKey.value);
+  responsibleFilter.value = storedResponsibleFilter[responsibleFilterStorageKey.value] ?? [];
   if (settings.value?.sheetUrl) {
     // Сохранённый результат рисуем сразу, свежие данные догружаются следом и заменяют его
     await Promise.all([restoreFromCache(), refreshCacheSize()]);
@@ -649,6 +672,40 @@ onMounted(async () => {
           </div>
         </template>
       </MultiSelect>
+      <MultiSelect
+        v-model="responsibleFilter"
+        :options="responsibleOptions"
+        option-label="name"
+        option-value="id"
+        filter
+        filter-placeholder="Поиск"
+        size="small"
+        placeholder="Все исполнители"
+        :max-selected-labels="1"
+        selected-items-label="{0} исполнителя"
+        class="w-56"
+      >
+        <template #option="{ option }">
+          <div class="flex items-center gap-2">
+            <Avatar
+              v-if="option.photo && !settings.hideUserAvatar"
+              :image="option.photo"
+              shape="circle"
+            />
+            <span>{{ option.name }}</span>
+          </div>
+        </template>
+      </MultiSelect>
+      <Button
+        v-tooltip="'Кому достались задачи из начала списка приоритетов, а кому — из конца. Колонки выбираются в самом окне, исполнители — «Участники» из настроек'"
+        label="Распределение приоритетов"
+        icon="pi pi-chart-bar"
+        size="small"
+        severity="secondary"
+        variant="text"
+        :disabled="!enrichedRows.length"
+        @click="isDistributionModalOpened = true"
+      />
     </div>
 
     <DataTable
@@ -714,7 +771,10 @@ onMounted(async () => {
               target="_top"
             >{{ data.title }}</a>
           </template>
-          <span v-else>—</span>
+          <span
+            v-else
+            class="text-surface-500 dark:text-surface-400"
+          >{{ getInaccessibleTaskTitle(data.taskId) }}</span>
         </template>
       </Column>
 
@@ -816,6 +876,21 @@ onMounted(async () => {
         :group-users="groupUsers"
         :group-stages="groupStages"
         @success="onSaveSettings"
+      />
+    </Dialog>
+
+    <Dialog
+      v-model:visible="isDistributionModalOpened"
+      header="Распределение приоритетов по исполнителям"
+      dismissable-mask
+      modal
+    >
+      <PriorityDistribution
+        :rows="enrichedRows"
+        :stage-options="stageOptions"
+        :team-user-ids="settings.teamUsers ?? []"
+        :stages-storage-key="`sprint-priorities-distribution-stages-${groupId}`"
+        :hide-user-avatar="!!settings.hideUserAvatar"
       />
     </Dialog>
 

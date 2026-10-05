@@ -1,6 +1,11 @@
 <script setup>
 import { Column, ColumnGroup, DataTable, Row } from 'primevue';
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
+
+import { groupTasksByRoot } from '../variables.js';
+import GroupByParentToggle from './GroupByParentToggle.vue';
+import RootGroupsTable from './RootGroupsTable.vue';
+import TaskNameCell from './TaskNameCell.vue';
 
 const props = defineProps({
   user: {
@@ -17,13 +22,26 @@ const columnTasks = computed(() => {
   return props.user.columns[props.column.id].tasks;
 });
 
+const { groupByParent, loadingAncestors, rootByTaskId } = inject('taskGrouping');
+
+const groups = computed(() => (groupByParent.value ? groupTasksByRoot(columnTasks.value, rootByTaskId.value) : []));
+
 const totalPoints = computed(() => {
   return props.user.columns[props.column.id].totalPoints;
 });
 </script>
 
 <template>
+  <GroupByParentToggle />
+
+  <RootGroupsTable
+    v-if="groupByParent"
+    :groups
+    :total-points="totalPoints"
+    :loading="loadingAncestors"
+  />
   <DataTable
+    v-else
     :value="columnTasks"
     data-key="id"
     sort-field="points"
@@ -36,16 +54,7 @@ const totalPoints = computed(() => {
       header="Задача"
     >
       <template #body="{data}">
-        <i
-          v-if="data.isRootTask"
-          v-tooltip.top="'Корневая задача'"
-          class="pi pi-sitemap text-surface-400 dark:text-surface-500 mr-1"
-        />
-        <a
-          class="pts-blur"
-          target="_top"
-          :href="data.url"
-        >{{ data.name }}</a>
+        <TaskNameCell :task="data" />
       </template>
     </Column>
     <Column

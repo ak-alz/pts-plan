@@ -226,6 +226,36 @@ async function saveSettings() {
         />
       </FormField>
 
+      <FormField
+        id="settings_team_users"
+        label="Участники"
+        tip="Исполнители, для которых считаются баллы команды и распределение приоритетов. Если не выбраны — все исполнители."
+      >
+        <MultiSelect
+          v-model="form.teamUsers"
+          :options="groupUsers"
+          option-label="name"
+          option-value="id"
+          filter
+          filter-placeholder="Поиск"
+          placeholder="Все участники"
+          :max-selected-labels="2"
+          fluid
+          input-id="settings_team_users"
+        >
+          <template #option="{ option }">
+            <div class="flex items-center gap-2">
+              <Avatar
+                v-if="option.photo"
+                :image="option.photo"
+                shape="circle"
+              />
+              <span>{{ option.name }}</span>
+            </div>
+          </template>
+        </MultiSelect>
+      </FormField>
+
       <template v-if="form.showTeamPoints">
         <FormField
           id="settings_hide_user_avatar"
@@ -236,36 +266,6 @@ async function saveSettings() {
             input-id="settings_hide_user_avatar"
           />
         </FormField>
-        <FormField
-          id="settings_team_users"
-          label="Участники"
-          tip="Исполнители, для которых считать баллы. Если не выбраны — считаются все."
-        >
-          <MultiSelect
-            v-model="form.teamUsers"
-            :options="groupUsers"
-            option-label="name"
-            option-value="id"
-            filter
-            filter-placeholder="Поиск"
-            placeholder="Все участники"
-            :max-selected-labels="2"
-            fluid
-            input-id="settings_team_users"
-          >
-            <template #option="{ option }">
-              <div class="flex items-center gap-2">
-                <Avatar
-                  v-if="option.photo"
-                  :image="option.photo"
-                  shape="circle"
-                />
-                <span>{{ option.name }}</span>
-              </div>
-            </template>
-          </MultiSelect>
-        </FormField>
-
         <FormField
           id="settings_team_stages"
           label="Колонки для подсчёта"

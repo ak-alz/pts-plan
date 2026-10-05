@@ -60,6 +60,8 @@ Simple features do direct DOM manipulation; complex ones (e.g., `scrum-points`, 
 
 Two badge flags on a feature entry, both rendered by `OptionsTree.vue` next to the feature name (so they show up in the popup and on the whats-new page alike): `new: true` — recently added, also drives the «Новые» filter in the popup; `beta: true` — shipped deliberately unpolished, rendered in amber with a tooltip saying so. Drop `beta` once the feature settles.
 
+**`addedIn: '<version>'` — red «unseen» dot.** Set it on any entry, top-level or nested sub-option, that is a genuine *addition* in that release (not a fix or a reworded tip) — **always when adding a new sub-option to an existing feature**, since sub-options get no `new` badge and no changelog `optionKey`. `src/popup/useNewOptionMarks.js` turns it into a red dot next to the option (and next to every ancestor, so a collapsed parent shows there's something new inside); the dot clears after hovering the row, or all at once via the popup's «Отметить всё новое просмотренным» button. Seen keys live in `chrome.storage.local` (`seenNewOptions`). Who sees a dot depends on `installedVersion` (written by `src/background/updates.js` on install/update, key in `src/js/installInfo.js`): an option is unseen-new if `addedIn` is later than the version the user started with, or equals the current release (so fresh installs still see the latest release's additions, not the whole history).
+
 ### Vue file conventions
 
 In `.vue` files, `<script setup>` always comes before `<template>`.
@@ -185,6 +187,7 @@ scrum-summary/
 ### Shared utilities
 
 - `src/js/BitrixApi.js` — Axios-based wrapper for Bitrix24 REST API calls using the session ID.
+  - `getAncestorTasks(tasks, {selectFields?, maxDepth?})` — loads ancestors of the given tasks level by level (one `searchTasks` request per level) until every chain reaches its root; returns a map `id → ancestor` without the input tasks. Use it for any "group by parent/root task" feature instead of fetching only the direct parents.
 - `src/js/primeVueOptions.js` — PrimeVue theme/preset configuration shared by all Vue apps.
 - `src/js/patterns.js` — Single source of truth for all business-logic regular expressions (tagall phrases, notification type patterns, system notification filters). Edit regexes here, not inline in feature files. Also holds `TAGALL_TOKEN`, the canonical `TAGALL` string that tagall phrases are normalized to — don't re-declare it locally.
 - `src/js/messages.js` — `chrome.runtime` message type constants shared by content scripts and the service worker. A message type is a contract between two sides: drifting literals wouldn't break the build, the message would just silently stop arriving.
@@ -192,6 +195,7 @@ scrum-summary/
 - `src/js/toastHost/` — the one toast host for all content-script features; call `showToast()` from `showToast.js` (see the toast rule under Critical constraints).
 - `src/js/backgroundFetch.js` — `backgroundFetch(method, url, {body, params, responseType, throwOnHttpError})`: any request to a third-party service (PixelTools AI, Google Sheets) goes through the service worker, because a content script's own `fetch` runs as the Bitrix page and hits the other host's CORS — extension `host_permissions` don't apply to it. Allowed URL prefixes live in `src/background/api.js`; add the host there before calling a new one.
 - `src/js/renderAiMarkdown.js` — `renderAiMarkdown(text)`: the only sanctioned way to put an AI answer into `v-html`. Escapes `<` before `marked()` (so raw HTML from the model stays text) and strips unsafe link schemes. Never call `marked()` directly in a component.
+- **Prompt library (custom AI prompts)** — every AI feature lets the user keep several own prompts and pick one, next to its prompt-preview button. Pieces: `src/js/aiPromptLibrary.js` (template helpers: `{{variable}}` rendering, default-as-template, HTML preview), `src/js/composables/usePromptLibrary.js` (`usePromptLibrary(spec)` — list/active/CRUD in `chrome.storage.local` `ai-prompts-<spec.key>`, exported with settings), `src/js/ui/PromptLibraryButton.vue` (button + dialog). Each feature has a `promptSpec.js` (`key`, `title`, `variables`, `buildDefault`, optional `formatNote` — what the answer must keep for the feature to parse it). **The standard prompt is still built by the feature's own `buildSystemPrompt`** — `library.buildActivePrompt(values)` returns `null` when «Стандартный» is selected, so the call site is `buildActivePrompt(values) ?? buildSystemPrompt(...)`; await `library.ready` before building, and use `previewActivePrompt() ?? buildPromptPreview(...)` for the preview dialog. **A new AI feature must get a `promptSpec.js` and a `PromptLibraryButton`** next to its preview button.
 - `src/js/composables/useAiJob.js` — polling/restore/error handling for a PixelTools AI job, independent of a widget's lifecycle: `runJob()`, `loading`, `progress`, plus an `onAuthError` callback for a missing/invalid API key. Errors surface as a toast on their own.
 
 #### `src/js/utils.js`
@@ -209,6 +213,8 @@ Task helpers:
 - `getTaskPointsFromName(taskName)` — extracts story points from a task name (number after `|`, `I`, `/`, or `\`); returns `0` if not found.
 - `simplifyColumnName(columnName)` — abbreviates a column name to initials (first letter of each word, uppercased); falls back to first 3 characters for single-word names.
 - `TASK_STATUS_LABELS` — Russian labels for the numeric `STATUS` field (`1` новая … `7` отклонена).
+- `getInaccessibleTaskTitle(taskId)` — `Задача #123 (нет доступа)`: the label for a task Bitrix didn't return (no access or deleted). Use it wherever a task is shown only by ID, and don't render a link for it — it would just open an access error.
+- `findRootTaskId(task, tasksById)` — walks `parentId` up through already-known tasks to the **root** task (not the direct parent — a second-level subtask's direct parent is itself a subtask). An unknown parent (no access, not loaded) counts as the root; cycles are cut. Pair it with `BitrixApi.getAncestorTasks` to load the chain first. Used by `sprint-history` and `scrum-points` grouping by parent.
 
 DOM / CSS:
 - `insertCSS(css, id?)` — appends a `<style>` tag to `document.head`. When `id` is provided, deduplicates — won't insert if a tag with that id already exists.
@@ -224,8 +230,10 @@ Colors:
 
 Observers / text:
 - `rehydrateOnChanges(callBack, target?, options?)` — throttled `MutationObserver` + `window focus` listener that calls `callBack` whenever the DOM changes. Accepts `filterMutation` to narrow which mutations trigger. Returns a cleanup function.
-- `isUserMentioned(text, firstName, lastName)` — returns `true` if `text` contains the user's name (either `"First Last"` or `"Last First"` order) or the word `TAGALL`.
+- `isUserMentioned(text, firstName, lastName)` — returns `true` if `text` contains the user's name (either `"First Last"` or `"Last First"` order) or the word `TAGALL`. In a new-task notification only the «Исполнитель:» line counts — co-executors/observers aren't a mention.
 - `canonicalizeTagallHtml(html)` — turns an HTML fragment into the canonical text used for TAGALL/mention detection: `<br>` → newline, tags stripped, tagall phrase → `TAGALL_TOKEN` (so the name inside the phrase isn't taken for a personal mention).
+- `formatBytes(bytes)` — human-readable size for the UI: whole `КБ` below a megabyte, `МБ` with one decimal above (`340 КБ`, `1,2 МБ`). Use it for any cache/storage size label instead of inline math.
+- `compareVersions(a, b)` — compares `2.13.0`-style versions part by part; negative / zero / positive like a sort comparator. Used by the service worker's migrations and by the «unseen» dots.
 - `pluralize(n, titles)` — Russian noun declension: picks the correct form from `[form1, form2, form5]` based on `n`.
 - `convertKeyboardLayout(text)` — converts a string between RU⇄EN keyboard layouts by physical key (ЙЦУКЕН↔QWERTY); direction is per character, so one call covers both. Used to make the options search work regardless of the current layout.
 - `minifyPrompt(str)` — trims trailing whitespace from each line and collapses 3+ consecutive newlines to 2; used to clean up AI prompts before sending.
@@ -235,4 +243,5 @@ Observers / text:
 
 - **`FormField.vue`** — form field wrapper: renders a `<label>` (or `<div>` when no `id` is passed), a tooltip icon (`pi-question-circle`) when `tip` is provided, and a slot for the control.
 - **`DateRangePicker.vue`** — date range selector. Text input with mask `DD.MM.YY – DD.MM.YY` + Popover with presets (current/previous period by weeks and months) and a 2-month inline calendar. Supports `minDate`, `maxDate`, and `eventDates` (dots on dates). `v-model` — `[Date, Date]` array.
+- **`AiApiKeyDialog.vue`** — the «API ключ Пиксель Тулс» dialog for AI features: `v-model:visible`, saves the key into `options.pixelToolsApiKey` and emits `saved` (retry the AI request there). Use it in new AI widgets instead of copying the dialog markup (older widgets — `decompose-task`, `scrum-summary`, `task-analysis`, `task-dynamics` — still carry their own copy).
 - **`PtsToast.vue`** — the `<Toast>` wrapper rendered by the toast host: severity icon, optional `message.links` list, and an animated auto-close timer bar that pauses on hover. Feature code doesn't use it directly — only `src/js/toastHost/ToastHostApp.vue` does; features call `showToast()` (see the toast rule under Critical constraints).

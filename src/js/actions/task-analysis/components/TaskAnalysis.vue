@@ -19,15 +19,7 @@ import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFil
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
 import FormField from '../../../ui/FormField.vue';
-import {
-  computeDefaultCompareRange,
-  getCompareRequestRange,
-  getDistinctLineStyleIndexes,
-  getTaskPointsFromName,
-  getTaskUrl,
-  isHotfixTask,
-  stringToPastelColor,
-} from '../../../utils.js';
+import {computeDefaultCompareRange, getCompareRequestRange, getDistinctLineStyleIndexes, getInaccessibleTaskTitle, getTaskPointsFromName, getTaskUrl, isHotfixTask, stringToPastelColor} from '../../../utils.js';
 import SettingsForm from './SettingsForm.vue';
 import TaskAnalysisTabs from './TaskAnalysisTabs.vue';
 
@@ -520,8 +512,9 @@ async function buildUserRows(userId, userName, userTasks) {
         id: rootId,
         userId,
         userName,
-        title: rootTask?.title ?? `Задача #${rootId}`,
-        url: getTaskUrl(linkGroupId.value, rootId, linkUserId.value),
+        // Корня нет в taskMap — подняться к нему не дали права: ссылка всё равно открыла бы ошибку доступа
+        title: rootTask?.title ?? getInaccessibleTaskTitle(rootId),
+        url: rootTask ? getTaskUrl(linkGroupId.value, rootId, linkUserId.value) : null,
         createdDate: rootTask?.createdDate ?? null,
         closedDate: rootTask?.closedDate ?? null,
         maxDate: rootTask?.closedDate ?? null,

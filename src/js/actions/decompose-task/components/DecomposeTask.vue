@@ -5,11 +5,14 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { useAiJob } from '../../../composables/useAiJob.js';
+import { usePromptLibrary } from '../../../composables/usePromptLibrary.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import {showToast} from '../../../toastHost/showToast.js';
+import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import { getCommitMessage, getTaskUrl } from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 import {parseAiDecompositions} from '../parseAiDecompositions.js';
+import { promptSpec } from '../promptSpec.js';
 import DecomposeCard from './DecomposeCard.vue';
 import DecomposeQuickMode from './DecomposeQuickMode.vue';
 import LinkOptions from './LinkOptions.vue';
@@ -69,7 +72,8 @@ const aiContextStorageKey = computed(() => `decompose-task-ai-context-${groupId.
 const aiContext = ref('');
 const isAiContextModalOpened = ref(false);
 const isPromptPreviewModalOpened = ref(false);
-const promptPreview = computed(() => buildPromptPreview(props.taskTitle, aiContext.value.trim() || null));
+const promptLibrary = usePromptLibrary(promptSpec);
+const promptPreview = computed(() => promptLibrary.previewActivePrompt() ?? buildPromptPreview(props.taskTitle, aiContext.value.trim() || null));
 
 async function onAiContextInput(e) {
   aiContext.value = e.target.value.slice(0, AI_CONTEXT_MAX_LENGTH);
@@ -471,8 +475,10 @@ async function aiDecompose() {
     const title = data?.result?.task?.title ?? props.taskTitle;
     const description = settings.value.description ? (data?.result?.task?.description ?? '') : '';
 
+    await promptLibrary.ready;
     const MAX_PROMPT_LENGTH = 20000;
-    let prompt = buildSystemPrompt(title, description, aiContext.value);
+    let prompt = promptLibrary.buildActivePrompt({ title, description, extraContext: aiContext.value })
+      ?? buildSystemPrompt(title, description, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
       showToast({ severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
@@ -550,6 +556,7 @@ onMounted(async () => {
           :disabled="isLoading"
           @click="isAiContextModalOpened = true"
         />
+        <PromptLibraryButton :library="promptLibrary" />
         <Button
           v-tooltip="'Просмотр системного промпта'"
           size="small"
@@ -940,7 +947,7 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isPromptPreviewModalOpened"
-    header="Системный промпт"
+    :header="promptLibrary.activePrompt.value ? `Промпт: ${promptLibrary.activePrompt.value.name}` : 'Системный промпт'"
     dismissable-mask
     modal
     :style="{width: '760px'}"

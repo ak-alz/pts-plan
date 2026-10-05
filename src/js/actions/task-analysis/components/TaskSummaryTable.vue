@@ -4,11 +4,14 @@ import {computed, nextTick, onMounted, ref} from 'vue';
 
 import {useAiJob} from '../../../composables/useAiJob.js';
 import {useContentTheme} from '../../../composables/useContentTheme.js';
+import {usePromptLibrary} from '../../../composables/usePromptLibrary.js';
 import {PixelToolsApi} from '../../../PixelToolsApi.js';
 import {renderAiMarkdown} from '../../../renderAiMarkdown.js';
 import {showToast} from '../../../toastHost/showToast.js';
+import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import {colors, downloadBlob, escapeCsvCell} from '../../../utils.js';
-import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import {buildPeriodLabel, buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import {promptSpec} from '../promptSpec.js';
 
 const props = defineProps({
   rows: {
@@ -172,7 +175,9 @@ function buildAiData() {
   return entries;
 }
 
-const promptPreview = computed(() => buildPromptPreview(props.dateRange, props.compareDateRange, aiContext.value.trim() || null));
+const promptLibrary = usePromptLibrary(promptSpec);
+const promptPreview = computed(() => promptLibrary.previewActivePrompt()
+  ?? buildPromptPreview(props.dateRange, props.compareDateRange, aiContext.value.trim() || null));
 
 async function onAiContextInput(e) {
   aiContext.value = e.target.value.slice(0, AI_CONTEXT_MAX_LENGTH);
@@ -224,9 +229,16 @@ async function aiAnalyze() {
 
   aiResult.value = '';
   const {onStart, onProgress} = aiJob.chatCallbacks();
-  await aiJob.runJob(() => {
+  await aiJob.runJob(async () => {
+    await promptLibrary.ready;
     const MAX_PROMPT_LENGTH = 20000;
-    let prompt = buildSystemPrompt(buildAiData(), {
+    const aiData = buildAiData();
+    let prompt = promptLibrary.buildActivePrompt({
+      data: JSON.stringify(aiData),
+      period: buildPeriodLabel(props.dateRange) ?? '',
+      comparePeriod: buildPeriodLabel(props.compareDateRange) ?? '',
+      extraContext: aiContext.value,
+    }) ?? buildSystemPrompt(aiData, {
       dateRange: props.dateRange,
       compareDateRange: props.compareDateRange,
       extraContext: aiContext.value,
@@ -301,6 +313,7 @@ function exportCsv() {
           :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
           @click="isAiContextModalOpened = true"
         />
+        <PromptLibraryButton :library="promptLibrary" />
         <Button
           v-tooltip="'Просмотр системного промпта'"
           size="small"
@@ -652,7 +665,7 @@ function exportCsv() {
 
   <Dialog
     v-model:visible="isPromptPreviewModalOpened"
-    header="Системный промпт"
+    :header="promptLibrary.activePrompt.value ? `Промпт: ${promptLibrary.activePrompt.value.name}` : 'Системный промпт'"
     dismissable-mask
     modal
     :style="{width: '760px'}"

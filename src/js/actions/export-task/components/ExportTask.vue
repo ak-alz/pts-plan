@@ -31,8 +31,14 @@ const commentsLoaded = ref(false);
 const loadingSubtasks = ref(false);
 const subtasksLoaded = ref(false);
 const subtasksTree = ref([]); // дерево прямых подзадач taskId: [{ id, title, status, files: [{name, url}], children: [...] }]
+const loadingSubtaskComments = ref(false);
+const subtaskCommentsLoaded = ref(false);
+const subtaskCommentsById = ref(new Map()); // ID подзадачи → её комментарии без системных
 const loadingParentTasks = ref(false);
 const parentTasksLoaded = ref(false);
+const loadingParentComments = ref(false);
+const parentCommentsLoaded = ref(false);
+const parentCommentsById = ref(new Map()); // ID родительской задачи → её комментарии без системных
 const parentTasks = ref([]); // цепочка предков от корневой задачи к прямому родителю: [{ id, title, description, createdDate, status, files: [{name, url, diskFileId}] }]
 const taskTitle = ref('');
 const taskDescription = ref('');
@@ -52,7 +58,9 @@ const includeTitle = ref(true);
 const includeDescription = ref(true);
 const includeComments = ref(true);
 const includeSubtasks = ref(false);
+const includeSubtaskComments = ref(false);
 const includeParentTasks = ref(false);
+const includeParentComments = ref(false);
 const textFormat = ref('bbcode'); // формат самого текста (описание/комментарии) — независим от exportAsJson
 const exportAsJson = ref(false); // оборачивает результат в JSON-структуру вместо плоского текста
 const downloadingZip = ref(false);
@@ -86,7 +94,7 @@ let isInitializing = true;
 let authorLoaded = false;
 let translatedTaskSlug = null;
 
-watch([includeTitle, includeDescription, includeComments, includeSubtasks, includeParentTasks, textFormat, exportAsJson, archiveNameTemplate, showArchiveNameInput, autoCountImageTokens], () => {
+watch([includeTitle, includeDescription, includeComments, includeSubtasks, includeSubtaskComments, includeParentTasks, includeParentComments, textFormat, exportAsJson, archiveNameTemplate, showArchiveNameInput, autoCountImageTokens], () => {
   if (isInitializing) return;
   chrome.storage.local.set({
     [SETTINGS_STORAGE_KEY]: {
@@ -94,7 +102,9 @@ watch([includeTitle, includeDescription, includeComments, includeSubtasks, inclu
       includeDescription: includeDescription.value,
       includeComments: includeComments.value,
       includeSubtasks: includeSubtasks.value,
+      includeSubtaskComments: includeSubtaskComments.value,
       includeParentTasks: includeParentTasks.value,
+      includeParentComments: includeParentComments.value,
       textFormat: textFormat.value,
       exportAsJson: exportAsJson.value,
       archiveNameTemplate: archiveNameTemplate.value,
@@ -115,6 +125,20 @@ watch(includeSubtasks, async (newValue) => {
   if (isInitializing) return;
   if (newValue && !subtasksLoaded.value) {
     await loadSubtasks();
+  }
+});
+
+watch(includeSubtaskComments, async (newValue) => {
+  if (isInitializing) return;
+  if (newValue && subtasksLoaded.value && !subtaskCommentsLoaded.value) {
+    await loadSubtaskComments();
+  }
+});
+
+watch(includeParentComments, async (newValue) => {
+  if (isInitializing) return;
+  if (newValue && parentTasksLoaded.value && !parentCommentsLoaded.value) {
+    await loadParentComments();
   }
 });
 
@@ -159,6 +183,34 @@ function countSubtasks(nodes) {
 }
 
 const subtasksCount = computed(() => countSubtasks(subtasksTree.value));
+
+// Дерево подзадач в плоском виде вместе с иерархическим номером (1, 1.1, 1.2, 2...) — тем же,
+// что в списке подзадач, чтобы комментарии подзадачи было с чем сопоставить
+function flattenSubtasks(nodes, parentRef = '') {
+  return nodes.flatMap((node, index) => {
+    const ref = parentRef ? `${parentRef}.${index + 1}` : `${index + 1}`;
+    return [{ ref, node }, ...flattenSubtasks(node.children, ref)];
+  });
+}
+
+const selectedSubtaskComments = computed(() => {
+  if (!includeSubtasks.value || !includeSubtaskComments.value) return [];
+  return flattenSubtasks(subtasksTree.value)
+    .map(({ ref, node }) => ({ ref, node, comments: subtaskCommentsById.value.get(node.id) ?? [] }))
+    .filter(({ comments }) => comments.length);
+});
+
+function getSelectedParentComments(parent) {
+  return includeParentComments.value ? parentCommentsById.value.get(parent.id) ?? [] : [];
+}
+
+const parentCommentsCount = computed(() =>
+  [...parentCommentsById.value.values()].reduce((total, comments) => total + comments.length, 0),
+);
+
+const subtaskCommentsCount = computed(() =>
+  [...subtaskCommentsById.value.values()].reduce((total, comments) => total + comments.length, 0),
+);
 
 function attachmentFileName(attachmentId, originalName) {
   const extension = originalName?.split('.').pop()?.toLowerCase() || 'bin';
@@ -255,7 +307,7 @@ function buildTaskMetaLines(isMarkdown, { createdDate, statusLabel, stageName = 
   return lines;
 }
 
-function formatComment(comment, index, forZip) {
+function formatComment(comment, index, forZip, headingLevel = 3) {
   const author = [comment.AUTHOR_NAME, comment.AUTHOR_LAST_NAME].filter(Boolean).join(' ') || '?';
   const date = comment.POST_DATE ? dayjs(comment.POST_DATE).format('DD.MM.YY') : '';
   const text = formatBody(comment.POST_MESSAGE || '', forZip);
@@ -269,7 +321,7 @@ function formatComment(comment, index, forZip) {
   const attachmentsBlock = formatAttachmentsBlock(attachmentNames, 'Вложения', forZip);
 
   if (textFormat.value === 'markdown') {
-    return `### ${index + 1}. ${author}${date ? ` (${date})` : ''}\n${text}${attachmentsBlock}`;
+    return `${'#'.repeat(headingLevel)} ${index + 1}. ${author}${date ? ` (${date})` : ''}\n${text}${attachmentsBlock}`;
   }
   return `[${index + 1}] ${author}${date ? ` (${date})` : ''}:\n${text}${attachmentsBlock}`;
 }
@@ -321,7 +373,13 @@ function formatParentTask(parent, index, forZip) {
 
   const heading = [header, ...metaLines].join('\n');
   const body = [heading, formatBody(parent.description, forZip)].filter(Boolean).join('\n\n');
-  return `${body}${formatAttachmentsBlock(attachmentNames, 'Вложения', forZip)}`;
+  const text = `${body}${formatAttachmentsBlock(attachmentNames, 'Вложения', forZip)}`;
+
+  const comments = getSelectedParentComments(parent);
+  if (!comments.length) return text;
+
+  const commentsBlock = comments.map((comment, commentIndex) => formatComment(comment, commentIndex, forZip, isMarkdown ? 5 : 3)).join('\n\n');
+  return `${text}\n\n${isMarkdown ? '#### Комментарии\n\n' : 'Комментарии:\n'}${commentsBlock}`;
 }
 
 const parentTasksHeading = computed(() => parentTasks.value.length > 1 ? 'Родительские задачи' : 'Родительская задача');
@@ -379,6 +437,15 @@ function buildText(forZip) {
     parts.push(`${isMarkdown ? '## Подзадачи\n\n' : 'ПОДЗАДАЧИ:\n'}${block}`);
   }
 
+  if (selectedSubtaskComments.value.length) {
+    const block = selectedSubtaskComments.value.map(({ ref, node, comments }) => {
+      const header = isMarkdown ? `### [${ref}] ${node.title}` : `[${ref}] ${node.title}:`;
+      const commentsBlock = comments.map((comment, index) => formatComment(comment, index, forZip, 4)).join('\n\n');
+      return `${header}\n\n${commentsBlock}`;
+    }).join('\n\n');
+    parts.push(`${isMarkdown ? '## Комментарии подзадач\n\n' : 'КОММЕНТАРИИ ПОДЗАДАЧ:\n'}${block}`);
+  }
+
   return parts.join('\n\n');
 }
 
@@ -409,12 +476,7 @@ function buildJson(forZip) {
   }
 
   if (includeComments.value && selectedComments.value.length) {
-    result.comments = selectedComments.value.map((comment) => ({
-      date: comment.POST_DATE || null,
-      author: [comment.AUTHOR_NAME, comment.AUTHOR_LAST_NAME].filter(Boolean).join(' ') || null,
-      body: formatBody(comment.POST_MESSAGE || '', forZip),
-      attachments: collectCommentAttachmentFiles(comment).map((file) => jsonAttachment(file, forZip)),
-    }));
+    result.comments = selectedComments.value.map((comment) => commentToJson(comment, forZip));
   }
 
   if (includeParentTasks.value && parentTasks.value.length) {
@@ -426,6 +488,9 @@ function buildJson(forZip) {
       status: TASK_STATUS_LABELS[parent.status] ?? null,
       body: formatBody(parent.description, forZip),
       attachments: collectFiles(parent.files, parent.description).map((file) => jsonAttachment(file, forZip)),
+      ...(getSelectedParentComments(parent).length && {
+        comments: getSelectedParentComments(parent).map((comment) => commentToJson(comment, forZip)),
+      }),
     }));
   }
 
@@ -436,12 +501,23 @@ function buildJson(forZip) {
   return JSON.stringify(result, null, 2);
 }
 
+function commentToJson(comment, forZip) {
+  return {
+    date: comment.POST_DATE || null,
+    author: [comment.AUTHOR_NAME, comment.AUTHOR_LAST_NAME].filter(Boolean).join(' ') || null,
+    body: formatBody(comment.POST_MESSAGE || '', forZip),
+    attachments: collectCommentAttachmentFiles(comment).map((file) => jsonAttachment(file, forZip)),
+  };
+}
+
 function subtaskToJson(node, forZip) {
+  const comments = includeSubtaskComments.value ? subtaskCommentsById.value.get(node.id) ?? [] : [];
   return {
     id: node.id,
     title: node.title,
     status: TASK_STATUS_LABELS[node.status] ?? null,
     attachments: node.files.map((file) => jsonAttachment(file, forZip)),
+    ...(comments.length && { comments: comments.map((comment) => commentToJson(comment, forZip)) }),
     subtasks: node.children.map((child) => subtaskToJson(child, forZip)),
   };
 }
@@ -451,6 +527,9 @@ function buildOutput(forZip = false) {
 }
 
 const resultText = computed(() => buildOutput());
+const isLoadingExtraData = computed(() =>
+  loadingComments.value || loadingSubtasks.value || loadingSubtaskComments.value || loadingParentTasks.value || loadingParentComments.value,
+);
 const resultCharCount = computed(() => resultText.value.length);
 const resultTokenEstimate = computed(() => estimateTokenCount(resultText.value));
 const exportFileExtension = computed(() => {
@@ -458,16 +537,30 @@ const exportFileExtension = computed(() => {
   return textFormat.value === 'markdown' ? 'md' : 'txt';
 });
 
+// Вложения задачи идут вместе с описанием: без них тумблер описания был бы не нужен вовсе
+const hasDescriptionContent = computed(() => !!taskDescription.value || taskFileObjects.value.length > 0);
+
 const hasExportableContent = computed(() =>
-  (includeDescription.value && (!!taskDescription.value || taskFileObjects.value.length > 0))
+  (includeExtraContext.value && !!extraContext.value.trim())
+  || (includeTitle.value && !!taskTitle.value)
+  || (includeDescription.value && hasDescriptionContent.value)
   || (includeComments.value && selectedComments.value.length > 0)
   || (includeSubtasks.value && subtasksTree.value.length > 0)
   || (includeParentTasks.value && parentTasks.value.length > 0),
 );
 
-// Сколько файлов уедет в архив при текущих переключателях. Кнопку при нуле не блокируем:
-// комментарии и подзадачи грузятся лениво, и до их загрузки ноль означает «пока не знаем»
+// Сколько файлов уедет в архив при текущих переключателях. Пока комментарии и подзадачи грузятся,
+// кнопки экспорта заблокированы, так что на активной кнопке ноль честный
 const attachmentFilesCount = computed(() => collectAttachmentFiles().length);
+
+// Архив без файлов — тот же текстовый файл, только упакованный: кнопку не блокируем (вдруг нужен
+// именно ZIP), но приглушаем и подсказываем, что проще скопировать или скачать текст
+const isZipWithoutFiles = computed(() => !isLoadingExtraData.value && attachmentFilesCount.value === 0);
+
+const zipButtonLabel = computed(() => {
+  if (isZipWithoutFiles.value) return 'ZIP — файлов нет';
+  return attachmentFilesCount.value ? `ZIP + файлы (${attachmentFilesCount.value})` : 'ZIP + файлы';
+});
 
 // Изображения среди файлов архива: оценка по площади осмысленна только для них — у PDF и офисных
 // файлов размеров в пикселях нет, и считать их значило бы врать
@@ -549,9 +642,11 @@ function collectFiles(attachmentFiles, text) {
 }
 
 // Все файлы задачи (формальные вложения + инлайн-изображения в описании) — независимо от того,
-// упомянуты ли они уже отдельным плейсхолдером [Файл: ...] в тексте описания.
+// упомянуты ли они уже отдельным плейсхолдером [Файл: ...] в тексте описания. В тексте вложения
+// задачи выводятся блоком под описанием, поэтому без описания не выгружаются и сами файлы
 function collectTaskAttachmentFiles() {
-  return collectFiles(taskFileObjects.value, includeDescription.value ? taskDescription.value : '');
+  if (!includeDescription.value) return [];
+  return collectFiles(taskFileObjects.value, taskDescription.value);
 }
 
 // Все файлы одного комментария (формальные вложения + инлайн-изображения в тексте).
@@ -584,11 +679,37 @@ function collectAttachmentFiles() {
     collectSubtaskAttachmentFiles(subtasksTree.value).forEach(addFile);
   }
 
+  selectedSubtaskComments.value.forEach(({ comments }) => {
+    comments.forEach((comment) => collectCommentAttachmentFiles(comment).forEach(addFile));
+  });
+
   if (includeParentTasks.value) {
-    parentTasks.value.forEach((parent) => collectFiles(parent.files, parent.description).forEach(addFile));
+    parentTasks.value.forEach((parent) => {
+      collectFiles(parent.files, parent.description).forEach(addFile);
+      getSelectedParentComments(parent).forEach((comment) => collectCommentAttachmentFiles(comment).forEach(addFile));
+    });
   }
 
   return [...filesByName.values()];
+}
+
+// Вложения и инлайн-файлы комментариев — чтобы у них были те же имена n{OBJECT_ID}, что и у остальных
+async function registerCommentFiles(comments) {
+  const commentAttachmentIds = [];
+  const inlineDiskFileIds = new Set();
+  comments.forEach((comment) => {
+    Object.values(comment.ATTACHED_OBJECTS ?? {}).forEach((attachment) => {
+      if (attachment.ATTACHMENT_ID) commentAttachmentIds.push(String(attachment.ATTACHMENT_ID));
+    });
+    extractInlineDiskFileIds(comment.POST_MESSAGE).forEach((diskFileId) => inlineDiskFileIds.add(diskFileId));
+  });
+
+  if (commentAttachmentIds.length) {
+    const commentAttachedObjects = await api.getAttachedObjectsBatch(commentAttachmentIds).catch(() => []);
+    registerDiskIds(commentAttachedObjects);
+  }
+
+  await resolveInlineDiskFiles(inlineDiskFileIds);
 }
 
 async function loadComments() {
@@ -596,23 +717,7 @@ async function loadComments() {
   try {
     const comments = await api.getComments(props.taskId);
     allComments.value = comments;
-
-    const commentAttachmentIds = [];
-    const inlineDiskFileIds = new Set();
-    comments.forEach((comment) => {
-      Object.values(comment.ATTACHED_OBJECTS ?? {}).forEach((attachment) => {
-        if (attachment.ATTACHMENT_ID) commentAttachmentIds.push(String(attachment.ATTACHMENT_ID));
-      });
-      extractInlineDiskFileIds(comment.POST_MESSAGE).forEach((diskFileId) => inlineDiskFileIds.add(diskFileId));
-    });
-
-    if (commentAttachmentIds.length) {
-      const commentAttachedObjects = await api.getAttachedObjectsBatch(commentAttachmentIds).catch(() => []);
-      registerDiskIds(commentAttachedObjects);
-    }
-
-    await resolveInlineDiskFiles(inlineDiskFileIds);
-
+    await registerCommentFiles(comments);
     commentsLoaded.value = true;
   } catch {
     showToast({ severity: 'error', summary: 'Ошибка загрузки комментариев', life: 3000 });
@@ -691,6 +796,35 @@ async function loadSubtasks() {
   } finally {
     loadingSubtasks.value = false;
   }
+
+  // Комментарии подзадач можно загрузить только после самих подзадач: до этого их ID неизвестны
+  if (subtasksLoaded.value && includeSubtaskComments.value && !subtaskCommentsLoaded.value) {
+    await loadSubtaskComments();
+  }
+}
+
+// Комментарии нескольких задач одним батчем, а не запросом на каждую; системные отбрасываются,
+// файлы комментариев регистрируются сразу
+async function fetchUserCommentsByTaskId(taskIds) {
+  const commentsByTaskId = await api.getCommentsBatch(taskIds);
+  const userCommentsByTaskId = new Map(taskIds.map((taskId) => [
+    taskId,
+    (commentsByTaskId[taskId] ?? []).filter((comment) => !isSystemComment(comment)),
+  ]));
+  await registerCommentFiles([...userCommentsByTaskId.values()].flat());
+  return userCommentsByTaskId;
+}
+
+async function loadSubtaskComments() {
+  loadingSubtaskComments.value = true;
+  try {
+    subtaskCommentsById.value = await fetchUserCommentsByTaskId(flattenSubtasks(subtasksTree.value).map(({ node }) => node.id));
+    subtaskCommentsLoaded.value = true;
+  } catch {
+    showToast({ severity: 'error', summary: 'Ошибка загрузки комментариев подзадач', life: 3000 });
+  } finally {
+    loadingSubtaskComments.value = false;
+  }
 }
 
 // Поднимается по PARENT_ID от задачи к корневой. Следующий предок известен только из ответа по
@@ -751,6 +885,23 @@ async function loadParentTasks() {
   } finally {
     loadingParentTasks.value = false;
   }
+
+  // Как и у подзадач: ID предков известны только после подъёма по цепочке
+  if (parentTasksLoaded.value && includeParentComments.value && !parentCommentsLoaded.value) {
+    await loadParentComments();
+  }
+}
+
+async function loadParentComments() {
+  loadingParentComments.value = true;
+  try {
+    parentCommentsById.value = await fetchUserCommentsByTaskId(parentTasks.value.map((parent) => parent.id));
+    parentCommentsLoaded.value = true;
+  } catch {
+    showToast({ severity: 'error', summary: 'Ошибка загрузки комментариев родительских задач', life: 3000 });
+  } finally {
+    loadingParentComments.value = false;
+  }
 }
 
 onMounted(async () => {
@@ -762,7 +913,9 @@ onMounted(async () => {
       includeDescription.value = settings.includeDescription ?? true;
       includeComments.value = settings.includeComments ?? true;
       includeSubtasks.value = settings.includeSubtasks ?? false;
+      includeSubtaskComments.value = settings.includeSubtaskComments ?? false;
       includeParentTasks.value = settings.includeParentTasks ?? false;
+      includeParentComments.value = settings.includeParentComments ?? false;
       textFormat.value = settings.textFormat ?? 'bbcode';
       exportAsJson.value = settings.exportAsJson ?? false;
       archiveNameTemplate.value = settings.archiveNameTemplate || DEFAULT_ARCHIVE_NAME_TEMPLATE;
@@ -1004,16 +1157,16 @@ async function downloadZip() {
       <ToggleSwitch
         v-model="includeDescription"
         input-id="toggle-description"
-        :disabled="!taskDescription"
+        :disabled="!hasDescriptionContent"
       />
       <label
         for="toggle-description"
         class="text-sm font-medium"
-        :class="!taskDescription ? 'text-surface-400 dark:text-surface-500 cursor-default' : 'cursor-pointer'"
+        :class="!hasDescriptionContent ? 'text-surface-400 dark:text-surface-500 cursor-default' : 'cursor-pointer'"
       >
         Описание
         <span
-          v-if="!taskDescription"
+          v-if="!hasDescriptionContent"
           class="text-xs font-normal"
         > — нет</span>
       </label>
@@ -1060,6 +1213,28 @@ async function downloadZip() {
       </label>
     </div>
 
+    <div
+      v-if="taskParentId && includeParentTasks && parentTasks.length"
+      class="flex items-center gap-2 select-none pl-6"
+    >
+      <ToggleSwitch
+        v-model="includeParentComments"
+        input-id="toggle-parent-comments"
+      />
+      <label
+        for="toggle-parent-comments"
+        class="text-sm font-medium cursor-pointer"
+      >
+        Комментарии {{ parentTasks.length > 1 ? 'родительских задач' : 'родительской задачи' }}
+        <span
+          v-if="parentCommentsLoaded"
+          class="text-xs font-normal text-surface-400 dark:text-surface-500"
+        >
+          {{ parentCommentsCount }}
+        </span>
+      </label>
+    </div>
+
     <div class="flex items-center gap-2 select-none">
       <ToggleSwitch
         v-model="includeSubtasks"
@@ -1075,6 +1250,28 @@ async function downloadZip() {
           class="text-xs font-normal text-surface-400 dark:text-surface-500"
         >
           {{ subtasksCount }}
+        </span>
+      </label>
+    </div>
+
+    <div
+      v-if="includeSubtasks && subtasksCount"
+      class="flex items-center gap-2 select-none pl-6"
+    >
+      <ToggleSwitch
+        v-model="includeSubtaskComments"
+        input-id="toggle-subtask-comments"
+      />
+      <label
+        for="toggle-subtask-comments"
+        class="text-sm font-medium cursor-pointer"
+      >
+        Комментарии подзадач
+        <span
+          v-if="subtaskCommentsLoaded"
+          class="text-xs font-normal text-surface-400 dark:text-surface-500"
+        >
+          {{ subtaskCommentsCount }}
         </span>
       </label>
     </div>
@@ -1105,7 +1302,7 @@ async function downloadZip() {
         label="Скопировать"
         icon="pi pi-copy"
         size="small"
-        :disabled="loadingComments || loadingSubtasks || loadingParentTasks || !hasExportableContent"
+        :disabled="isLoadingExtraData || !hasExportableContent"
         @click="copyToClipboard"
       />
       <Button
@@ -1113,16 +1310,18 @@ async function downloadZip() {
         icon="pi pi-file"
         severity="secondary"
         size="small"
-        :disabled="loadingComments || loadingSubtasks || loadingParentTasks || !hasExportableContent"
+        :disabled="isLoadingExtraData || !hasExportableContent"
         @click="downloadTxt"
       />
       <Button
-        :label="attachmentFilesCount ? `ZIP + файлы (${attachmentFilesCount})` : 'ZIP + файлы'"
+        v-tooltip.top="isZipWithoutFiles ? `Файлов нет — в архиве будет только текст. Проще скопировать или скачать .${exportFileExtension}` : null"
+        :label="zipButtonLabel"
         icon="pi pi-file-import"
         severity="secondary"
+        :variant="isZipWithoutFiles ? 'text' : undefined"
         size="small"
         :loading="downloadingZip"
-        :disabled="loadingComments || loadingSubtasks || loadingParentTasks || !hasExportableContent"
+        :disabled="isLoadingExtraData || !hasExportableContent"
         @click="downloadZip"
       />
       <span class="ml-auto flex flex-wrap items-center justify-end gap-1 text-xs text-surface-400 dark:text-surface-500 whitespace-nowrap">

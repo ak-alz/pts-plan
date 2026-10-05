@@ -4,11 +4,14 @@ import {Button, Column, DataTable, Dialog, InputGroup, Password, Skeleton, Texta
 import {computed, nextTick, onMounted, ref} from 'vue';
 
 import {useAiJob} from '../../../composables/useAiJob.js';
+import {usePromptLibrary} from '../../../composables/usePromptLibrary.js';
 import {PixelToolsApi} from '../../../PixelToolsApi.js';
 import {renderAiMarkdown} from '../../../renderAiMarkdown.js';
 import {showToast} from '../../../toastHost/showToast.js';
+import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import {estimateTokenCount, pluralize} from '../../../utils.js';
-import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import {buildPeriodLabel, buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import {promptSpec} from '../promptSpec.js';
 import {CUT_OPTIONS, STALE_DAYS, SUMMARY_METRICS} from '../variables.js';
 import ExportButtons from './ExportButtons.vue';
 
@@ -214,7 +217,9 @@ function buildAiData() {
   };
 }
 
-const promptPreview = computed(() => buildPromptPreview(props.dateRange, props.compareDateRange, aiContext.value.trim() || null));
+const promptLibrary = usePromptLibrary(promptSpec);
+const promptPreview = computed(() => promptLibrary.previewActivePrompt()
+  ?? buildPromptPreview(props.dateRange, props.compareDateRange, aiContext.value.trim() || null));
 // Длину и токены считаем по тексту без разметки: в предпросмотре подставляемые значения обёрнуты
 // в теги для подсветки, а в сам запрос уходит только текст — иначе оценка завышена вдвое
 const promptPreviewText = computed(() => new DOMParser()
@@ -247,9 +252,16 @@ async function aiAnalyze() {
 
   aiResult.value = '';
   const {onStart, onProgress} = aiJob.chatCallbacks();
-  await aiJob.runJob(() => {
+  await aiJob.runJob(async () => {
+    await promptLibrary.ready;
     const MAX_PROMPT_LENGTH = 30000;
-    let prompt = buildSystemPrompt(buildAiData(), {
+    const aiData = buildAiData();
+    let prompt = promptLibrary.buildActivePrompt({
+      data: JSON.stringify(aiData),
+      period: buildPeriodLabel(props.dateRange) ?? '',
+      comparePeriod: buildPeriodLabel(props.compareDateRange) ?? '',
+      extraContext: aiContext.value,
+    }) ?? buildSystemPrompt(aiData, {
       dateRange: props.dateRange,
       compareDateRange: props.compareDateRange,
       extraContext: aiContext.value,
@@ -323,6 +335,7 @@ onMounted(async () => {
         :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
         @click="isAiContextModalOpened = true"
       />
+      <PromptLibraryButton :library="promptLibrary" />
       <Button
         v-tooltip="'Просмотр запроса к AI'"
         size="small"
@@ -589,7 +602,7 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isPromptPreviewModalOpened"
-    header="Запрос к AI"
+    :header="promptLibrary.activePrompt.value ? `Запрос к AI: ${promptLibrary.activePrompt.value.name}` : 'Запрос к AI'"
     dismissable-mask
     modal
     :style="{width: '760px'}"

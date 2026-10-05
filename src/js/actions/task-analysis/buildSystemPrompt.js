@@ -11,7 +11,8 @@ function formatDate(d) {
   return parsed.isValid() ? parsed.format('DD.MM.YYYY') : String(d);
 }
 
-function buildPeriodLabel(dateRange) {
+// Экспорт — для своих шаблонов из библиотеки промптов (переменные period и comparePeriod)
+export function buildPeriodLabel(dateRange) {
   if (!dateRange?.[0]) return null;
   const days = dayjs(dateRange[1] ?? dateRange[0]).diff(dayjs(dateRange[0]), 'day') + 1;
   return `${days} ${pluralize(days, ['день', 'дня', 'дней'])} (${formatDate(dateRange[0])} — ${formatDate(dateRange[1] ?? dateRange[0])})`;

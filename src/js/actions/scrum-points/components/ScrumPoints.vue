@@ -2,12 +2,12 @@
 import dayjs from 'dayjs';
 import {orderBy, sumBy} from 'lodash-es';
 import { Avatar, Badge, Button, Column, ColumnGroup, DataTable, Dialog, Row } from 'primevue';
-import { computed, onMounted, provide, ref } from 'vue';
+import { computed, onMounted, provide, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {showToast} from '../../../toastHost/showToast.js';
-import {getTaskPointsFromName, getTaskUrl, pluralize, simplifyColumnName} from '../../../utils.js';
-import { defaultSortColumn } from '../variables.js';
+import {findRootTaskId, getInaccessibleTaskTitle, getTaskPointsFromName, getTaskUrl, pluralize, simplifyColumnName} from '../../../utils.js';
+import { defaultSortColumn, GROUP_BY_PARENT_STORAGE_KEY } from '../variables.js';
 import ColumnTable from './ColumnTable.vue';
 import CompleteTasksTable from './CompleteTasksTable.vue';
 import SettingsForm from './SettingsForm.vue';
@@ -44,6 +44,53 @@ const visibleUsers = computed(() => users.value.filter(({ id }) => settings.valu
 const isLoading = ref(false);
 const dateUpdated = ref(null);
 
+/* Группировка задач в окнах по корневой задаче */
+const groupByParent = ref(false);
+const rawTasksById = ref({});
+// Предки задач канбана: догружаются только при включённой группировке
+const ancestorsById = ref({});
+const loadingAncestors = ref(false);
+let ancestorsLoaded = false;
+
+// Корень задачи может лежать в другой группе — ссылку строим по его собственной группе
+const rootByTaskId = computed(() => {
+  const knownTasksById = { ...ancestorsById.value, ...rawTasksById.value };
+  return new Map(Object.values(rawTasksById.value).map((task) => {
+    const rootId = findRootTaskId(task, knownTasksById);
+    const rootTask = knownTasksById[rootId];
+    return [String(task.id), {
+      id: rootId,
+      // Корня нет среди известных — у пользователя нет к нему доступа (tasks.task.get и list его не отдают)
+      title: rootTask?.title ?? getInaccessibleTaskTitle(rootId),
+      url: rootTask ? getTaskUrl(rootTask.groupId ?? props.groupId, rootId) : null,
+    }];
+  }));
+});
+
+async function loadAncestors() {
+  const tasksById = rawTasksById.value;
+  loadingAncestors.value = true;
+  try {
+    const ancestors = await bitrixApi.getAncestorTasks(Object.values(tasksById), { selectFields: ['TITLE', 'GROUP_ID'] });
+    // Пока грузили, данные успели обновить — предки относятся уже к старому набору задач
+    if (tasksById !== rawTasksById.value) return;
+    ancestorsById.value = ancestors;
+    ancestorsLoaded = true;
+  } catch (error) {
+    console.warn(error);
+    showToast({ severity: 'error', summary: 'Не удалось загрузить родительские задачи', detail: error.message, life: 5000 });
+  } finally {
+    loadingAncestors.value = false;
+  }
+}
+
+watch(groupByParent, (enabled) => {
+  chrome.storage.local.set({ [GROUP_BY_PARENT_STORAGE_KEY]: enabled });
+  if (enabled && !ancestorsLoaded) loadAncestors();
+});
+
+provide('taskGrouping', { groupByParent, loadingAncestors, rootByTaskId });
+
 async function fetchData() {
   isLoading.value = true;
 
@@ -62,6 +109,11 @@ async function fetchData() {
       bitrixApi.getAllTasksByStages(savedColumnIds, props.groupId),
       bitrixApi.getGroupUsers(props.groupId),
     ]);
+
+    rawTasksById.value = Object.fromEntries(tasks.map((task) => [String(task.id), task]));
+    ancestorsById.value = {};
+    ancestorsLoaded = false;
+    if (groupByParent.value) loadAncestors();
 
     groupUsers.value = rawGroupUsers.map((user) => ({
       id: user.ID,
@@ -283,7 +335,9 @@ async function postSummary(column) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  const stored = await chrome.storage.local.get(GROUP_BY_PARENT_STORAGE_KEY);
+  groupByParent.value = stored[GROUP_BY_PARENT_STORAGE_KEY] ?? false;
   fetchData();
 });
 </script>

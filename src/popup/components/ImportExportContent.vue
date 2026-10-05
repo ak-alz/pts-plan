@@ -3,6 +3,7 @@ import { Button, Message, Textarea } from 'primevue';
 import { ref, watch } from 'vue';
 
 import { getDefaultOptions } from '../../js/options.js';
+import { formatBytes } from '../../js/utils.js';
 
 const props = defineProps({
   visible: Boolean,
@@ -14,6 +15,7 @@ const importExportJson = ref('');
 const importError = ref('');
 const copyDone = ref(false);
 const resetConfirm = ref(false);
+const storageUsage = ref(null);
 
 // Технические поля, восстанавливаемые из самого Bitrix, и личный API-ключ: выгрузку принято
 // пересылать коллеге, а ключ вводится в профиле под скрытым полем именно потому, что он личный
@@ -21,9 +23,9 @@ const PRIVATE_STORAGE_KEYS = ['sessionId', 'bitrixOrigin'];
 const PRIVATE_OPTION_KEYS = ['pixelToolsApiKey'];
 
 // Производные и временные ключи: кэш аналитики (у «Динамики задач» это сотни килобайт на группу) и
-// номер запущенного AI-запроса. Это не настройки — в выгрузке они только раздувают текст, который
+// номер запущенного AI-запроса, резервная копия описания задачи до правки нейросетью. Это не настройки — в выгрузке они только раздувают текст, который
 // принято пересылать коллеге, а чужой кэш и чужой номер запроса ему всё равно бесполезны
-const DERIVED_STORAGE_KEY_PATTERNS = [/-cache-/, /-ai-job-/];
+const DERIVED_STORAGE_KEY_PATTERNS = [/-cache-/, /-ai-job-/, /-backup-/];
 
 function isDerivedKey(key) {
   return DERIVED_STORAGE_KEY_PATTERNS.some((pattern) => pattern.test(key));
@@ -37,9 +39,31 @@ function withoutDerivedKeys(source) {
   return Object.fromEntries(Object.entries(source ?? {}).filter(([key]) => !isDerivedKey(key)));
 }
 
+// Сколько места занимает расширение. Основное — chrome.storage.local (настройки и кэши виджетов,
+// кэши — те же производные ключи, что не попадают в выгрузку). Отдельно — хранилища самих страниц
+// расширения (localStorage, IndexedDB и т.п.): navigator.storage.estimate() считает только их,
+// chrome.storage в него не входит
+async function loadStorageUsage(all) {
+  const derivedKeys = Object.keys(all).filter(isDerivedKey);
+  const [storageBytes, cacheBytes, estimate] = await Promise.all([
+    chrome.storage.local.getBytesInUse(null),
+    derivedKeys.length ? chrome.storage.local.getBytesInUse(derivedKeys) : 0,
+    navigator.storage?.estimate?.().catch(() => null) ?? null,
+  ]);
+  const pagesBytes = estimate?.usage ?? 0;
+
+  storageUsage.value = {
+    totalBytes: storageBytes + pagesBytes,
+    settingsBytes: storageBytes - cacheBytes,
+    cacheBytes,
+    pagesBytes,
+  };
+}
+
 watch(() => props.visible, async (val) => {
   if (!val) return;
   const all = await chrome.storage.local.get(null);
+  loadStorageUsage(all).catch((error) => console.warn(error));
   const exportData = withoutDerivedKeys(withoutKeys(all, PRIVATE_STORAGE_KEYS));
   if (exportData.options) {
     exportData.options = withoutKeys(exportData.options, PRIVATE_OPTION_KEYS);
@@ -132,6 +156,18 @@ async function resetSettings() {
       При импорте ваш уже введённый ключ сохраняется. Данные, которые виджеты сохраняют для скорости,
       в выгрузку тоже не попадают и при импорте остаются вашими.
     </p>
+    <div
+      v-if="storageUsage"
+      class="flex flex-wrap items-center gap-x-1 text-xs text-surface-500 dark:text-surface-400"
+    >
+      <i class="pi pi-database" />
+      <span class="font-medium text-surface-700 dark:text-surface-0">Занято: {{ formatBytes(storageUsage.totalBytes) }}</span>
+      <span>— настройки {{ formatBytes(storageUsage.settingsBytes) }}, кэш виджетов {{ formatBytes(storageUsage.cacheBytes) }}<template v-if="storageUsage.pagesBytes">, данные страниц расширения {{ formatBytes(storageUsage.pagesBytes) }}</template></span>
+      <i
+        v-tooltip.top="'Кэш виджеты сохраняют для скорости (история задач, приоритеты спринта и т. п.) — его можно удалить кнопкой «Сбросить кэш» в самом виджете. Данные страниц расширения — служебные данные попапа и страницы «Что нового».'"
+        class="pi pi-question-circle cursor-help"
+      />
+    </div>
     <Message
       v-if="importError"
       severity="error"

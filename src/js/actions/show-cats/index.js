@@ -1,4 +1,7 @@
 import axios from 'axios';
+import {shuffle, uniqBy} from 'lodash-es';
+
+import {insertCSS} from '../../utils.js';
 
 function isValidAspectRatio(width, height) {
   if (!height) return true;
@@ -99,6 +102,52 @@ async function fetchCats(preferredProvider) {
   return [];
 }
 
+const FAVORITES_STORAGE_KEY = 'show-cats-favorites';
+
+const SOURCE = {
+  API: 'api',
+  FAVORITES: 'favorites',
+  MIXED: 'mixed',
+};
+
+const STAR_CSS = `
+  .pts-cats { position: relative; margin-top: 14px; line-height: 0; }
+  .pts-cats__favorite {
+    position: absolute; top: 6px; right: 6px; display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
+    background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 14px; opacity: 0; transition: opacity 0.2s;
+  }
+  .pts-cats:hover .pts-cats__favorite { opacity: 1; }
+  .pts-cats__favorite--active { color: #facc15; }
+`;
+
+async function getFavorites() {
+  const stored = await chrome.storage.local.get(FAVORITES_STORAGE_KEY);
+  return Array.isArray(stored[FAVORITES_STORAGE_KEY]) ? stored[FAVORITES_STORAGE_KEY] : [];
+}
+
+// Читаем свежий список прямо перед записью: избранное могли поменять в другой вкладке
+async function toggleFavorite(cat) {
+  const favorites = await getFavorites();
+  const isFavorite = favorites.some((favorite) => favorite.url === cat.url);
+  const next = isFavorite
+    ? favorites.filter((favorite) => favorite.url !== cat.url)
+    : [...favorites, {url: cat.url, fullUrl: cat.fullUrl}];
+  await chrome.storage.local.set({[FAVORITES_STORAGE_KEY]: next});
+  return !isFavorite;
+}
+
+async function loadCats(options) {
+  const source = options?.showCatsSource ?? SOURCE.API;
+  const favorites = source === SOURCE.API ? [] : await getFavorites();
+
+  // «Только избранные» без единого избранного — берём котов из сервиса, иначе баннер был бы пустым
+  const needsApi = source !== SOURCE.FAVORITES || !favorites.length;
+  const apiCats = needsApi ? await fetchCats(options?.showCatsProvider) : [];
+
+  return shuffle(uniqBy([...favorites, ...apiCats], 'url'));
+}
+
 export async function showCats(options) {
   const leftMenu = document.querySelector('.menu-items-footer-inner');
   const leftMenuCollapsed = !!document.querySelector('.menu-collapsed-mode');
@@ -107,14 +156,23 @@ export async function showCats(options) {
   const initialized = !!leftMenu.querySelector('.js-show-cats');
   if (initialized) return;
 
-  let catIndex = 0;
   const timeout = 6 * 60 * 1000;
-  const cats = await fetchCats(options?.showCatsProvider);
+  let cats = await loadCats(options);
   if (!cats.length) return;
 
+  insertCSS(STAR_CSS, 'pts-show-cats-styles');
+
+  let catIndex = 0;
+  let currentCat = null;
+  let favoriteUrls = new Set((await getFavorites()).map((favorite) => favorite.url));
+
+  const container = Object.assign(document.createElement('div'), {
+    className: 'pts-cats js-show-cats',
+  });
+
   const image = Object.assign(document.createElement('img'), {
-    className: 'rounded cursor-pointer js-show-cats',
-    style: 'margin-top: 14px; width: 100%; max-width: 100%;',
+    className: 'rounded cursor-pointer',
+    style: 'display: block; width: 100%; max-width: 100%;',
     alt: 'cats',
     title: 'Открыть в новой вкладке',
     onclick() {
@@ -123,34 +181,77 @@ export async function showCats(options) {
     },
   });
 
-  // Подряд идущие пропуски по пропорциям: перебор идёт по кругу (catIndex % cats.length), поэтому
-  // без счётчика партия, целиком не прошедшая проверку, качалась бы бесконечно
+  const favoriteButton = Object.assign(document.createElement('button'), {
+    type: 'button',
+    className: 'pts-cats__favorite',
+  });
+
+  function renderFavoriteButton() {
+    const isFavorite = !!currentCat && favoriteUrls.has(currentCat.url);
+    favoriteButton.classList.toggle('pts-cats__favorite--active', isFavorite);
+    favoriteButton.title = isFavorite ? 'Убрать из избранного' : 'В избранное';
+    favoriteButton.innerHTML = `<i class="pi ${isFavorite ? 'pi-star-fill' : 'pi-star'}"></i>`;
+  }
+
+  favoriteButton.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    if (!currentCat) return;
+
+    const cat = currentCat;
+    const isFavorite = await toggleFavorite(cat);
+    if (isFavorite) favoriteUrls.add(cat.url);
+    else favoriteUrls.delete(cat.url);
+    renderFavoriteButton();
+  });
+
+  // Звёздочка должна совпадать в каждой открытой вкладке, а не только в той, где нажали
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[FAVORITES_STORAGE_KEY]) return;
+    favoriteUrls = new Set((changes[FAVORITES_STORAGE_KEY].newValue ?? []).map((favorite) => favorite.url));
+    renderFavoriteButton();
+  });
+
+  // Подряд идущие пропуски (пропорции не подошли или файл не открылся — у избранного ссылка могла
+  // умереть): перебор идёт по кругу, поэтому без счётчика партия, целиком не прошедшая проверку,
+  // качалась бы бесконечно
   let skippedInARow = 0;
 
+  function skipCurrentCat() {
+    if (skippedInARow >= cats.length) return;
+    skippedInARow += 1;
+    updateCat();
+  }
+
   image.addEventListener('load', () => {
-    if (!isValidAspectRatio(image.naturalWidth, image.naturalHeight) && skippedInARow < cats.length) {
-      skippedInARow += 1;
-      updateCat();
+    if (!isValidAspectRatio(image.naturalWidth, image.naturalHeight)) {
+      skipCurrentCat();
       return;
     }
     skippedInARow = 0;
     image.style.aspectRatio = image.naturalWidth / image.naturalHeight;
   });
 
+  image.addEventListener('error', skipCurrentCat);
+
   function updateCat() {
-    const cat = cats[catIndex % cats.length];
+    // Прошли весь список — перемешиваем заново, чтобы следующий круг шёл в другом порядке
+    if (catIndex > 0 && catIndex % cats.length === 0) cats = shuffle(cats);
+
+    currentCat = cats[catIndex % cats.length];
     catIndex += 1;
-    image.dataset.fullUrl = cat.fullUrl;
-    image.src = cat.url;
+    image.dataset.fullUrl = currentCat.fullUrl;
+    image.src = currentCat.url;
+    renderFavoriteButton();
   }
 
   updateCat();
-  leftMenu.appendChild(image);
+  container.append(image, favoriteButton);
+  leftMenu.appendChild(container);
 
   const intervalId = setInterval(() => {
     // Баннер мог уехать из DOM вместе с перерисованным меню — держать таймер и качать изображения
     // в пустоту незачем
-    if (!image.isConnected) {
+    if (!container.isConnected) {
       clearInterval(intervalId);
       return;
     }

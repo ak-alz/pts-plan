@@ -6,14 +6,17 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import { useAiJob } from '../../../composables/useAiJob.js';
+import { usePromptLibrary } from '../../../composables/usePromptLibrary.js';
 import { SPRINT_SUMMARY_BB_USER_RE, SPRINT_SUMMARY_RE, SPRINT_SUMMARY_URL_USER_RE } from '../../../patterns.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import { renderAiMarkdown } from '../../../renderAiMarkdown.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import DateRangePicker from '../../../ui/DateRangePicker.vue';
-import {stringToPastelColor} from '../../../utils.js';
-import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
+import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
+import {formatBytes, stringToPastelColor} from '../../../utils.js';
+import {buildPeriodLabel, buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
 import { buildCacheSignature, clearCache, getCacheSizeBytes, loadCache, saveCache } from '../cache.js';
+import {promptSpec} from '../promptSpec.js';
 import { aggregateTeamSprints, computePointsStats, computeTrend, defaultIgnorePoints, defaultMonths, normalizeSprintsToFullTeam } from '../variables.js';
 import CreateTaskTemplate from './CreateTaskTemplate.vue';
 import SettingsForm from './SettingsForm.vue';
@@ -49,8 +52,7 @@ const isInitialLoading = computed(() => isLoading.value && !users.value.length);
 const cacheSignature = computed(() => buildCacheSignature(settings.value));
 
 const cacheSizeLabel = computed(() => {
-  const kilobytes = cacheSizeBytes.value / 1024;
-  return kilobytes >= 1024 ? `${(kilobytes / 1024).toFixed(1)} МБ` : `${Math.round(kilobytes)} КБ`;
+  return formatBytes(cacheSizeBytes.value);
 });
 
 const cachedAtLabel = computed(() => {
@@ -348,7 +350,11 @@ function buildAiData() {
   return {aiData, ignorePoints};
 }
 
+const promptLibrary = usePromptLibrary(promptSpec);
+
 const promptPreview = computed(() => {
+  const customPreview = promptLibrary.previewActivePrompt();
+  if (customPreview) return customPreview;
   const ignorePoints = typeof settings.value.ignorePoints === 'number' ? settings.value.ignorePoints : defaultIgnorePoints;
   return buildPromptPreview(ignorePoints, form.dateRange, aiContext.value.trim() || null);
 });
@@ -395,11 +401,17 @@ async function aiAnalyze() {
 
   aiResult.value = '';
   const {onStart, onProgress} = aiJob.chatCallbacks();
-  await aiJob.runJob(() => {
+  await aiJob.runJob(async () => {
     const {aiData, ignorePoints} = buildAiData();
 
+    await promptLibrary.ready;
     const MAX_PROMPT_LENGTH = 20000;
-    let prompt = buildSystemPrompt(aiData, ignorePoints, form.dateRange, aiContext.value);
+    let prompt = promptLibrary.buildActivePrompt({
+      data: JSON.stringify(aiData),
+      period: buildPeriodLabel(form.dateRange) ?? '',
+      ignorePoints: String(ignorePoints),
+      extraContext: aiContext.value,
+    }) ?? buildSystemPrompt(aiData, ignorePoints, form.dateRange, aiContext.value);
     if (prompt.length > MAX_PROMPT_LENGTH) {
       prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
       showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
@@ -542,6 +554,7 @@ onMounted(async () => {
           :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
           @click="isAiContextModalOpened = true"
         />
+        <PromptLibraryButton :library="promptLibrary" />
         <Button
           v-tooltip="'Просмотр системного промпта'"
           size="small"
@@ -709,7 +722,7 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isPromptPreviewModalOpened"
-    header="Системный промпт"
+    :header="promptLibrary.activePrompt.value ? `Промпт: ${promptLibrary.activePrompt.value.name}` : 'Системный промпт'"
     dismissable-mask
     modal
     :style="{width: '760px'}"

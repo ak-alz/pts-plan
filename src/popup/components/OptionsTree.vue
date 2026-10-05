@@ -4,6 +4,7 @@ import {computed, inject, ref, watch} from 'vue';
 
 import allOptions, {optionTypes} from '../../js/options.js';
 import {useAutoFill} from '../useAutoFill.js';
+import {useNewOptionMarks} from '../useNewOptionMarks.js';
 import ColorPicker from './ColorPicker.vue';
 import CommentDemo from './CommentDemo.vue';
 import NotificationDemo from './NotificationDemo.vue';
@@ -29,6 +30,21 @@ const model = defineModel({
 
 const profileKeys = new Set(allOptions.filter(opt => opt.groups?.includes('profile')).map(opt => opt.key));
 const {autoFill, isFetching: autoFillFetching} = useAutoFill(model);
+const {hasUnseen, markOptionSeen} = useNewOptionMarks();
+
+// Точка гаснет не от случайного пролёта курсора, а когда на строке задержались
+const HOVER_SEEN_DELAY_MS = 400;
+let hoverTimeoutId = null;
+
+function onOptionHoverStart(option) {
+  if (!hasUnseen(option)) return;
+  clearTimeout(hoverTimeoutId);
+  hoverTimeoutId = setTimeout(() => markOptionSeen(option, !!(option.options && model.value[option.key])), HOVER_SEEN_DELAY_MS);
+}
+
+function onOptionHoverEnd() {
+  clearTimeout(hoverTimeoutId);
+}
 
 const style = computed(() => {
   if (!props.level) return null;
@@ -136,6 +152,8 @@ watch(
     <div
       v-else
       class="flex gap-1 items-center"
+      @mouseenter="onOptionHoverStart(option)"
+      @mouseleave="onOptionHoverEnd"
     >
       <InputGroup
         v-if="option.type === optionTypes.TEXT || option.type === optionTypes.NUMBER"
@@ -233,6 +251,11 @@ watch(
         class="cursor-pointer shrink-0"
         :for="`option_${option.key}`"
       >{{ option.name }}</label>
+      <span
+        v-if="hasUnseen(option)"
+        v-tooltip.top="option.options?.some(hasUnseen) ? 'Есть новые настройки' : 'Новое'"
+        class="size-1.5 shrink-0 rounded-full bg-red-500"
+      />
       <span
         v-if="option.new"
         class="text-[10px] leading-none border border-current rounded px-1 py-0.5 text-surface-500 dark:text-surface-400"

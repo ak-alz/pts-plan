@@ -87,12 +87,17 @@ const modalTasks = computed(() => {
     <Column header="Задача">
       <template #body="{ data }">
         <a
+          v-if="data.parentAccessible"
           class="pts-blur"
           :href="getTaskUrl(groupId, data.parentId, userId)"
           target="_top"
         >
           {{ data.parentTitle }}
         </a>
+        <span
+          v-else
+          class="pts-blur text-surface-500 dark:text-surface-400"
+        >{{ data.parentTitle }}</span>
       </template>
     </Column>
 

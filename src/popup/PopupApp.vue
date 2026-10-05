@@ -9,8 +9,10 @@ import { convertKeyboardLayout } from '../js/utils.js';
 import ImportExportContent from './components/ImportExportContent.vue';
 import OptionsTree from './components/OptionsTree.vue';
 import ProfileSettings from './components/ProfileSettings.vue';
+import { useNewOptionMarks } from './useNewOptionMarks.js';
 
 const { icon: themeIcon, tooltip: themeTooltip, cycleMode: cycleThemeMode } = useTheme();
+const { unseenCount, hasUnseen, markAllSeen } = useNewOptionMarks();
 
 const search = ref('');
 const selectedGroup = ref('all');
@@ -40,7 +42,7 @@ const filteredOptions = computed(() => {
       const matchesSearch = [searchValue, convertedSearchValue].some((value) =>
         option.name.toLowerCase().includes(value) || option.tip?.toLowerCase()?.includes(value));
       const matchesGroup = selectedGroup.value === 'all'
-        || (selectedGroup.value === 'new' && option.new)
+        || (selectedGroup.value === 'new' && (option.new || hasUnseen(option)))
         || (selectedGroup.value === 'popular' && (option.popularity ?? 0) >= 80)
         || (selectedGroup.value === 'other' ? !option.groups?.length : option.groups?.includes(selectedGroup.value));
       return matchesSearch && matchesGroup;
@@ -133,6 +135,17 @@ onUnmounted(() => {
             size="small"
           />
         </IconField>
+        <Button
+          v-if="unseenCount"
+          v-tooltip.left="'Отметить всё новое просмотренным'"
+          size="small"
+          severity="secondary"
+          text
+          icon="pi pi-check-circle"
+          :badge="String(unseenCount)"
+          badge-severity="danger"
+          @click="markAllSeen"
+        />
         <Button
           v-tooltip.left="'Настройки профиля'"
           size="small"

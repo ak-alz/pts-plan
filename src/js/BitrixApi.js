@@ -722,6 +722,40 @@ export default class BitrixApi {
   }
 
   /**
+   * Догружает предков задач по уровням, пока каждая цепочка не дойдёт до корня: один запрос на
+   * уровень, а не на задачу. Следующий уровень известен только из ответа по предыдущему.
+   * Уже известные задачи (сами `tasks`) повторно не запрашиваются.
+   * @param {Array<{id: string|number, parentId?: string|number}>} tasks - Задачи, чьих предков ищем.
+   * @param {Object} [options]
+   * @param {string[]|null} [options.selectFields] - Поля предков; `ID` и `PARENT_ID` добавляются сами — без них подъём не продолжить. `null` — поля searchTasks по умолчанию.
+   * @param {number} [options.maxDepth=10] - Предел числа уровней: реальная вложенность — пара уровней, предел лишь страхует от битых данных.
+   * @returns {Promise<Record<string, any>>} Карта ID → догруженный предок (исходные задачи в неё не входят).
+   */
+  async getAncestorTasks(tasks, {selectFields = null, maxDepth = 10} = {}) {
+    const knownIds = new Set(tasks.map((task) => String(task.id)));
+    const fields = selectFields ? [...new Set(['ID', 'PARENT_ID', ...selectFields])] : null;
+    const ancestors = {};
+    let levelTasks = tasks;
+
+    for (let depth = 0; depth < maxDepth && levelTasks.length; depth++) {
+      const parentIds = [...new Set(
+        levelTasks
+          .map((task) => String(task.parentId ?? 0))
+          .filter((parentId) => parentId !== '0' && !knownIds.has(parentId)),
+      )];
+      if (!parentIds.length) break;
+
+      parentIds.forEach((parentId) => knownIds.add(parentId));
+      levelTasks = await this.searchTasks({ids: parentIds, selectFields: fields});
+      levelTasks.forEach((task) => {
+        ancestors[String(task.id)] = task;
+      });
+    }
+
+    return ancestors;
+  }
+
+  /**
    * Возвращает уникальные задачи, где пользователь фигурирует в любой из 4 ролей — ответственный,
    * соисполнитель, наблюдатель или постановщик. Именно так Bitrix формирует личный канбан
    * «Мой план» — он не ограничивается ответственностью (проверено эмпирически на реальном

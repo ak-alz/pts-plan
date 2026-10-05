@@ -40,7 +40,8 @@
 
 .commit-button,
 .decompose-task-button,
-.export-task-button {
+.export-task-button,
+.improve-description-button {
   font-size: 16px;
   color: inherit;
   padding: 0;
@@ -53,7 +54,8 @@
 
 .commit-button:not(.commit-button--success):hover,
 .decompose-task-button:hover,
-.export-task-button:hover {
+.export-task-button:hover,
+.improve-description-button:hover {
   opacity: 0.8;
 }
 

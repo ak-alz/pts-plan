@@ -1,13 +1,13 @@
 import {MEETING_TIME_RE} from '../../patterns.js';
 import {pluralize} from '../../utils.js';
 import {
-  AT_START_GRACE_MS,
   MEETING_STATUS,
   MEETING_TYPE,
   MEETINGS_MAX_AGE_DAYS,
+  MIN_REMINDER_WINDOW_MS,
   PRESENCE_TTL_MS,
   PRESENCE_VISIBLE_TTL_MS,
-  REMINDER_AT_START,
+  REMINDER_DISABLED,
   SHOWN_REMINDERS_MAX_AGE_DAYS,
 } from './variables.js';
 
@@ -32,14 +32,18 @@ export function isMeetingEnabled(meeting) {
 }
 
 /**
- * Сколько времени после начала встречи напоминание ещё актуально.
+ * Сколько времени после начала встречи напоминание ещё актуально. Непустое окно показа (заранее +
+ * после начала) не бывает короче `MIN_REMINDER_WINDOW_MS` — недостающее добирается после начала.
  * @param {object} settings - Настройки фичи (`reminderMinutes`, `lateReminderMinutes`).
  * @returns {number} Длительность окна после начала в миллисекундах.
  */
 export function getGraceMs(settings) {
   const graceMs = (settings.lateReminderMinutes ?? 0) * 60_000;
-  if (settings.reminderMinutes !== REMINDER_AT_START) return graceMs;
-  return Math.max(graceMs, AT_START_GRACE_MS);
+  // Оба селекта выключены — напоминаний нет по замыслу, растягивать нечего
+  if (settings.reminderMinutes === REMINDER_DISABLED && !graceMs) return 0;
+
+  const leadMs = Math.max(settings.reminderMinutes, 0) * 60_000;
+  return Math.max(graceMs, MIN_REMINDER_WINDOW_MS - leadMs);
 }
 
 // Дедуп-ключ регулярной встречи привязан к календарной дате её вхождения по местному времени
