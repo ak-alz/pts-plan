@@ -50,7 +50,8 @@ const rawTasksById = ref({});
 // Предки задач канбана: догружаются только при включённой группировке
 const ancestorsById = ref({});
 const loadingAncestors = ref(false);
-let ancestorsLoaded = false;
+// ref: от него зависит подпись корня — пока предков нет, «нет доступа» было бы неправдой
+const ancestorsLoaded = ref(false);
 
 // Корень задачи может лежать в другой группе — ссылку строим по его собственной группе
 const rootByTaskId = computed(() => {
@@ -60,8 +61,8 @@ const rootByTaskId = computed(() => {
     const rootTask = knownTasksById[rootId];
     return [String(task.id), {
       id: rootId,
-      // Корня нет среди известных — у пользователя нет к нему доступа (tasks.task.get и list его не отдают)
-      title: rootTask?.title ?? getInaccessibleTaskTitle(rootId),
+      // Корня нет среди известных уже после загрузки предков — значит, к нему нет доступа
+      title: rootTask?.title ?? (ancestorsLoaded.value ? getInaccessibleTaskTitle(rootId) : `Задача #${rootId}`),
       url: rootTask ? getTaskUrl(rootTask.groupId ?? props.groupId, rootId) : null,
     }];
   }));
@@ -75,18 +76,19 @@ async function loadAncestors() {
     // Пока грузили, данные успели обновить — предки относятся уже к старому набору задач
     if (tasksById !== rawTasksById.value) return;
     ancestorsById.value = ancestors;
-    ancestorsLoaded = true;
+    ancestorsLoaded.value = true;
   } catch (error) {
     console.warn(error);
     showToast({ severity: 'error', summary: 'Не удалось загрузить родительские задачи', detail: error.message, life: 5000 });
   } finally {
-    loadingAncestors.value = false;
+    // Устаревший запрос не гасит спиннер новому, который ещё идёт
+    if (tasksById === rawTasksById.value) loadingAncestors.value = false;
   }
 }
 
 watch(groupByParent, (enabled) => {
   chrome.storage.local.set({ [GROUP_BY_PARENT_STORAGE_KEY]: enabled });
-  if (enabled && !ancestorsLoaded) loadAncestors();
+  if (enabled && !ancestorsLoaded.value) loadAncestors();
 });
 
 provide('taskGrouping', { groupByParent, loadingAncestors, rootByTaskId });
@@ -112,7 +114,7 @@ async function fetchData() {
 
     rawTasksById.value = Object.fromEntries(tasks.map((task) => [String(task.id), task]));
     ancestorsById.value = {};
-    ancestorsLoaded = false;
+    ancestorsLoaded.value = false;
     if (groupByParent.value) loadAncestors();
 
     groupUsers.value = rawGroupUsers.map((user) => ({

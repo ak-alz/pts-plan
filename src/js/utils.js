@@ -896,8 +896,8 @@ export function isUserMentioned(text, firstName, lastName) {
 
   const nameVariants = getNameVariants(firstName, lastName);
   if (NOTIF_NEW_TASK_RE.test(text)) {
-    const responsible = text.match(NOTIF_NEW_TASK_RESPONSIBLE_RE)?.[1];
-    return !!responsible && nameVariants.includes(responsible);
+    const responsible = text.match(NOTIF_NEW_TASK_RESPONSIBLE_RE)?.[1] ?? '';
+    return nameVariants.some((name) => responsible.includes(name));
   }
 
   return nameVariants.some((name) => text.includes(name));

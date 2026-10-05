@@ -23,6 +23,8 @@ const selectedId = ref(DEFAULT_ID);
 const deleteConfirm = ref(false);
 const templateInput = ref(null);
 
+// Разбирается один раз: библиотека на весь срок жизни компонента. Если она может смениться
+// (например, у фичи по библиотеке на режим), ставьте кнопке :key — иначе окно останется со старой
 const { spec, prompts, defaultTemplate } = props.library;
 
 const selectedPrompt = computed(() => prompts.value.find((prompt) => prompt.id === selectedId.value) ?? null);

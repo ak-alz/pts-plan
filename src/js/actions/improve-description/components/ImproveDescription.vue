@@ -467,6 +467,7 @@ onMounted(async () => {
             option-label="label"
             option-value="value"
             :allow-empty="false"
+            :disabled="aiLoading"
             size="small"
           />
           <p class="m-0 text-xs text-surface-500 dark:text-surface-400">
@@ -558,7 +559,10 @@ onMounted(async () => {
               :disabled="isContextLoading || aiLoading"
               @click="generate(MODE.RECOMMEND)"
             />
-            <PromptLibraryButton :library="promptLibraries[mode]" />
+            <PromptLibraryButton
+              :key="mode"
+              :library="promptLibraries[mode]"
+            />
             <Button
               v-tooltip="'Просмотр промпта'"
               size="small"

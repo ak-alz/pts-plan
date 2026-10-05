@@ -26,7 +26,9 @@ const flatOptions = collectOptions(allOptions);
 function isFreshAddition(option) {
   if (!option.addedIn) return false;
   if (compareVersions(option.addedIn, currentVersion) === 0) return true;
-  return compareVersions(option.addedIn, installedVersion.value ?? '0') > 0;
+  // Версия установки неизвестна (сброс настроек, старый импорт) — считаем, что поставили только что:
+  // иначе точка загорелась бы у каждой опции с addedIn за всю историю
+  return compareVersions(option.addedIn, installedVersion.value ?? currentVersion) > 0;
 }
 
 const unseenKeys = computed(() => {
