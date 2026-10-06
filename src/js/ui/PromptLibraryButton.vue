@@ -132,7 +132,8 @@ async function insertVariable(key) {
           />
         </button>
         <Button
-          label="Новый на основе стандартного"
+          v-tooltip.top="'Создаётся копией стандартного промпта — её можно переписать'"
+          label="Новый промпт"
           icon="pi pi-plus"
           size="small"
           severity="secondary"
@@ -254,7 +255,7 @@ async function insertVariable(key) {
           />
           <Button
             v-tooltip.top="'Заменить текст этого промпта стандартным'"
-            label="Сбросить к стандартному"
+            label="Сбросить"
             icon="pi pi-replay"
             size="small"
             severity="secondary"

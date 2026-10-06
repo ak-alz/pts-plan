@@ -1,12 +1,15 @@
 <script setup>
-import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select, Textarea} from 'primevue';
-import {computed, onMounted, reactive, ref, watch} from 'vue';
+import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select} from 'primevue';
+import {computed, onMounted, reactive, ref, useTemplateRef, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {usePersonalGroupFilter} from '../../../composables/usePersonalGroupFilter.js';
+import {refreshKanbanTask} from '../../../kanbanBridge.js';
 import {showToast} from '../../../toastHost/showToast.js';
+import BbcodeEditor from '../../../ui/BbcodeEditor.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getCommitMessage, getTaskUrl} from '../../../utils.js';
+import DescriptionAi from './DescriptionAi.vue';
 import QuickTaskSettings from './QuickTaskSettings.vue';
 
 const props = defineProps({
@@ -23,7 +26,9 @@ const contextKey = computed(() => isPersonal.value ? `personal-${props.context.i
 const api = new BitrixApi(props.sessionId);
 const settingsStorageKey = computed(() => `quick-task-settings-${contextKey.value}`);
 
+const descriptionEditor = useTemplateRef('descriptionEditor');
 const isSettingsOpen = ref(false);
+const isGeneratingDescription = ref(false);
 const isLoadingData = ref(false);
 const isSubmitting = ref(false);
 
@@ -59,6 +64,17 @@ const form = reactive({
   auditorIds: [],
   copyCommit: false,
 });
+
+// Что из формы знает нейросеть, кроме названия и описания
+const aiProjectName = computed(() => (isPersonal.value
+  ? groupOptions.value.find((group) => group.id === selectedGroupId.value)?.name ?? ''
+  : ''));
+const aiStageName = computed(() => {
+  const stages = hasGroupScope.value ? groupStages.value : personalStages.value;
+  const stageId = hasGroupScope.value ? form.stageId : form.personalStageId;
+  return stages.find((stage) => stage.id === stageId)?.title ?? '';
+});
+const aiResponsibleName = computed(() => users.value.find((user) => user.id === form.responsibleId)?.title ?? '');
 
 function mapStages(stagesResponse) {
   return Object.values(stagesResponse.data?.result ?? {})
@@ -154,7 +170,15 @@ async function onSettingsSaved() {
   isSettingsOpen.value = false;
 }
 
-onMounted(async () => {
+// Создать задачу можно раньше, чем догрузятся пользователь и настройки: название вбивают сразу и
+// жмут Enter. Без ожидания исполнитель ещё пуст, и форма отвечала «Выберите исполнителя»
+let initialLoad = Promise.resolve();
+
+onMounted(() => {
+  initialLoad = loadInitialData();
+});
+
+async function loadInitialData() {
   isLoadingData.value = true;
   try {
     const [loadedUser, personalStagesResponse] = await Promise.all([
@@ -187,11 +211,21 @@ onMounted(async () => {
 
   // Свой индикатор загрузки внутри — поэтому вне try выше
   await loadGroupScope();
-});
+}
 
 async function submit() {
   const title = form.title.trim();
-  if (!title) return;
+  if (!title || isSubmitting.value) return;
+  isSubmitting.value = true;
+  try {
+    await Promise.all([initialLoad, descriptionEditor.value?.sync()]);
+    await createTask(title);
+  } finally {
+    isSubmitting.value = false;
+  }
+}
+
+async function createTask(title) {
   if (isPersonal.value && !form.personalStageId) {
     showToast({severity: 'warn', summary: 'Выберите стадию в «Мой план»', life: 3000});
     return;
@@ -208,7 +242,6 @@ async function submit() {
     showToast({severity: 'warn', summary: 'Выберите исполнителя', life: 3000});
     return;
   }
-  isSubmitting.value = true;
   try {
     const groupId = targetGroupId.value;
     const fields = {TITLE: title, GROUP_ID: groupId ?? '0'};
@@ -225,19 +258,12 @@ async function submit() {
     // и как 200 с полем error, и тогда виджет отчитался бы о создании впустую
     if (!taskId) throw new Error(data?.error_description || 'Bitrix не подтвердил создание задачи');
 
-    // Задача уже создана, поэтому неудавшийся перенос её не отменяет — только предупреждаем
-    let stageFailed = false;
-    if (form.personalStageId) {
-      try {
-        const {data: moveData} = await api.moveTaskToStage(taskId, form.personalStageId);
-        if (!moveData?.result) throw new Error(moveData?.error_description || 'Bitrix не подтвердил перенос задачи');
-      } catch (error) {
-        console.warn(error);
-        stageFailed = true;
-      }
-    }
+    // Задача уже есть — закрываем окно, не дожидаясь переноса в стадию: это ещё один запрос,
+    // и с ним окно висело больше секунды против мгновенного черновика в форме Bitrix
+    const personalStageId = form.personalStageId;
+    emit('success');
 
-    if (form.copyCommit && taskId) {
+    if (form.copyCommit) {
       const commitMessage = getCommitMessage(title, taskId);
       try {
         await navigator.clipboard.writeText(commitMessage);
@@ -245,9 +271,23 @@ async function submit() {
       } catch { /* ignore */ }
     }
 
-    const taskUrl = taskId && settings.value.showCreatedTask
-      ? getTaskUrl(groupId ?? '0', taskId, userId.value)
-      : null;
+    // Неудавшийся перенос задачу не отменяет — только предупреждаем
+    let stageFailed = false;
+    if (personalStageId) {
+      try {
+        const {data: moveData} = await api.moveTaskToStage(taskId, personalStageId);
+        if (!moveData?.result) throw new Error(moveData?.error_description || 'Bitrix не подтвердил перенос задачи');
+      } catch (error) {
+        console.warn(error);
+        stageFailed = true;
+      }
+    }
+
+    // Задача создана через REST, и сама доска о ней не узнает до перезагрузки страницы. Карточку
+    // запрашиваем после переноса, иначе на личном плане она встала бы не в ту колонку
+    refreshKanbanTask(taskId);
+
+    const taskUrl = settings.value.showCreatedTask ? getTaskUrl(groupId ?? '0', taskId, userId.value) : null;
     showToast({
       severity: stageFailed ? 'warn' : 'success',
       summary: 'Задача создана',
@@ -257,12 +297,9 @@ async function submit() {
       links: taskUrl ? [{ url: taskUrl, label: title }] : undefined,
       life: taskUrl ? 8000 : 3000,
     });
-    emit('success');
   } catch (error) {
     console.warn(error);
     showToast({severity: 'error', summary: 'Ошибка создания задачи', detail: error.message, life: 5000});
-  } finally {
-    isSubmitting.value = false;
   }
 }
 </script>
@@ -291,13 +328,24 @@ async function submit() {
     </FormField>
 
     <FormField label="Описание">
-      <Textarea
+      <BbcodeEditor
+        ref="descriptionEditor"
         v-model="form.description"
-        rows="3"
-        fluid
+        :disabled="isGeneratingDescription"
         placeholder="Описание задачи (необязательно)"
       />
     </FormField>
+
+    <DescriptionAi
+      v-model:description="form.description"
+      v-model:generating="isGeneratingDescription"
+      :board-key="contextKey"
+      :sync-description="() => descriptionEditor?.sync()"
+      :title="form.title"
+      :project-name="aiProjectName"
+      :stage-name="aiStageName"
+      :responsible-name="aiResponsibleName"
+    />
 
     <div
       v-if="isPersonal"

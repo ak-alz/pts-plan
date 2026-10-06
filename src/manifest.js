@@ -40,6 +40,8 @@ export default defineManifest({
       resources: [
         'src/content-scripts/main.js',
         'src/content-scripts/editor-bridge.js',
+        'src/content-scripts/text-editor-bridge.js',
+        'src/content-scripts/kanban-bridge.js',
         'assets/*',
         'img/logo.png',
       ],

@@ -1,34 +1,10 @@
 // Isolated-сторона моста к редактору комментария Bitrix. Сам мост — src/content-scripts/editor-bridge.js,
 // он инжектится в main world при первом обращении: постоянно грузить его на каждой странице незачем.
+import {loadMainWorldScript} from './mainWorldScript.js';
+
 const REQUEST_KEY = 'PTS_EDITOR_INSERT';
 const RESPONSE_KEY = 'PTS_EDITOR_INSERT_RESULT';
 const RESPONSE_TIMEOUT_MS = 2000;
-
-let bridgeLoadPromise = null;
-
-function loadBridge() {
-  if (bridgeLoadPromise) return bridgeLoadPromise;
-
-  bridgeLoadPromise = new Promise((resolve) => {
-    const script = Object.assign(document.createElement('script'), {
-      src: chrome.runtime.getURL('src/content-scripts/editor-bridge.js'),
-      type: 'module',
-    });
-
-    script.onload = () => {
-      script.remove();
-      resolve(true);
-    };
-    script.onerror = () => {
-      script.remove();
-      resolve(false);
-    };
-
-    document.head.appendChild(script);
-  });
-
-  return bridgeLoadPromise;
-}
 
 /**
  * ID формы постформы Bitrix — это id её DOM-узла, но какой именно из предков им окажется, зависит
@@ -55,7 +31,7 @@ function getFormIds(form) {
  */
 export async function insertCommentText(form, text) {
   if (!form || !text) return false;
-  if (!await loadBridge()) return false;
+  if (!await loadMainWorldScript('src/content-scripts/editor-bridge.js')) return false;
 
   const requestId = crypto.randomUUID();
 
