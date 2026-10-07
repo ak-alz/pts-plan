@@ -32,6 +32,7 @@ defineProps({
   contributionThresholdPercent: {type: Number, default: 1},
   copySeparator: {type: String, default: '\t'},
   csvSeparator: {type: String, default: ','},
+  hideAi: {type: Boolean, default: false},
 });
 
 const emit = defineEmits(['open-settings']);
@@ -65,6 +66,7 @@ const emit = defineEmits(['open-settings']);
           :cut="cut"
           :copy-separator="copySeparator"
           :csv-separator="csvSeparator"
+          :hide-ai="hideAi"
         />
       </TabPanel>
 

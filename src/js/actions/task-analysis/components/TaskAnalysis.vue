@@ -816,6 +816,7 @@ onMounted(async () => {
         :multi-user="allUserTasksPerUser.length > 1"
         :copy-separator="settings.copySeparator ?? '\t'"
         :csv-separator="settings.csvSeparator ?? ','"
+        :hide-ai="settings.hideAi ?? false"
         :default-tab="settings.defaultTab ?? 'summary'"
         :context-key="contextKey"
         :date-range="fetchedDateRange"

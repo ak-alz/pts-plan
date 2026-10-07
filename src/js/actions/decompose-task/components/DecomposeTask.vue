@@ -535,7 +535,7 @@ onMounted(async () => {
         @click="isSettingsModalOpened = true"
       />
       <InputGroup
-        v-if="!isLoading && viewMode !== 'quick'"
+        v-if="!isLoading && viewMode !== 'quick' && !settings.hideAi"
         :pt="{root: {style: {width: 'auto'}}}"
       >
         <Button

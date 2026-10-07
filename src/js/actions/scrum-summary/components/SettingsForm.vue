@@ -1,5 +1,5 @@
 <script setup>
-import { Button, InputNumber, MultiSelect, Select } from 'primevue';
+import { Button, Checkbox, InputNumber, MultiSelect, Select } from 'primevue';
 import { reactive, ref, toRaw } from 'vue';
 
 import {showToast} from '../../../toastHost/showToast.js';
@@ -46,6 +46,7 @@ const form = reactive({
   taskId: props.initial.taskId ? toRaw(props.initial.taskId) : null,
   defaultMonths: props.initial.defaultMonths ?? 6,
   ignorePoints: props.initial.ignorePoints != null ? toRaw(props.initial.ignorePoints) : defaultIgnorePoints,
+  hideAi: props.initial.hideAi ?? false,
 });
 
 async function saveSettings() {
@@ -140,6 +141,22 @@ async function saveSettings() {
           input-id="settings_ignore_points"
         />
       </FormField>
+
+      <div class="flex gap-2 items-center">
+        <Checkbox
+          v-model="form.hideAi"
+          binary
+          input-id="settings_hide_ai"
+        />
+        <label
+          for="settings_hide_ai"
+          class="text-sm cursor-pointer select-none"
+        >Скрыть AI-функции</label>
+        <i
+          v-tooltip.top="'Убирает кнопку «AI анализ» вместе с контекстом, промптами и результатом анализа'"
+          class="pi pi-question-circle"
+        />
+      </div>
     </template>
 
     <Button

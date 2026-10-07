@@ -535,7 +535,7 @@ onMounted(async () => {
         />
       </div>
       <ButtonGroup
-        v-if="!isInitialLoading && computedUsers.length"
+        v-if="!isInitialLoading && computedUsers.length && !settings.hideAi"
         :pt="{root: {style: {width: 'auto'}}}"
       >
         <Button
@@ -597,7 +597,7 @@ onMounted(async () => {
     />
 
     <div
-      v-if="aiResult"
+      v-if="aiResult && !settings.hideAi"
       ref="aiResultElement"
       class="mt-4 max-w-[800px]"
     >

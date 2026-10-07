@@ -105,4 +105,5 @@ export const DEFAULT_SETTINGS = {
   milestones: [],
   copySeparator: '\t',
   csvSeparator: ',',
+  hideAi: false,
 };

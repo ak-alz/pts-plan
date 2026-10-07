@@ -1,12 +1,14 @@
 <script setup>
-import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select} from 'primevue';
+import {Avatar, Badge, Button, Checkbox, Dialog, InputText, MultiSelect, Select, SelectButton} from 'primevue';
 import {computed, onMounted, reactive, ref, useTemplateRef, watch} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {usePersonalGroupFilter} from '../../../composables/usePersonalGroupFilter.js';
+import {createEditorAttachments} from '../../../editorFiles.js';
 import {refreshKanbanTask} from '../../../kanbanBridge.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import BbcodeEditor from '../../../ui/BbcodeEditor.vue';
+import EditorAttachments from '../../../ui/EditorAttachments.vue';
 import FormField from '../../../ui/FormField.vue';
 import {getCommitMessage, getTaskUrl} from '../../../utils.js';
 import DescriptionAi from './DescriptionAi.vue';
@@ -24,6 +26,7 @@ const isPersonal = computed(() => props.context.type === 'personal');
 const contextKey = computed(() => isPersonal.value ? `personal-${props.context.id}` : props.context.id);
 
 const api = new BitrixApi(props.sessionId);
+const attachments = createEditorAttachments(api);
 const settingsStorageKey = computed(() => `quick-task-settings-${contextKey.value}`);
 
 const descriptionEditor = useTemplateRef('descriptionEditor');
@@ -31,6 +34,7 @@ const isSettingsOpen = ref(false);
 const isGeneratingDescription = ref(false);
 const isLoadingData = ref(false);
 const isSubmitting = ref(false);
+const isUploadingFiles = attachments.isUploading;
 
 const userId = ref(null);
 const currentUser = ref(null);
@@ -40,6 +44,25 @@ const users = ref([]);
 const groupStages = ref([]);
 const personalStages = ref([]);
 const settings = ref({});
+// Пока настройки не прочитаны, неизвестно, какое поле описания показывать: визуальный редактор,
+// смонтированный заранее, пришлось бы тут же уничтожать
+const isSettingsLoaded = ref(false);
+
+// Вид поля описания — личное предпочтение, общее для всех досок
+const DESCRIPTION_EDITOR_STORAGE_KEY = 'quick-task-description-editor';
+const descriptionEditorMode = ref('bbcode');
+const descriptionEditorOptions = [
+  {label: 'Редактор', value: 'bbcode', icon: 'pi pi-pen-to-square', tip: 'Визуальный редактор Bitrix: жирный, списки, ссылки, таблицы'},
+  {label: 'Текст', value: 'textarea', icon: 'pi pi-align-left', tip: 'Обычное текстовое поле'},
+];
+
+async function changeDescriptionEditorMode(mode) {
+  if (!mode || mode === descriptionEditorMode.value) return;
+  // Изменения из визуального редактора приходят с задержкой — забираем их, пока он не исчез
+  await descriptionEditor.value?.sync();
+  descriptionEditorMode.value = mode;
+  await chrome.storage.local.set({[DESCRIPTION_EDITOR_STORAGE_KEY]: mode});
+}
 
 const {groupOptions, selectedGroupId, restoreGroupFilter} = usePersonalGroupFilter(
   api,
@@ -84,9 +107,12 @@ function mapStages(stagesResponse) {
 
 async function loadSettings() {
   try {
-    const stored = await chrome.storage.local.get([settingsStorageKey.value]);
+    const stored = await chrome.storage.local.get([settingsStorageKey.value, DESCRIPTION_EDITOR_STORAGE_KEY]);
     settings.value = stored[settingsStorageKey.value] ?? {};
-  } catch { /* ignore */ }
+    descriptionEditorMode.value = stored[DESCRIPTION_EDITOR_STORAGE_KEY] ?? 'bbcode';
+  } catch { /* ignore */ } finally {
+    isSettingsLoaded.value = true;
+  }
 }
 
 function applyDefaults() {
@@ -215,7 +241,7 @@ async function loadInitialData() {
 
 async function submit() {
   const title = form.title.trim();
-  if (!title || isSubmitting.value) return;
+  if (!title || isSubmitting.value || isUploadingFiles.value) return;
   isSubmitting.value = true;
   try {
     await Promise.all([initialLoad, descriptionEditor.value?.sync()]);
@@ -271,17 +297,24 @@ async function createTask(title) {
       } catch { /* ignore */ }
     }
 
-    // Неудавшийся перенос задачу не отменяет — только предупреждаем
-    let stageFailed = false;
-    if (personalStageId) {
-      try {
-        const {data: moveData} = await api.moveTaskToStage(taskId, personalStageId);
-        if (!moveData?.result) throw new Error(moveData?.error_description || 'Bitrix не подтвердил перенос задачи');
-      } catch (error) {
+    // Неудавшиеся перенос и прикрепление файлов задачу не отменяют — только предупреждаем
+    const warnings = [];
+    await Promise.all([
+      (async () => {
+        if (!personalStageId) return;
+        try {
+          const {data: moveData} = await api.moveTaskToStage(taskId, personalStageId);
+          if (!moveData?.result) throw new Error(moveData?.error_description || 'Bitrix не подтвердил перенос задачи');
+        } catch (error) {
+          console.warn(error);
+          warnings.push('Перенести её в выбранную колонку «Моего плана» не удалось — колонку можно задать перетаскиванием.');
+        }
+      })(),
+      attachments.attachToTask(taskId).catch((error) => {
         console.warn(error);
-        stageFailed = true;
-      }
-    }
+        warnings.push('Не все файлы прикрепились к задаче — вставленные в описание изображения могут не отображаться.');
+      }),
+    ]);
 
     // Задача создана через REST, и сама доска о ней не узнает до перезагрузки страницы. Карточку
     // запрашиваем после переноса, иначе на личном плане она встала бы не в ту колонку
@@ -289,11 +322,9 @@ async function createTask(title) {
 
     const taskUrl = settings.value.showCreatedTask ? getTaskUrl(groupId ?? '0', taskId, userId.value) : null;
     showToast({
-      severity: stageFailed ? 'warn' : 'success',
+      severity: warnings.length ? 'warn' : 'success',
       summary: 'Задача создана',
-      detail: stageFailed
-        ? 'Перенести её в выбранную колонку «Моего плана» не удалось — колонку можно задать перетаскиванием.'
-        : undefined,
+      detail: warnings.length ? warnings.join(' ') : undefined,
       links: taskUrl ? [{ url: taskUrl, label: title }] : undefined,
       life: taskUrl ? 8000 : 3000,
     });
@@ -327,16 +358,53 @@ async function createTask(title) {
       />
     </FormField>
 
-    <FormField label="Описание">
+    <div>
+      <div class="flex items-center justify-between gap-2 mb-1">
+        <span class="text-surface-500 dark:text-surface-400 text-sm font-semibold">Описание</span>
+        <SelectButton
+          :model-value="descriptionEditorMode"
+          :options="descriptionEditorOptions"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          :disabled="isGeneratingDescription"
+          size="small"
+          @update:model-value="changeDescriptionEditorMode"
+        >
+          <template #option="{ option }">
+            <span
+              v-tooltip.top="option.tip"
+              class="flex items-center gap-1"
+            >
+              <i :class="option.icon" />
+              {{ option.label }}
+            </span>
+          </template>
+        </SelectButton>
+      </div>
       <BbcodeEditor
+        v-if="isSettingsLoaded"
         ref="descriptionEditor"
+        :key="descriptionEditorMode"
         v-model="form.description"
+        :plain="descriptionEditorMode === 'textarea'"
+        :files="attachments.imageInfos.value"
+        :upload-image="attachments.uploadImage"
         :disabled="isGeneratingDescription"
-        placeholder="Описание задачи (необязательно)"
+        placeholder="Описание задачи (необязательно). Изображение можно вставить через Ctrl+V или перетащить сюда"
       />
-    </FormField>
+      <EditorAttachments
+        v-if="isSettingsLoaded"
+        v-model:text="form.description"
+        :attachments="attachments"
+        :editor="descriptionEditor"
+        :disabled="isGeneratingDescription"
+        class="mt-1"
+      />
+    </div>
 
     <DescriptionAi
+      v-if="isSettingsLoaded && !settings.hideAi"
       v-model:description="form.description"
       v-model:generating="isGeneratingDescription"
       :board-key="contextKey"
@@ -489,7 +557,7 @@ async function createTask(title) {
       <Button
         label="Создать"
         :loading="isSubmitting"
-        :disabled="!form.title.trim()"
+        :disabled="!form.title.trim() || isUploadingFiles"
         @click="submit"
       />
     </div>

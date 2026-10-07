@@ -80,6 +80,7 @@ const form = reactive({
   defaultTab: props.initial.defaultTab ?? DEFAULT_SETTINGS.defaultTab,
   copySeparator: props.initial.copySeparator ?? DEFAULT_SETTINGS.copySeparator,
   csvSeparator: props.initial.csvSeparator ?? DEFAULT_SETTINGS.csvSeparator,
+  hideAi: props.initial.hideAi ?? DEFAULT_SETTINGS.hideAi,
 });
 
 const milestoneRows = ref((props.initial.milestones ?? []).map((milestone) => ({
@@ -356,6 +357,24 @@ async function saveSettings() {
                 size="small"
               />
             </FormField>
+
+            <div class="flex gap-2 items-center">
+              <Checkbox
+                v-model="form.hideAi"
+                binary
+                input-id="task-dynamics-hide-ai"
+              />
+              <label
+                for="task-dynamics-hide-ai"
+                class="text-sm cursor-pointer"
+              >
+                Скрыть AI-функции
+                <i
+                  v-tooltip="'Убирает кнопку «AI анализ» вместе с контекстом, промптами и результатом анализа'"
+                  class="pi pi-question-circle text-surface-400 dark:text-surface-500"
+                />
+              </label>
+            </div>
           </div>
         </AccordionContent>
       </AccordionPanel>

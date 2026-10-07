@@ -72,6 +72,10 @@ const props = defineProps({
     type: String,
     default: ',',
   },
+  hideAi: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 function formatMetric(value, format) {
@@ -318,7 +322,10 @@ onMounted(async () => {
 
 <template>
   <div class="flex gap-1 justify-between mb-2 flex-wrap">
-    <InputGroup :pt="{root: {style: {width: 'auto'}}}">
+    <InputGroup
+      v-if="!hideAi"
+      :pt="{root: {style: {width: 'auto'}}}"
+    >
       <Button
         size="small"
         severity="secondary"
@@ -348,6 +355,7 @@ onMounted(async () => {
       :headers="exportHeaders"
       :rows="exportRows"
       file-name="task-dynamics-summary.csv"
+      class="ml-auto"
       :copy-separator="copySeparator"
       :csv-separator="csvSeparator"
     />
@@ -527,7 +535,7 @@ onMounted(async () => {
   </template>
 
   <div
-    v-if="aiResult"
+    v-if="aiResult && !hideAi"
     ref="aiResultElement"
     class="mt-4 max-w-[1000px]"
   >

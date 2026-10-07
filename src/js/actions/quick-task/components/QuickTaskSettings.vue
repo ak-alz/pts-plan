@@ -23,7 +23,9 @@ const form = reactive({
   showCommitCheckbox: props.initial.showCommitCheckbox ?? false,
   copyCommitDefault: props.initial.copyCommitDefault ?? false,
   showCreatedTask: props.initial.showCreatedTask ?? false,
+  hideAi: props.initial.hideAi ?? false,
 });
+
 
 async function save() {
   isLoading.value = true;
@@ -147,6 +149,23 @@ async function save() {
           for="qt_show_created_task"
           class="text-sm cursor-pointer select-none"
         >Показывать ссылку на созданную задачу</label>
+      </div>
+
+      <div class="flex gap-2 items-center">
+        <Checkbox
+          v-model="form.hideAi"
+          binary
+          input-id="qt_hide_ai"
+          class="mt-0.5 shrink-0"
+        />
+        <label
+          for="qt_hide_ai"
+          class="text-sm cursor-pointer select-none"
+        >Скрыть AI-функции</label>
+        <i
+          v-tooltip.top="'Убирает кнопку «Сгенерировать описание» вместе с контекстом и промптами'"
+          class="pi pi-question-circle"
+        />
       </div>
     </div>
 

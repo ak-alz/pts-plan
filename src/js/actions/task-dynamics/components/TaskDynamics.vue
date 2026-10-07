@@ -772,6 +772,7 @@ onMounted(async () => {
         :contribution-threshold-percent="metricsOptions.contributionThresholdPercent"
         :copy-separator="settings.copySeparator ?? '\t'"
         :csv-separator="settings.csvSeparator ?? ','"
+        :hide-ai="settings.hideAi"
         @open-settings="isSettingsOpened = true"
       />
     </template>

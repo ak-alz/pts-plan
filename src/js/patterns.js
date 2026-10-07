@@ -82,7 +82,11 @@ export const NOTIF_QUOTE_STRIP_RE = /[А-ЯЁ][а-яё]+ [А-ЯЁ][а-яё]+ н�
 
 // Export task / export-group-tasks
 // Плейсхолдер файла Диска, встроенного прямо в текст описания/комментария (не входит в список вложений)
-export const DISK_FILE_INLINE_RE = /\[DISK FILE ID=n(\d+)\]/g;
+// Без учёта регистра: визуальный редактор Bitrix пишет тег строчными (`[disk file id=n123]`)
+export const DISK_FILE_INLINE_RE = /\[DISK FILE ID=n(\d+)\]/gi;
+
+// Любой тег файла Диска в тексте: n123 — сам файл Диска, 456 — уже прикреплённое к задаче вложение
+export const DISK_FILE_TAG_RE = /\[DISK FILE ID=(n?\d+)\]/gi;
 
 // Системные авто-сообщения Битрикса — фиксированные фразы в тексте комментария
 export const SYSTEM_COMMENT_PHRASES = [

@@ -19,6 +19,20 @@ function delay(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
+/**
+ * Читает файл в Base64 без префикса `data:…;base64,` — в таком виде его принимает `fileContent` REST Диска.
+ * @param {Blob} file
+ * @returns {Promise<string>}
+ */
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 // Больше 50 команд за раз batch.json не принимает
 const BATCH_COMMAND_LIMIT = 50;
 
@@ -512,6 +526,20 @@ export default class BitrixApi {
   }
 
   /**
+   * Пункты чек-листов задачи (task.checklistitem.getlist). Сами чек-листы — пункты с `PARENT_ID` 0,
+   * их пункты ссылаются на них через `PARENT_ID`.
+   * @param {string|number} taskId
+   * @return {Promise<object[]>} `ID`, `PARENT_ID`, `TITLE`, `IS_COMPLETE` ('Y'/'N'), `SORT_INDEX`, …
+   */
+  getChecklistItems(taskId) {
+    return this.http.postForm('/rest/task.checklistitem.getlist.json', {
+      sessid: this.sessionId,
+      TASKID: taskId,
+      ORDER: {SORT_INDEX: 'asc'},
+    }).then(({data}) => data?.result ?? []);
+  }
+
+  /**
    * Batch-запрос task.commentitem.getlist для нескольких задач (до 50 за раз) — избегает
    * N отдельных запросов при массовой выгрузке комментариев сразу по многим задачам.
    * @param {Array<string|number>} taskIds
@@ -934,6 +962,76 @@ export default class BitrixApi {
     return this.http.postForm('/rest/user.current.json', {
       sessid: this.sessionId,
     }).then(({data}) => data?.result ?? null);
+  }
+
+  /**
+   * Возвращает ID папки «Загруженные файлы» на Диске текущего пользователя — туда же кладёт вложения
+   * и сам Bitrix. Если папки нет, файлы лягут в корень хранилища. Результат запоминается на экземпляр.
+   * @return {Promise<string>}
+   */
+  getUploadedFilesFolderId() {
+    this.uploadedFilesFolderIdRequest ??= (async () => {
+      const user = await this.getCurrentUser();
+      if (!user?.ID) throw new Error('Не удалось определить текущего пользователя');
+
+      const {data: storageData} = await this.http.post('/rest/disk.storage.getlist.json', new URLSearchParams({
+        sessid: this.sessionId,
+        'filter[ENTITY_TYPE]': 'user',
+        'filter[ENTITY_ID]': user.ID,
+      }));
+      const storage = storageData?.result?.[0];
+      if (!storage?.ID) throw new Error('Не найден Диск пользователя');
+
+      const {data: foldersData} = await this.http.post('/rest/disk.storage.getchildren.json', new URLSearchParams({
+        sessid: this.sessionId,
+        id: storage.ID,
+        'filter[TYPE]': 'folder',
+      }));
+      const uploadedFilesFolder = (foldersData?.result ?? []).find((folder) => folder.CODE === 'FOR_UPLOADED_FILES');
+      return String(uploadedFilesFolder?.ID ?? storage.ROOT_OBJECT_ID);
+    })().catch((error) => {
+      // Неудачу не запоминаем, иначе следующая попытка сразу получила бы ту же ошибку
+      this.uploadedFilesFolderIdRequest = null;
+      throw error;
+    });
+    return this.uploadedFilesFolderIdRequest;
+  }
+
+  /**
+   * Загружает файл на Диск текущего пользователя, в «Загруженные файлы» (disk.folder.uploadfile).
+   * Одноимённый файл не перезаписывается — Bitrix даёт новому уникальное имя.
+   * @param {File} file
+   * @return {Promise<object>} Объект файла Диска (`ID`, `NAME`, `DOWNLOAD_URL`, …)
+   */
+  async uploadFileToDisk(file) {
+    const folderId = await this.getUploadedFilesFolderId();
+    const params = new URLSearchParams({
+      sessid: this.sessionId,
+      id: folderId,
+      'data[NAME]': file.name,
+      generateUniqueName: 'true',
+    });
+    params.append('fileContent[0]', file.name);
+    params.append('fileContent[1]', await readFileAsBase64(file));
+
+    const {data} = await this.http.post('/rest/disk.folder.uploadfile.json', params);
+    if (!data?.result?.ID) throw new Error(data?.error_description || 'Bitrix не подтвердил загрузку файла');
+    return data.result;
+  }
+
+  /**
+   * Прикрепляет файл Диска к задаче (tasks.task.files.attach). Без этого тег `[DISK FILE ID=n…]`
+   * в описании ссылался бы на файл, которого у задачи нет.
+   * @param {string|number} taskId
+   * @param {string|number} fileId ID файла на Диске
+   * @return {Promise<axios.AxiosResponse<any>>}
+   */
+  attachFileToTask(taskId, fileId) {
+    return this.http.post('/rest/tasks.task.files.attach.json', new URLSearchParams({
+      sessid: this.sessionId,
+      taskId,
+      fileId,
+    }));
   }
 
   /**

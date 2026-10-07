@@ -39,12 +39,12 @@ export function buildTaskBlock({title, description, projectName, stageName, resp
  * Стандартный промпт генерации описания. Свои промпты — через библиотеку (см. promptSpec.js).
  * @param {object} params
  * @param {string} params.taskData - Результат buildTaskBlock.
- * @param {string} [params.extraContext] - Доп. контекст пользователя.
+ * @param {string} [params.extraContext] - Доп. контекст постановщика.
  * @returns {string}
  */
 export function buildPrompt({taskData, extraContext = ''}) {
   const parts = [INSTRUCTIONS, OUTPUT_FORMAT];
-  if (extraContext.trim()) parts.push(`Дополнительный контекст от пользователя:\n${extraContext.trim()}`);
+  if (extraContext.trim()) parts.push(`Дополнительный контекст от постановщика:\n${extraContext.trim()}`);
   parts.push(`Данные задачи:\n\n${taskData}`);
 
   return minifyPrompt(parts.join('\n\n'));

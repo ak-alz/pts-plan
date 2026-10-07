@@ -1,5 +1,5 @@
 import axios from 'axios';
-import {shuffle, uniqBy} from 'lodash-es';
+import {clamp, shuffle, uniqBy} from 'lodash-es';
 
 import {insertCSS} from '../../utils.js';
 
@@ -9,13 +9,19 @@ function isValidAspectRatio(width, height) {
   return ratio >= 0.5 && ratio <= 2;
 }
 
+// Без API-ключа The Cat API отдаёт не больше 10 котов за запрос — больше и не просим
+const THECATAPI_MAX_COUNT = 10;
+
+// Всего котов в Cat as a service (api/count) — дальше этого skip вернёт пустой список
+const CATAAS_TOTAL = 1987;
+
 const providers = {
   thecatapi: {
-    async fetch() {
+    async fetch(count) {
       const url = new URL('https://api.thecatapi.com/v1/images/search');
       url.searchParams.append('size', 'thumb');
       url.searchParams.append('mime_types', 'jpg');
-      url.searchParams.append('limit', '10');
+      url.searchParams.append('limit', String(Math.min(count, THECATAPI_MAX_COUNT)));
       const {data} = await axios.get(url.toString());
 
       return data
@@ -25,10 +31,10 @@ const providers = {
   },
 
   cataas: {
-    async fetch() {
+    async fetch(count) {
       const url = new URL('https://cataas.com/api/cats');
-      url.searchParams.append('limit', '20');
-      url.searchParams.append('skip', Math.floor(Math.random() * 1977));
+      url.searchParams.append('limit', String(count));
+      url.searchParams.append('skip', Math.floor(Math.random() * Math.max(1, CATAAS_TOTAL - count)));
       const {data} = await axios.get(url.toString());
 
       return data
@@ -41,11 +47,11 @@ const providers = {
   },
 
   aicats: {
-    async fetch() {
+    async fetch(count) {
       const url = new URL('https://api.ai-cats.net/v2/cats/random/bulk');
       url.searchParams.append('size', '256');
       url.searchParams.append('type', 'Image');
-      url.searchParams.append('limit', '10');
+      url.searchParams.append('limit', String(count));
       const {data} = await axios.get(url.toString());
 
       return data.map((cat) => {
@@ -57,7 +63,7 @@ const providers = {
   },
 
   httpcat: {
-    fetch() {
+    fetch(count) {
       const allCodes = [
         100, 101, 102, 103,
         200, 201, 202, 204, 206, 207,
@@ -68,9 +74,8 @@ const providers = {
         500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511, 599,
       ];
 
-      const selectedCodes = allCodes
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 10);
+      // Кодов всего около полусотни — больше и не наберётся
+      const selectedCodes = shuffle(allCodes).slice(0, count);
 
       return selectedCodes.map((code) => ({
         url: `https://http.cat/images/${code}.jpg`,
@@ -80,7 +85,7 @@ const providers = {
   },
 };
 
-async function fetchCats(preferredProvider) {
+async function fetchCats(preferredProvider, count) {
   // выбранный провайдер пробуем первым, остальные — как запасные
   const orderedKeys = [
     preferredProvider,
@@ -92,7 +97,7 @@ async function fetchCats(preferredProvider) {
     if (!provider) continue;
 
     try {
-      const cats = await provider.fetch();
+      const cats = await provider.fetch(count);
       if (cats?.length) return cats;
     } catch {
       // провайдер недоступен или вернул ошибку — пробуем следующий
@@ -103,6 +108,14 @@ async function fetchCats(preferredProvider) {
 }
 
 const FAVORITES_STORAGE_KEY = 'show-cats-favorites';
+
+const INTERVAL_SECONDS = {min: 10, max: 600, default: 360};
+const COUNT = {min: 1, max: 100, default: 20};
+
+// Пустое поле в попапе сохраняется как null — тогда берём значение по умолчанию
+function getNumberOption(value, limits) {
+  return Number.isFinite(value) ? clamp(Math.round(value), limits.min, limits.max) : limits.default;
+}
 
 const SOURCE = {
   API: 'api',
@@ -143,7 +156,8 @@ async function loadCats(options) {
 
   // «Только избранные» без единого избранного — берём котов из сервиса, иначе баннер был бы пустым
   const needsApi = source !== SOURCE.FAVORITES || !favorites.length;
-  const apiCats = needsApi ? await fetchCats(options?.showCatsProvider) : [];
+  const count = getNumberOption(options?.showCatsCount, COUNT);
+  const apiCats = needsApi ? await fetchCats(options?.showCatsProvider, count) : [];
 
   return shuffle(uniqBy([...favorites, ...apiCats], 'url'));
 }
@@ -156,7 +170,7 @@ export async function showCats(options) {
   const initialized = !!leftMenu.querySelector('.js-show-cats');
   if (initialized) return;
 
-  const timeout = 6 * 60 * 1000;
+  const timeout = getNumberOption(options?.showCatsInterval, INTERVAL_SECONDS) * 1000;
   let cats = await loadCats(options);
   if (!cats.length) return;
 

@@ -46,6 +46,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  hideAi: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const {isDark} = useContentTheme();
@@ -296,7 +300,10 @@ function exportCsv() {
 <template>
   <div class="flex gap-1 justify-between mb-2">
     <div class="flex gap-1">
-      <InputGroup :pt="{root: {style: {width: 'auto'}}}">
+      <InputGroup
+        v-if="!hideAi"
+        :pt="{root: {style: {width: 'auto'}}}"
+      >
         <Button
           size="small"
           severity="secondary"
@@ -590,7 +597,7 @@ function exportCsv() {
   </DataTable>
 
   <div
-    v-if="aiResult"
+    v-if="aiResult && !hideAi"
     ref="aiResultElement"
     class="mt-4 max-w-[1000px]"
   >

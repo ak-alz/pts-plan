@@ -26,12 +26,23 @@ const profileKeys = new Set(['userFirstName', 'userLastName', 'userId', 'pixelTo
 const groupOptions = [
   { label: 'Все', value: 'all' },
   { label: 'Новые', value: 'new' },
+  { label: 'Выключенные', value: 'disabled', tooltip: 'Функции, выключенные на момент выбора фильтра. Включённые здесь не пропадут из списка до следующего выбора.' },
   { label: 'Рекомендую', value: 'popular', tooltip: 'Подойдет для большинства пользователей.' },
   ...groups.filter((g) => g.key !== 'profile').map((g) => ({ label: g.label, value: g.key })),
   { label: 'Прочее', value: 'other' },
 ];
 
 const groupOrder = Object.fromEntries(groups.map((g, i) => [g.key, i]));
+
+// Список выключенных фиксируем в момент выбора фильтра: иначе включённая функция тут же пропадала бы
+// из-под курсора — не выключить обратно, если нажал по ошибке
+const disabledKeysSnapshot = ref(new Set());
+
+watch(selectedGroup, (group) => {
+  if (group === 'disabled') {
+    disabledKeysSnapshot.value = new Set(options.filter((option) => !form[option.key]).map((option) => option.key));
+  }
+});
 
 const filteredOptions = computed(() => {
   const searchValue = search.value.toLowerCase();
@@ -43,6 +54,7 @@ const filteredOptions = computed(() => {
         option.name.toLowerCase().includes(value) || option.tip?.toLowerCase()?.includes(value));
       const matchesGroup = selectedGroup.value === 'all'
         || (selectedGroup.value === 'new' && (option.new || hasUnseen(option)))
+        || (selectedGroup.value === 'disabled' && disabledKeysSnapshot.value.has(option.key))
         || (selectedGroup.value === 'popular' && (option.popularity ?? 0) >= 80)
         || (selectedGroup.value === 'other' ? !option.groups?.length : option.groups?.includes(selectedGroup.value));
       return matchesSearch && matchesGroup;
@@ -123,7 +135,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="w-[600px] h-[520px] p-3 flex flex-col gap-3">
+  <main class="w-[600px] h-[550px] p-3 flex flex-col gap-3">
     <div class="grow min-h-0 flex gap-3 flex-col">
       <div class="flex gap-1 items-center">
         <IconField class="grow">

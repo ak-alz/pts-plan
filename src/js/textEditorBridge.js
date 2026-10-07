@@ -10,6 +10,8 @@ const CHANGE_KEY = 'PTS_TEXT_EDITOR_CHANGE';
 const SET_EDITABLE_KEY = 'PTS_TEXT_EDITOR_SET_EDITABLE';
 const GET_TEXT_KEY = 'PTS_TEXT_EDITOR_GET_TEXT';
 const TEXT_RESULT_KEY = 'PTS_TEXT_EDITOR_TEXT_RESULT';
+const INSERT_FILE_KEY = 'PTS_TEXT_EDITOR_INSERT_FILE';
+const REMOVE_FILE_KEY = 'PTS_TEXT_EDITOR_REMOVE_FILE';
 const GET_TEXT_TIMEOUT_MS = 1000;
 // Первый раз Bitrix догружает библиотеку редактора с сервера — это не мгновенно
 const MOUNT_TIMEOUT_MS = 10000;
@@ -30,13 +32,17 @@ function post(message) {
  * @param {string} [options.placeholder]
  * @param {number} [options.minHeight]
  * @param {number} [options.maxHeight]
+ * @param {object[]|null} [options.files] Сведения о файлах Диска для плагина File (`serverFileId` — ID
+ *   как в теге `[DISK FILE ID=…]`, `isImage`, `previewUrl`, размеры). Передан массив — файлы, в том
+ *   числе вставленные позже через `insertFile`, рисуются картинками; нет — теги файлов видны текстом
  * @param {(text: string) => void} options.onChange Вызывается с BBCode при каждом изменении текста
  * @returns {Promise<{getText: () => Promise<string|null>, setText: (text: string) => void,
- *   setEditable: (editable: boolean) => void, destroy: () => void}|null>}
+ *   setEditable: (editable: boolean) => void, insertFile: (info: object) => void,
+ *   removeFile: (serverFileId: string) => void, destroy: () => void}|null>}
  *   Управление редактором, либо `null`, если на этом портале редактор недоступен. `getText` читает
  *   текст прямо из редактора — `onChange` приходит с небольшой задержкой и может отставать от ввода
  */
-export async function mountTextEditor(container, {content, placeholder, minHeight, maxHeight, onChange}) {
+export async function mountTextEditor(container, {content, placeholder, minHeight, maxHeight, files = null, onChange}) {
   if (!await loadMainWorldScript('src/content-scripts/text-editor-bridge.js')) return null;
 
   const editorId = crypto.randomUUID();
@@ -74,6 +80,7 @@ export async function mountTextEditor(container, {content, placeholder, minHeigh
       placeholder,
       minHeight,
       maxHeight,
+      files,
     });
   });
 
@@ -111,6 +118,12 @@ export async function mountTextEditor(container, {content, placeholder, minHeigh
     },
     setEditable(editable) {
       post({key: SET_EDITABLE_KEY, editorId, editable});
+    },
+    insertFile(info) {
+      post({key: INSERT_FILE_KEY, editorId, info});
+    },
+    removeFile(serverFileId) {
+      post({key: REMOVE_FILE_KEY, editorId, serverFileId});
     },
     destroy() {
       window.removeEventListener('message', onMessage);

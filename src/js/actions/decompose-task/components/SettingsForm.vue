@@ -41,6 +41,7 @@ const form = reactive({
   showLinkCheckboxes: props.initial.showLinkCheckboxes ?? false,
   linkCreatedTasks: props.initial.linkCreatedTasks ?? false,
   linkExistingSubtasks: props.initial.linkExistingSubtasks ?? false,
+  hideAi: props.initial.hideAi ?? false,
 });
 
 async function saveSettings() {
@@ -283,6 +284,23 @@ const auditorOptions = [
       >«Связать и с прежними подзадачами» по умолчанию</label>
       <i
         v-tooltip.top="'Незавершённые подзадачи этой задачи, созданные ранее, попадут в блок «Связанные задачи» новых. Сами прежние подзадачи при этом не изменяются, поэтому у них новые в списке не появятся'"
+        class="pi pi-question-circle mt-0.5 shrink-0"
+      />
+    </div>
+
+    <div class="flex gap-1 items-start">
+      <Checkbox
+        v-model="form.hideAi"
+        binary
+        input-id="dt_hide_ai"
+        class="mt-0.5 shrink-0"
+      />
+      <label
+        for="dt_hide_ai"
+        class="text-sm cursor-pointer select-none"
+      >Скрыть AI-функции</label>
+      <i
+        v-tooltip.top="'Убирает кнопку «AI декомпозиция» вместе с контекстом, промптами и просмотром промпта'"
         class="pi pi-question-circle mt-0.5 shrink-0"
       />
     </div>

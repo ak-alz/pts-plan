@@ -18,6 +18,7 @@ defineProps({
   multiUser: {type: Boolean, default: false},
   copySeparator: {type: String, default: '\t'},
   csvSeparator: {type: String, default: ','},
+  hideAi: {type: Boolean, default: false},
   defaultTab: {type: String, default: 'summary'},
   contextKey: {type: String, required: true},
   dateRange: {type: Array, default: null},
@@ -56,6 +57,7 @@ defineProps({
           :multi-user="multiUser"
           :copy-separator="copySeparator"
           :csv-separator="csvSeparator"
+          :hide-ai="hideAi"
         />
       </TabPanel>
       <TabPanel value="timeline">

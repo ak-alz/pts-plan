@@ -178,6 +178,8 @@ watch(
           size="small"
           :use-grouping="false"
           :max-fraction-digits="0"
+          :min="option.min"
+          :max="option.max"
           :disabled="option.needs?.some(k => !model[k])"
           :placeholder="option.placeholder"
         />
