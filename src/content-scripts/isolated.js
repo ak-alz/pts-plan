@@ -95,20 +95,22 @@ import {initToastHost} from '../js/toastHost/index.js';
 
   initToastHost();
 
-  function applyContentTheme(mode) {
-    document.documentElement.classList.toggle('pts-dark', mode === 'dark');
+  // Виджеты тёмные, если тёмная тема выбрана явно или включена «Тёмная тема Битрикса» — на тёмной
+  // странице светлые виджеты выглядели бы чужеродно
+  function applyContentTheme(themeMode, options) {
+    document.documentElement.classList.toggle('pts-dark', themeMode === 'dark' || Boolean(options?.bitrixDarkTheme));
   }
 
   async function initTheme() {
-    const { themeMode } = await chrome.storage.local.get(['themeMode']);
-    applyContentTheme(themeMode);
+    const { themeMode, options } = await chrome.storage.local.get(['themeMode', 'options']);
+    applyContentTheme(themeMode, options);
   }
 
   initTheme();
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.themeMode) {
-      applyContentTheme(changes.themeMode.newValue);
+    if (area === 'local' && (changes.themeMode || changes.options)) {
+      initTheme();
     }
   });
 

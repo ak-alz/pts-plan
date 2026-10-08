@@ -1,0 +1,81 @@
+/* Ручные дополнения поверх CSS Dark Reader. pack.mjs дописывает их в конец. */
+
+/* Заглушки загрузки (открытие задачи, мессенджер, сайдбар чата) — светлые SVG-картинки фоном,
+   Dark Reader затемняет их на лету, статичный CSS не может. Инвертируем сами элементы, как картинку. */
+.side-panel-loader, .bx-im-list-loading-state__container, .bx-im-content-chat-forms__skeleton,
+[class*="bx-im-sidebar-skeleton__"], .kanban-skeleton__col-stage, .ui-popup-with-header__skeleton,
+.intranet-user-mini-profile-loader { filter: invert(.9) hue-rotate(180deg) !important; }
+
+/* Фон-узор ленты уведомлений светлый: под ним полупрозрачные карточки Pixel Plan Injection
+   (data-pts-dimmed, opacity .5) выглядят серыми. */
+.bx-im-content-notification__elements { background: #22272e !important; }
+/* Подложка группы — rgba(var(--…-white-base-rgb), .8): цвет из числовой переменной Dark Reader не переписывает */
+.bx-im-content-notification__elements-group { background: rgba(45, 51, 59, .8) !important; border-color: #373e47 !important; }
+
+/* Яркие кнопки (лайм «Начать выполнение / Завершить», голубая, красная): Dark Reader гасит фон до тусклого
+   и красит текст в серый — выглядят выключенными. Возвращаем насыщенный фон и контрастный текст. */
+.ui-btn.ui-btn-success { background-color: #8db31c !important; border-color: #8db31c !important; color: #1c2128 !important; }
+.ui-btn.ui-btn-success:hover { background-color: #a2cb22 !important; border-color: #a2cb22 !important; }
+.ui-btn.ui-btn-primary { background-color: #1f8fbf !important; border-color: #1f8fbf !important; color: #fff !important; }
+.ui-btn.ui-btn-primary:hover { background-color: #27a3d6 !important; border-color: #27a3d6 !important; }
+.ui-btn.ui-btn-danger { background-color: #c4321c !important; border-color: #c4321c !important; color: #fff !important; }
+.ui-btn.ui-btn-danger:hover { background-color: #d9442d !important; border-color: #d9442d !important; }
+
+/* Тулбар на обоях. В светлой теме элементы — полупрозрачный белый rgba(255,255,255,.16) поверх обоев;
+   Dark Reader сделал его тёмным полупрозрачным, и на тёмных обоях он пропал. Ставим плотный фон. */
+.ui-nav-panel__item, .ui-counter-panel__item, .ui-actions-bar .main-buttons-item,
+.ui-toolbar .ui-btn.--air.--style-outline, .ui-toolbar .ui-btn.--air.--style-outline-no-accent,
+.ui-toolbar .ui-btn.--air.--style-tinted, .ui-toolbar .ui-btn.--air.--style-selection,
+.ui-btn.ui-btn-light-border, .ui-actions-bar .ui-btn.--air,
+.ui-btn-split.ui-btn-light-border, .ui-btn-split.ui-btn-light-border .ui-btn-main, .ui-btn-split.ui-btn-light-border .ui-btn-menu {
+  background: #2d333b !important; border-color: #3d444d !important; color: #e6edf3 !important;
+}
+.ui-nav-panel__item:hover, .ui-counter-panel__item:hover, .ui-actions-bar .main-buttons-item:hover,
+.ui-toolbar .ui-btn.--air:hover, .ui-btn.ui-btn-light-border:hover, .ui-actions-bar .ui-btn.--air:hover,
+.ui-btn-split.ui-btn-light-border .ui-btn-main:hover, .ui-btn-split.ui-btn-light-border .ui-btn-menu:hover {
+  background: #373e47 !important;
+}
+.ui-nav-panel__item.--active { background: #444c56 !important; color: #fff !important; }
+.ui-nav-panel.--air, .ui-counter-panel.--air, .ui-actions-bar .main-buttons { background-color: transparent !important; }
+
+/* Поле поиска/фильтра */
+.main-ui-filter-theme-air.main-ui-filter-search {
+  background: #2d333b !important; border: 1px solid #3d444d !important;
+}
+.main-ui-filter-theme-air.main-ui-filter-search:focus-within { border-color: #539bf5 !important; }
+.main-ui-filter-theme-air .main-ui-filter-search-filter { color: #e6edf3 !important; background: transparent !important; }
+.main-ui-filter-theme-air .main-ui-filter-search-filter::placeholder { color: #768390 !important; }
+.main-ui-filter-search-square { background: #444c56 !important; color: #e6edf3 !important; }
+
+/* Карточки канбана: светлее колонки, тонкая рамка сверху/справа/снизу. Левую не трогаем —
+   это цветная плашка стадии. */
+.tasks-kanban-item { background-color: #2d333b !important; box-shadow: 0 1px 3px rgba(0, 0, 0, .35) !important;
+  border-top-color: #444c56 !important; border-right-color: #444c56 !important; border-bottom-color: #444c56 !important; }
+.tasks-kanban-item:hover { background-color: #333a43 !important; }
+.tasks-kanban-item-title { color: #e6edf3 !important; }
+/* Цветная плашка стадии слева: цвет — inline-переменная, Dark Reader подменил её своей несуществующей */
+.tasks-kanban-item-line { background-color: var(--tasks-kanban-item-color) !important; width: 4px !important; }
+
+/* Заголовки колонок канбана: фон — цвет колонки (inline), светлый или тёмный. Белый текст с тенью
+   читается на любом из них (голубой/лаймовый/оранжевый терялись). */
+.main-kanban-column-title-text, .main-kanban-column-title-name, .main-kanban-column-title-total,
+.main-kanban-column-total-item, .main-kanban-column-px-time, .main-kanban-column-title-text-inner {
+  color: #fff !important; text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 0 1px rgba(0, 0, 0, .6);
+}
+
+/* Кружок «+ колонка» в конце заголовка последней колонки: рисуем плюс явно (исходный SVG тёмный) */
+.main-kanban-column-title-add-column-before { background: #545d68 !important; }
+.main-kanban-column-title-add-column-after { background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath fill='%23e6edf3' d='M4.2 0h1.6v4.2H10v1.6H5.8V10H4.2V5.8H0V4.2h4.2z'/%3E%3C/svg%3E") 50% / 10px 10px no-repeat !important; filter: none !important; opacity: 1 !important; }
+
+/* Шапка таблиц (подзадачи и списки): Dark Reader дал жёлто-оливковый оттенок */
+.main-grid-row-head, .main-grid-cell-head { background-color: #2d333b !important; }
+
+/* Фон чатов/каналов/BitrixGPT/коллаб: светлая градиентная картинка (часть — из CSS, часть — inline-стилем
+   от скрипта). Притемняем внутренней тенью: она рисуется над фоном, но под содержимым и ничего не двигает. */
+.bx-im-content-chat-start__container, .bx-im-content-chat__container,
+[class*="bx-im-content-chat"][style*="background"], [class*="bx-im-dialog"][style*="background"] {
+  box-shadow: inset 0 0 0 100vmax rgba(28, 33, 40, .86) !important;
+}
+
+/* Выделенный пункт в старых списках-выпадашках (Важная задача: Нет/Да) */
+option:checked, option:hover { background: #373e47 !important; color: #adbac7 !important; }

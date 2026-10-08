@@ -4,7 +4,7 @@ import pluginVue from 'eslint-plugin-vue';
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/**', 'build/**'] },
+  { ignores: ['node_modules/**', 'build/**', 'tools/**/node_modules/**', 'tools/**/css/**', 'public/assets/bitrix-dark-theme.js'] },
   pluginJs.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
   {

@@ -1,0 +1,13 @@
+{
+  "name": "bitrix-dark-theme-generator",
+  "private": true,
+  "type": "module",
+  "description": "Генератор public/assets/bitrix-dark-theme.js для функции «Тёмная тема Битрикса»",
+  "scripts": {
+    "build": "node fetch.mjs && node gen.mjs && node rgbvars.mjs && node masks.mjs && node icons.mjs && node pack.mjs"
+  },
+  "devDependencies": {
+    "darkreader": "4.9.133",
+    "puppeteer-core": "^25.12.0"
+  }
+}
