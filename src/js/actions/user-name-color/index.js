@@ -1,7 +1,11 @@
-import { insertCSS, validateHexColor } from '../../utils.js';
+import { getBitrixDarkBackground, insertCSS, prefixBitrixDarkSelector, validateHexColor } from '../../utils.js';
 
 export function userNameColor({userId, userNameColorColor: color, userNameColorBorder: borderColor, userNameColorBackground: backgroundColor} = {}) {
   if (!userId) return;
+
+  // Комментарий с упоминанием пользователя или с TAGALL (кроме своих комментариев и TAGALL внутри цитаты)
+  const highlightedCommentSelector = `.feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.feed-com-text-inner-inner a[href$="/company/personal/user/${userId}/"]),
+    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:not(:has(.feed-com-user-box a.feed-author-name[href$="/company/personal/user/${userId}/"])):has(.tag-all-highlight:not(.forum-quote .tag-all-highlight))`;
 
   let css = '';
 
@@ -15,16 +19,17 @@ export function userNameColor({userId, userNameColorColor: color, userNameColorB
   }
 
   if (validateHexColor(borderColor)) {
-    css += `.feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.feed-com-text-inner-inner a[href$="/company/personal/user/${userId}/"]),
-    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:not(:has(.feed-com-user-box a.feed-author-name[href$="/company/personal/user/${userId}/"])):has(.tag-all-highlight:not(.forum-quote .tag-all-highlight)) {
+    css += `${highlightedCommentSelector} {
       border: 1px solid ${borderColor};
     }`;
   }
 
   if (validateHexColor(backgroundColor)) {
-    css += `.feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:has(.feed-com-text-inner-inner a[href$="/company/personal/user/${userId}/"]),
-    .feed-com-block:not(.mpl-comment-aux) .feed-com-main-content:not(:has(.feed-com-user-box a.feed-author-name[href$="/company/personal/user/${userId}/"])):has(.tag-all-highlight:not(.forum-quote .tag-all-highlight)) {
+    css += `${highlightedCommentSelector} {
       background-color: ${backgroundColor};
+    }
+    ${prefixBitrixDarkSelector(highlightedCommentSelector)} {
+      background-color: ${getBitrixDarkBackground(backgroundColor)};
     }`;
   }
 

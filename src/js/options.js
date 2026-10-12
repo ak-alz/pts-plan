@@ -177,6 +177,7 @@ const options = [
     popularity: 80,
     new: true,
     beta: true,
+    addedIn: '2.13.4',
     // Тяжёлая визуальная функция в бете — в быстрой настройке пока не предлагаем
     excludeFromSetup: true,
   },

@@ -16,6 +16,7 @@ import primeVueOptions from '../../primeVueOptions.js';
 import {
   canonicalizeTagallHtml,
   escapeRegExp,
+  getBitrixDarkBackground,
   getNameVariants,
   getTaskIdFromUrl,
   insertCSS,
@@ -413,6 +414,8 @@ export function notificationDetails(sessionId, options = {}) {
     if (!styleElement) {
       styleElement = document.createElement('style');
       styleElement.id = FILTER_STYLE_ID;
+      // Метка стилей расширения, как у insertCSS: тёмная тема Битрикса их не перекрашивает
+      styleElement.dataset.pts = '';
       document.head.appendChild(styleElement);
     }
     styleElement.textContent = rules.join('\n');
@@ -551,18 +554,22 @@ export function notificationDetails(sessionId, options = {}) {
 
     if (flags.compact) insertCSS(COMPACT_CSS);
 
-    // Подсветка через data-атрибуты, а не классы: Bitrix Vue перезаписывает классы своих элементов
-    const highlightCSS = (selector, border, background) => `
-      ${selector} {
+    // Подсветка через data-атрибуты, а не классы: Bitrix Vue перезаписывает классы своих элементов.
+    // Под «Тёмной темой Битрикса» фон — тёмный того же оттенка; селектор специфичнее правил самой темы
+    const highlightCSS = (attribute, border, background) => `
+      [${attribute}] {
         border-color: ${border} !important;
         background-color: ${background} !important;
+      }
+      .pts-bitrix-dark .bx-im-content-notification-item__container[${attribute}] {
+        background-color: ${getBitrixDarkBackground(background)} !important;
       }
     `;
 
     // В обратном порядке HIGHLIGHT_ICONS: при равной специфичности побеждает вставленное
     // последним, поэтому рамка типа с наивысшим приоритетом (первого в массиве) встанет последней
     [...HIGHLIGHT_ICONS].reverse().forEach((item) => {
-      if (item.enabled) insertCSS(highlightCSS(`[${item.attribute}]`, item.color, item.background));
+      if (item.enabled) insertCSS(highlightCSS(item.attribute, item.color, item.background));
     });
   }
 

@@ -95,22 +95,24 @@ import {initToastHost} from '../js/toastHost/index.js';
 
   initToastHost();
 
-  // Виджеты тёмные, если тёмная тема выбрана явно или включена «Тёмная тема Битрикса» — на тёмной
-  // странице светлые виджеты выглядели бы чужеродно
-  function applyContentTheme(themeMode, options) {
-    document.documentElement.classList.toggle('pts-dark', themeMode === 'dark' || Boolean(options?.bitrixDarkTheme));
+  // Виджеты тёмные, если тёмная тема выбрана явно или на странице работает «Тёмная тема Битрикса». Смотрим на класс
+  // её скрипта, а не на опцию: тема включается и выключается только перезагрузкой, и до неё виджеты разошлись бы со страницей
+  const isBitrixDarkTheme = document.documentElement.classList.contains('pts-bitrix-dark');
+
+  function applyContentTheme(themeMode) {
+    document.documentElement.classList.toggle('pts-dark', themeMode === 'dark' || isBitrixDarkTheme);
   }
 
   async function initTheme() {
-    const { themeMode, options } = await chrome.storage.local.get(['themeMode', 'options']);
-    applyContentTheme(themeMode, options);
+    const { themeMode } = await chrome.storage.local.get(['themeMode']);
+    applyContentTheme(themeMode);
   }
 
   initTheme();
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && (changes.themeMode || changes.options)) {
-      initTheme();
+    if (area === 'local' && changes.themeMode) {
+      applyContentTheme(changes.themeMode.newValue);
     }
   });
 
