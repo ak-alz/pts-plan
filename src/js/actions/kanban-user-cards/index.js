@@ -1,5 +1,5 @@
 import {resolveKanbanContext} from '../../kanbanContext.js';
-import {insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
+import {getBitrixDarkBackground, insertCSS, rehydrateOnChanges, validateHexColor} from '../../utils.js';
 
 // Своя метка обработанных карточек, а не общая: на тех же карточках канбана работают ещё две фичи
 const PROCESSED_CLASS = 'js-kanban-user-cards-processed';
@@ -16,8 +16,13 @@ export async function kanbanUserCards(sessionId, backgroundColor, firstName, las
 
   const className = 'kanban-user-highlight';
 
+  // Правило темы для .tasks-kanban-item с !important перебило бы подсветку — нужен селектор специфичнее
   const css = `.${className} {
     background-color: ${backgroundColor} !important;
+  }
+  .pts-bitrix-dark .tasks-kanban-item.${className},
+  .pts-bitrix-dark .tasks-kanban-item.${className}:hover {
+    background-color: ${getBitrixDarkBackground(backgroundColor)} !important;
   }`;
 
   insertCSS(css);

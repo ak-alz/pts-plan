@@ -337,13 +337,68 @@ export function getDistinctLineDashes(hexColors, threshold = CLOSE_COLOR_DISTANC
   return getDistinctLineStyleIndexes(hexColors, threshold).map((styleIndex) => LINE_DASH_STYLES[styleIndex]);
 }
 
+/**
+ * Вставляет минифицированный CSS в `<head>`. Тег помечается атрибутом `data-pts` — по нему «Тёмная тема
+ * Битрикса» узнаёт стили расширения и не перекрашивает их.
+ * @param {string} css Текст CSS.
+ * @param {string|null} [id] Идентификатор для дедупликации: тег с таким `id` вставляется один раз.
+ */
 export function insertCSS(css, id = null) {
   if (id && document.head.querySelector(`style[data-pts="${id}"]`)) return;
   const style = Object.assign(document.createElement('style'), {
     textContent: css.replace(/\s+/g, ' ').trim(),
   });
-  if (id) style.dataset.pts = id;
+  style.dataset.pts = id || '';
   document.head.appendChild(style);
+}
+
+/**
+ * Фон фичи под «Тёмной темой Битрикса»: пастельный цвет из настроек на тёмной странице слепит, а светлый текст
+ * на нём не читается. Берём у цвета только оттенок, а светлоту делаем тёмной — teal-50 превращается в тёмно-бирюзовый.
+ * Считается в JS, а не через `hsl(from …)`: относительный синтаксис цветов есть только с Chrome 119.
+ * @param {string} color Цвет из настроек (hex, 3 или 6 знаков).
+ * @returns {string} Цвет `hsl(…)` для `background-color`; для невалидного цвета — нейтральный тёмный фон темы.
+ */
+export function getBitrixDarkBackground(color) {
+  if (!validateHexColor(color)) return '#2d333b';
+  const hex = color.replace('#', '');
+  const fullHex = hex.length === 3 ? [...hex].map((digit) => digit + digit).join('') : hex;
+  const [red, green, blue] = hexToRgb(fullHex).map((channel) => channel / 255);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  const lightness = (max + min) / 2;
+  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+  let hue = 0;
+  if (delta !== 0 && max === red) hue = ((green - blue) / delta) % 6;
+  else if (delta !== 0 && max === green) hue = (blue - red) / delta + 2;
+  else if (delta !== 0) hue = (red - green) / delta + 4;
+  const hueDegrees = Math.round((hue * 60 + 360) % 360);
+  return `hsl(${hueDegrees}, ${Math.round(Math.min(saturation * 100, 45))}%, 22%)`;
+}
+
+/**
+ * Привязывает список селекторов к «Тёмной теме Битрикса»: перед каждым ставит `.pts-bitrix-dark`. Правило
+ * становится специфичнее исходного и перебивает его, только пока тема включена.
+ * @param {string} selectorList Селекторы через запятую; запятые внутри `:is()`, `:has()`, `[атрибут]` не разделяют.
+ * @returns {string} Тот же список с префиксом `.pts-bitrix-dark ` у каждого селектора.
+ */
+export function prefixBitrixDarkSelector(selectorList) {
+  const selectors = [];
+  let current = '';
+  let depth = 0;
+  for (const character of selectorList) {
+    if (character === '(' || character === '[') depth++;
+    if (character === ')' || character === ']') depth--;
+    if (character === ',' && depth === 0) {
+      selectors.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  selectors.push(current);
+  return selectors.map((selector) => `.pts-bitrix-dark ${selector.trim()}`).join(', ');
 }
 
 export function validateHexColor(color) {

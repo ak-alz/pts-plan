@@ -236,3 +236,32 @@
     transform: scaleX(0);
   }
 }
+
+/* «Тёмная тема Битрикса» (background/darkTheme.js + public/assets/bitrix-dark-theme.js): скрипт темы вешает
+   на <html> класс .pts-bitrix-dark. Сама тема собрана из CSS Bitrix и про наши элементы не знает — их
+   правки живут здесь. Скрипт темы генерируется при сборке (npm run build-dark-theme, генератор — tools/bitrix-dark-theme), в гите его нет. */
+
+.pts-bitrix-dark .pts-nd-chip:not([style*="background"]) {
+  background: #2d333b !important;
+  color: #cdd9e5 !important;
+}
+
+.pts-bitrix-dark .pts-nd-skeleton {
+  background: linear-gradient(90deg, #2d333b 25%, #373e47 50%, #2d333b 75%) !important;
+  background-size: 200% 100% !important;
+}
+
+.pts-bitrix-dark .pts-nd-icon {
+  text-shadow: none !important;
+}
+
+/* Кнопки «Scrum», «История», «Scrum-сводка»… в панели канбана: на тёмных обоях полупрозрачная кнопка Bitrix пропадает */
+.pts-bitrix-dark .pts-actions-bar-btn .ui-btn {
+  background: #2d333b !important;
+  border-color: #3d444d !important;
+  color: #e6edf3 !important;
+}
+
+.pts-bitrix-dark .pts-actions-bar-btn .ui-btn:hover {
+  background: #373e47 !important;
+}

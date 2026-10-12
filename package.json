@@ -1,7 +1,7 @@
 {
   "name": "pts-plan",
   "displayName": "Pixel Plan Injection",
-  "version": "2.13.3",
+  "version": "2.13.4",
   "description": "Бесплатное расширение, которое превращает стандартный Bitrix24 в удобный рабочий инструмент.",
   "keywords": [
     "chrome-extension",
@@ -13,10 +13,13 @@
   "author": "MelentQ",
   "type": "module",
   "scripts": {
-    "build": "npm run build-css && vite build",
+    "build": "npm run build-css && npm run check-dark-theme && vite build",
     "build-css": "npx @tailwindcss/cli -i src/css/content-styles.css -o public/assets/content-styles.css --minify && npm run copy-assets",
+    "build-dark-theme": "npm run build --prefix tools/bitrix-dark-theme",
+    "check-dark-theme": "node -e \"require('fs').existsSync('public/assets/bitrix-dark-theme.js') || console.warn('\\n⚠️  Нет public/assets/bitrix-dark-theme.js — «Тёмная тема Битрикса» в этой сборке работать не будет. Соберите её: npm run build-dark-theme\\n')\"",
     "copy-assets": "cp -r node_modules/primeicons/fonts/ public/assets/",
-    "dev": "npm run build-css && vite",
+    "postinstall": "npm ci --prefix tools/bitrix-dark-theme --no-audit --no-fund",
+    "dev": "npm run build-css && (node -e \"process.exit(require('fs').existsSync('public/assets/bitrix-dark-theme.js') ? 0 : 1)\" || npm run build-dark-theme) && vite",
     "preview": "npm run build-css && vite preview"
   },
   "dependencies": {
@@ -29,7 +32,7 @@
     "lodash-es": "^4.18.1",
     "marked": "^18.1.0",
     "primeicons": "^8.0.2",
-    "primelocale": "^2.5.0",
+    "primelocale": "^2.6.0",
     "primevue": "^4.5.5",
     "vue": "^3.5.43",
     "vue-color": "^3.3.3"
@@ -39,8 +42,8 @@
     "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-vue": "^6.0.9",
-    "chrome-types": "^0.1.452",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "chrome-types": "^0.1.454",
     "eslint": "^10.12.0",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-vue": "^10.11.1",

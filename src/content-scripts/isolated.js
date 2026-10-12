@@ -95,8 +95,12 @@ import {initToastHost} from '../js/toastHost/index.js';
 
   initToastHost();
 
-  function applyContentTheme(mode) {
-    document.documentElement.classList.toggle('pts-dark', mode === 'dark');
+  // Виджеты тёмные, если тёмная тема выбрана явно или на странице работает «Тёмная тема Битрикса». Смотрим на класс
+  // её скрипта, а не на опцию: тема включается и выключается только перезагрузкой, и до неё виджеты разошлись бы со страницей
+  const isBitrixDarkTheme = document.documentElement.classList.contains('pts-bitrix-dark');
+
+  function applyContentTheme(themeMode) {
+    document.documentElement.classList.toggle('pts-dark', themeMode === 'dark' || isBitrixDarkTheme);
   }
 
   async function initTheme() {
