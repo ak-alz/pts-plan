@@ -52,9 +52,15 @@ const runtimeCode = runtimeSource.replace(KNOWN_STYLESHEET_PATHS_PLACEHOLDER, ()
 function buildThemeScript(themeCss, runtime) {
   return `// Сгенерировано tools/bitrix-dark-theme/pack.mjs из CSS Dark Reader — не править руками.
 (() => {
-// Защита от повторного запуска в том же документе
-if (document.documentElement.hasAttribute('data-pts-bitrix-dark-theme')) return;
+// Включение и выключение темы на лету, без перезагрузки: событие шлёт service worker (src/background/darkTheme.js)
+const TOGGLE_EVENT = 'pts-bitrix-dark-theme-toggle';
+// Повторный запуск в том же документе — тему включают обратно после выключения на лету
+if (document.documentElement.hasAttribute('data-pts-bitrix-dark-theme')) {
+  document.dispatchEvent(new CustomEvent(TOGGLE_EVENT, {detail: true}));
+  return;
+}
 document.documentElement.setAttribute('data-pts-bitrix-dark-theme', '');
+let isThemeEnabled = true;
 // По этому классу content-styles.css расширения включает правки своих элементов под тёмную тему
 document.documentElement.classList.add('pts-bitrix-dark');
 const themeStyleElement = document.createElement('style');
@@ -69,6 +75,13 @@ const keepThemeStyleLast = () => {
 keepThemeStyleLast();
 new MutationObserver(keepThemeStyleLast).observe(document.documentElement, {childList: true});
 ${runtime}
+// Выключенный стиль остаётся в DOM с media="not all": при включении его не нужно разбирать заново,
+// а перенос тега в конец <html> (keepThemeStyleLast) это состояние не сбрасывает
+document.addEventListener(TOGGLE_EVENT, (event) => {
+  isThemeEnabled = Boolean(event.detail);
+  document.documentElement.classList.toggle('pts-bitrix-dark', isThemeEnabled);
+  [themeStyleElement, ...dynamicStyleElements].forEach(applyThemeState);
+});
 })();
 `;
 }

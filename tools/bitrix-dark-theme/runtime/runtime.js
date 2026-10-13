@@ -1,6 +1,7 @@
-/* global themeStyleElement */
+/* global themeStyleElement, isThemeEnabled */
 // Фрагмент скрипта темы, а не самостоятельный файл: pack.mjs подставляет список известных таблиц стилей и
-// вставляет этот код в обёртку, где объявлен themeStyleElement — основной <style> темы.
+// вставляет этот код в обёртку, где объявлены themeStyleElement — основной <style> темы — и isThemeEnabled —
+// не выключена ли тема на лету.
 //
 // Страховка для стилей, которых нет в снимке (самописные компоненты портала, новые модули Битрикса): один раз
 // на каждую новую таблицу стилей пересчитываем её цвета под тёмную тему. Это не Dark Reader: за всем DOM и
@@ -284,6 +285,7 @@ function scanNewStylesheets() {
     const styleElement = document.createElement('style');
     styleElement.setAttribute(DYNAMIC_STYLE_ATTRIBUTE, '');
     styleElement.textContent = addedRules.join('\n');
+    applyThemeState(styleElement);
     dynamicStyleElements.push(styleElement);
   }
   placeDynamicStyles();
@@ -299,6 +301,16 @@ function placeDynamicStyles() {
     if (styleElement.parentNode === document.documentElement && isAfterBody) continue;
     document.documentElement.insertBefore(styleElement, themeStyleElement);
   }
+}
+
+/**
+ * Включает или выключает тег темы под текущее состояние: выключенная тема на лету остаётся в DOM, но не действует.
+ * Пересчёт новых таблиц стилей при этом продолжается, чтобы при включении тема сразу была полной.
+ * @param {HTMLStyleElement} styleElement Основной стиль темы или порция пересчитанных правил.
+ */
+function applyThemeState(styleElement) {
+  if (isThemeEnabled) styleElement.removeAttribute('media');
+  else styleElement.media = 'not all';
 }
 
 /**
@@ -334,3 +346,5 @@ new MutationObserver((mutations) => {
 }).observe(document.documentElement, {childList: true, subtree: true});
 document.addEventListener('DOMContentLoaded', queueScan);
 window.addEventListener('load', queueScan);
+// Тему включили на уже загруженной странице — таблицы стилей уже на месте, событий загрузки не будет
+if (document.readyState !== 'loading') queueScan();

@@ -1,5 +1,7 @@
 import {onMounted, onUnmounted, ref} from 'vue';
 
+import {isBitrixDarkThemeActive, onBitrixDarkThemeChange} from '../utils.js';
+
 const STORAGE_KEY = 'themeMode';
 
 /**
@@ -14,26 +16,34 @@ const STORAGE_KEY = 'themeMode';
 export function useContentTheme() {
   const isDark = ref(false);
 
-  // Тема включается только перезагрузкой страницы, поэтому класс её скрипта за время жизни виджета не меняется
-  const isBitrixDarkTheme = document.documentElement.classList.contains('pts-bitrix-dark');
+  let themeMode;
+  let stopWatchingBitrixDarkTheme = null;
+
+  function update() {
+    isDark.value = themeMode === 'dark' || isBitrixDarkThemeActive();
+  }
 
   async function loadMode() {
     const stored = await chrome.storage.local.get([STORAGE_KEY]);
-    isDark.value = stored[STORAGE_KEY] === 'dark' || isBitrixDarkTheme;
+    themeMode = stored[STORAGE_KEY];
+    update();
   }
 
   function handleStorageChanged(changes, area) {
     if (area !== 'local' || !changes[STORAGE_KEY]) return;
-    isDark.value = changes[STORAGE_KEY].newValue === 'dark' || isBitrixDarkTheme;
+    themeMode = changes[STORAGE_KEY].newValue;
+    update();
   }
 
   onMounted(() => {
     loadMode();
     chrome.storage.onChanged.addListener(handleStorageChanged);
+    stopWatchingBitrixDarkTheme = onBitrixDarkThemeChange(update);
   });
 
   onUnmounted(() => {
     chrome.storage.onChanged.removeListener(handleStorageChanged);
+    stopWatchingBitrixDarkTheme?.();
   });
 
   return {isDark};

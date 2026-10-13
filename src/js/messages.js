@@ -11,3 +11,8 @@ export const BROWSER_NOTIFICATION_MESSAGE_TYPE = 'pts-browser-notification';
 // от имени страницы Bitrix и упирается в CORS чужого домена. Отправляют PixelToolsApi и
 // sprint-priorities — через общую обёртку src/js/backgroundFetch.js.
 export const BACKGROUND_FETCH_MESSAGE_TYPE = 'pts-background-fetch';
+
+// Просьба включить или выключить «Тёмную тему Битрикса» из кнопки в шапке портала. Ставит или снимает паузу темы
+// service worker (src/background/darkTheme.js) и отвечает, когда тема уже переключена во всех открытых вкладках
+// портала — до этого кнопка заблокирована. Отправляет bitrix-dark-theme-button.
+export const SET_BITRIX_DARK_THEME_MESSAGE_TYPE = 'pts-set-bitrix-dark-theme';

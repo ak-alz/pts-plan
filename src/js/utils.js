@@ -401,6 +401,32 @@ export function prefixBitrixDarkSelector(selectorList) {
   return selectors.map((selector) => `.pts-bitrix-dark ${selector.trim()}`).join(', ');
 }
 
+/**
+ * Работает ли сейчас на странице «Тёмная тема Битрикса». Смотрим на класс её скрипта, а не на опцию: тема
+ * переключается на лету по всем вкладкам, и класс — единственное, что точно совпадает с видом страницы.
+ * @returns {boolean} Включена ли тема в этом документе.
+ */
+export function isBitrixDarkThemeActive() {
+  return document.documentElement.classList.contains('pts-bitrix-dark');
+}
+
+/**
+ * Подписывается на включение и выключение «Тёмной темы Битрикса» в этом документе (класс `.pts-bitrix-dark` на `<html>`).
+ * @param {(isActive: boolean) => void} callback Вызывается только при реальной смене состояния.
+ * @returns {() => void} Функция отписки.
+ */
+export function onBitrixDarkThemeChange(callback) {
+  let isActive = isBitrixDarkThemeActive();
+  // На <html> меняют классы и другие (в том числе мы сами — .pts-dark), поэтому сравниваем с прошлым состоянием
+  const observer = new MutationObserver(() => {
+    if (isBitrixDarkThemeActive() === isActive) return;
+    isActive = !isActive;
+    callback(isActive);
+  });
+  observer.observe(document.documentElement, {attributes: true, attributeFilter: ['class']});
+  return () => observer.disconnect();
+}
+
 export function validateHexColor(color) {
   return /^#[0-9A-Fa-f]{6}$|^#[0-9A-Fa-f]{3}$/.test(color);
 }

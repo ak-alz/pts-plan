@@ -1,5 +1,6 @@
 import options from '../js/options.js';
 import {initToastHost} from '../js/toastHost/index.js';
+import {isBitrixDarkThemeActive, onBitrixDarkThemeChange} from '../js/utils.js';
 
 (() => {
   document.body.classList.add('pts-plan');
@@ -95,13 +96,15 @@ import {initToastHost} from '../js/toastHost/index.js';
 
   initToastHost();
 
-  // Виджеты тёмные, если тёмная тема выбрана явно или на странице работает «Тёмная тема Битрикса». Смотрим на класс
-  // её скрипта, а не на опцию: тема включается и выключается только перезагрузкой, и до неё виджеты разошлись бы со страницей
-  const isBitrixDarkTheme = document.documentElement.classList.contains('pts-bitrix-dark');
+  // Виджеты тёмные, если тёмная тема выбрана явно или на странице работает «Тёмная тема Битрикса»
+  let currentThemeMode;
 
   function applyContentTheme(themeMode) {
-    document.documentElement.classList.toggle('pts-dark', themeMode === 'dark' || isBitrixDarkTheme);
+    currentThemeMode = themeMode;
+    document.documentElement.classList.toggle('pts-dark', themeMode === 'dark' || isBitrixDarkThemeActive());
   }
+
+  onBitrixDarkThemeChange(() => applyContentTheme(currentThemeMode));
 
   async function initTheme() {
     const { themeMode } = await chrome.storage.local.get(['themeMode']);
