@@ -7,11 +7,12 @@ import BitrixApi from '../../../BitrixApi.js';
 import { useAiJob } from '../../../composables/useAiJob.js';
 import { usePromptLibrary } from '../../../composables/usePromptLibrary.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
+import { downloadTaskAiAttachments, findTaskAiAttachments } from '../../../taskAiAttachments.js';
 import {showToast} from '../../../toastHost/showToast.js';
 import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import { getCommitMessage, getTaskUrl } from '../../../utils.js';
 import {buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
-import {parseAiDecompositions} from '../parseAiDecompositions.js';
+import {findLatestAiDecompositions} from '../parseAiDecompositions.js';
 import { promptSpec } from '../promptSpec.js';
 import DecomposeCard from './DecomposeCard.vue';
 import DecomposeQuickMode from './DecomposeQuickMode.vue';
@@ -88,7 +89,7 @@ const aiJob = useAiJob(() => `decompose-task-ai-job-${props.taskId}`, {
 });
 const aiLoading = aiJob.loading;
 const aiProgress = aiJob.progress;
-const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI декомпозиция (${aiProgress.value}%)` : 'AI декомпозиция');
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `ИИ-декомпозиция (${aiProgress.value}%)` : 'ИИ-декомпозиция');
 const formElement = ref(null);
 const importDecompositionLoading = ref(false);
 
@@ -412,7 +413,7 @@ function applyDecomposeItems(items) {
 
 function applyAiDecomposeResult(rawResult) {
   const parsed = JSON.parse(jsonrepair(rawResult));
-  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('AI вернул пустой список подзадач');
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('ИИ вернул пустой список подзадач');
 
   applyDecomposeItems(parsed.map((item) => ({
     title: item.title ?? '',
@@ -423,15 +424,17 @@ function applyAiDecomposeResult(rawResult) {
 async function importReadyDecomposition() {
   importDecompositionLoading.value = true;
   try {
-    const { data } = await bitrixApi.getTask(props.taskId, ['DESCRIPTION']);
-    const description = data?.result?.task?.description ?? '';
-    const items = parseAiDecompositions(description);
+    const [{ data }, comments] = await Promise.all([
+      bitrixApi.getTask(props.taskId, ['DESCRIPTION']),
+      bitrixApi.getComments(props.taskId),
+    ]);
+    const items = findLatestAiDecompositions(data?.result?.task?.description ?? '', comments);
 
     if (!items) {
       showToast({
         severity: 'warn',
         summary: 'Готовая декомпозиция',
-        detail: 'В описании задачи не найден блок [AI_DECOMPOSITIONS]',
+        detail: 'Готовая декомпозиция от ИИ-оценки не найдена ни в комментариях, ни в описании задачи',
         life: 5000,
       });
       return;
@@ -470,21 +473,23 @@ async function aiDecompose() {
 
   const {onStart, onProgress} = aiJob.chatCallbacks();
   await aiJob.runJob(async () => {
+    const withAttachments = !!settings.value.aiAttachments;
     const fields = settings.value.description ? ['TITLE', 'DESCRIPTION'] : ['TITLE'];
+    if (withAttachments) fields.push('UF_TASK_WEBDAV_FILES');
     const { data } = await bitrixApi.getTask(props.taskId, fields);
     const title = data?.result?.task?.title ?? props.taskTitle;
     const description = settings.value.description ? (data?.result?.task?.description ?? '') : '';
+    const { files, promptNote } = withAttachments
+      ? await downloadTaskAiAttachments(await findTaskAiAttachments(bitrixApi, data?.result?.task?.ufTaskWebdavFiles ?? []))
+      : { files: {}, promptNote: '' };
 
     await promptLibrary.ready;
-    const MAX_PROMPT_LENGTH = 20000;
-    let prompt = promptLibrary.buildActivePrompt({ title, description, extraContext: aiContext.value })
+    const prompt = promptLibrary.buildActivePrompt({ title, description, extraContext: aiContext.value })
       ?? buildSystemPrompt(title, description, aiContext.value);
-    if (prompt.length > MAX_PROMPT_LENGTH) {
-      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      showToast({ severity: 'warn', summary: 'AI', detail: `Описание задачи обрезано — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
-    }
-
-    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+    return new PixelToolsApi(apiKey).chat(prompt, promptNote, onProgress, onStart, {
+      truncationHint: 'Обрезан конец описания задачи.',
+      ...files,
+    });
   }, async (rawResult) => {
     applyAiDecomposeResult(rawResult);
     await scrollToRows();
@@ -549,7 +554,7 @@ onMounted(async () => {
           @click="aiDecompose"
         />
         <Button
-          v-tooltip="'Доп. контекст для AI'"
+          v-tooltip="'Доп. контекст для ИИ'"
           size="small"
           severity="secondary"
           :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
@@ -568,7 +573,7 @@ onMounted(async () => {
       </InputGroup>
       <Button
         v-if="!isLoading"
-        v-tooltip="'Найти в описании задачи блок [AI_DECOMPOSITIONS] (готовая декомпозиция от AI-оценки) и подставить подзадачи из него'"
+        v-tooltip="'Подставить подзадачи из готовой декомпозиции от ИИ-оценки — из последнего комментария с оценкой или, если там её нет, из описания задачи'"
         icon="pi pi-file-import"
         label="Готовая декомпозиция"
         size="small"
@@ -922,13 +927,13 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isAiContextModalOpened"
-    header="Доп. контекст для AI"
+    header="Доп. контекст для ИИ"
     dismissable-mask
     modal
     :style="{width: '480px'}"
   >
     <p class="text-sm text-surface-500 dark:text-surface-400 mb-3">
-      Дополнительная информация для AI: стек, ограничения, пожелания по декомпозиции.
+      Дополнительная информация для ИИ: стек, ограничения, пожелания по декомпозиции.
     </p>
     <div class="relative">
       <Textarea

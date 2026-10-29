@@ -41,4 +41,7 @@ import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
       filterMutation: (mutation) => !mutation.target.closest('.feed-com-add-box-outer'),
     },
   );
+
+  // Описание перерисовывается без перезагрузки после быстрого редактирования
+  rehydrateOnChanges(fixLinks, document.querySelector('.task-detail-description'));
 })();

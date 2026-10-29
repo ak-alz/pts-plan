@@ -161,7 +161,7 @@ async function save() {
         <label
           for="qt_hide_ai"
           class="text-sm cursor-pointer select-none"
-        >Скрыть AI-функции</label>
+        >Скрыть ИИ-функции</label>
         <i
           v-tooltip.top="'Убирает кнопку «Сгенерировать описание» вместе с контекстом и промптами'"
           class="pi pi-question-circle"

@@ -8,10 +8,29 @@ const ALLOWED_URL_PREFIXES = [
   'https://docs.google.com/spreadsheets/',
 ];
 
+// Файлы приходят base64-строкой (Blob через сообщения не передаётся) и собираются в форму здесь.
+// Content-Type с границей multipart fetch для FormData выставляет сам
+function buildRequestInit(body, files) {
+  if (files) {
+    const formData = new FormData();
+    Object.entries(body ?? {}).forEach(([field, value]) => formData.append(field, value));
+    Object.entries(files).forEach(([field, file]) => {
+      const bytes = Uint8Array.from(atob(file.base64), (character) => character.charCodeAt(0));
+      formData.append(field, new Blob([bytes], { type: file.type }), file.name);
+    });
+    return { body: formData };
+  }
+  if (!body) return {};
+  return {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(body).toString(),
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type !== BACKGROUND_FETCH_MESSAGE_TYPE) return false;
 
-  const { method, url, body, params, responseType } = message;
+  const { method, url, body, files, params, responseType } = message;
   const fullUrl = params ? `${url}?${new URLSearchParams(params)}` : url;
 
   if (!ALLOWED_URL_PREFIXES.some((prefix) => fullUrl.startsWith(prefix))) {
@@ -21,8 +40,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   fetch(fullUrl, {
     method: method ?? 'GET',
-    headers: body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : undefined,
-    body: body ? new URLSearchParams(body).toString() : undefined,
+    ...buildRequestInit(body, files),
   })
     .then(async (response) => {
       const data = responseType === 'text' ? await response.text() : await response.json();

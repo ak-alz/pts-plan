@@ -3,6 +3,8 @@ import {SelectButton} from 'primevue';
 import Chart from 'primevue/chart';
 import {nextTick, ref, watch} from 'vue';
 
+import {getLineTooltipPointStyle, lineLegendLabels, lineTooltipOptions} from '../../../chartLineStyle.js';
+
 const props = defineProps({
   chartData: {
     type: Object,
@@ -48,13 +50,15 @@ const chartOptions = {
     legend: {
       display: true,
       position: 'bottom',
-      labels: {usePointStyle: true},
+      labels: lineLegendLabels,
     },
     tooltip: {
+      ...lineTooltipOptions,
       itemSort(a, b) {
         return b.raw.y - a.raw.y;
       },
       callbacks: {
+        labelPointStyle: getLineTooltipPointStyle,
         label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}`,
       },
     },

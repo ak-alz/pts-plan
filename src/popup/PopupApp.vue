@@ -44,14 +44,17 @@ watch(selectedGroup, (group) => {
   }
 });
 
+// «ё» приравниваем к «е»: в названиях она есть, а набирают её редко
+const normalizeSearchText = (text) => text.toLowerCase().replaceAll('ё', 'е');
+
 const filteredOptions = computed(() => {
-  const searchValue = search.value.toLowerCase();
-  const convertedSearchValue = convertKeyboardLayout(searchValue);
+  const searchValue = normalizeSearchText(search.value);
+  const convertedSearchValue = normalizeSearchText(convertKeyboardLayout(search.value.toLowerCase()));
   return options
     .filter((option) => {
       if (profileKeys.has(option.key)) return false;
-      const matchesSearch = [searchValue, convertedSearchValue].some((value) =>
-        option.name.toLowerCase().includes(value) || option.tip?.toLowerCase()?.includes(value));
+      const searchableText = normalizeSearchText([option.name, option.tip, ...(option.keywords ?? [])].join('\n'));
+      const matchesSearch = [searchValue, convertedSearchValue].some((value) => searchableText.includes(value));
       const matchesGroup = selectedGroup.value === 'all'
         || (selectedGroup.value === 'new' && (option.new || hasUnseen(option)))
         || (selectedGroup.value === 'disabled' && disabledKeysSnapshot.value.has(option.key))
@@ -114,7 +117,7 @@ function openCallNotificationsGuide() {
   chrome.tabs.create({ url: chrome.runtime.getURL('whats-new.html?calls=1') });
 }
 
-// Опции пишет не только попап: расширение само сбрасывает «Нейросеть для AI-функций» на значение
+// Опции пишет не только попап: расширение само сбрасывает «Нейросеть для ИИ-функций» на значение
 // по умолчанию, когда выбранную модель отключили в Пиксель Тулс. Без этого форма осталась бы со
 // старым значением и следующим же сохранением вернула бы нерабочую модель обратно.
 // Присваивание тех же значений реактивность не трогает, поэтому собственные записи попапа

@@ -9,18 +9,22 @@ import {BACKGROUND_FETCH_MESSAGE_TYPE} from './messages.js';
  * @param {string} url - Адрес без query-параметров (они передаются отдельно, см. `params`).
  * @param {object} [options]
  * @param {object} [options.body] - Тело запроса; отправляется как `application/x-www-form-urlencoded`.
+ * @param {Record<string, {name: string, type: string, base64: string}>} [options.files] - Файлы по именам
+ * полей формы, содержимое в base64 (`Blob` через сообщения расширения не передаётся). С ними запрос
+ * уходит как `multipart/form-data`, а поля `body` — обычными полями той же формы.
  * @param {object} [options.params] - Query-параметры.
  * @param {'json'|'text'} [options.responseType] - Как разобрать ответ. По умолчанию `json`.
  * @param {boolean} [options.throwOnHttpError] - Бросать ошибку при ответе не-2xx. По умолчанию нет:
  * часть API отдаёт осмысленное описание проблемы телом ответа с кодом ошибки, и вызывающий разбирает его сам.
  * @returns {Promise<any>} Разобранный ответ сервиса.
  */
-export async function backgroundFetch(method, url, {body, params, responseType = 'json', throwOnHttpError = false} = {}) {
+export async function backgroundFetch(method, url, {body, files, params, responseType = 'json', throwOnHttpError = false} = {}) {
   const response = await chrome.runtime.sendMessage({
     type: BACKGROUND_FETCH_MESSAGE_TYPE,
     method,
     url,
     body,
+    files,
     params,
     responseType,
   });

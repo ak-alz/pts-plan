@@ -63,6 +63,7 @@ const form = reactive({
   showPostButton: props.initial.showPostButton ? toRaw(props.initial.showPostButton) : [],
   summaryTaskId: props.initial.summaryTaskId ?? null,
   hideUserAvatar: props.initial.hideUserAvatar ?? false,
+  countParentTasks: props.initial.countParentTasks ?? false,
 });
 
 async function saveSettings() {
@@ -321,6 +322,19 @@ const sortableColumns = computed(() => {
                 for="settings_hide_user_avatar"
                 class="text-sm cursor-pointer"
               >Скрывать аватар исполнителя</label>
+            </div>
+
+            <div class="flex gap-2 items-center">
+              <ToggleSwitch
+                v-model="form.countParentTasks"
+                input-id="settings_count_parent_tasks"
+                size="small"
+              />
+              <label
+                v-tooltip.top="'Рядом с числом задач в скобках появится число родительских задач, к которым они относятся: 8 / 3 — восемь задач из трёх родительских. Задача без родителя считается отдельной родительской'"
+                for="settings_count_parent_tasks"
+                class="text-sm cursor-pointer"
+              >Считать родительские задачи</label>
             </div>
           </div>
         </AccordionContent>

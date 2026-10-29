@@ -57,6 +57,15 @@ const DYNAMIC_STYLE_ATTRIBUTE = 'data-pts-bitrix-dark-theme-dynamic';
 const dynamicStyleElements = [];
 const processedStylesheets = new WeakSet();
 
+// Фреймы без скрипта темы: визуальный редактор Битрикса (описание задачи, комментарии) заполняет свой iframe
+// через document.open(), а тот стирает всё, что тема успела туда вставить. Такие фреймы перекрашивает
+// родительская страница — пересчитанные правила кладёт в один <style> с этим атрибутом
+const FRAME_STYLE_ATTRIBUTE = 'data-pts-bitrix-dark-theme-frame';
+const frameStyleElements = new Set();
+const watchedFrames = new WeakSet();
+// Живая коллекция: не нужно искать iframe в каждом добавленном узле
+const frameElements = document.getElementsByTagName('iframe');
+
 /**
  * Разбирает CSS-цвет.
  * @param {string} color `#rgb[a]`, `#rrggbb[aa]`, `rgb(…)`/`rgba(…)`, `white` или `black`.
@@ -175,12 +184,13 @@ function convertVariables(value, colorKind) {
  * Переводит значение свойства под тёмную тему: переменные — на тёмные версии, явные цвета — пересчётом.
  * @param {string} value Значение свойства.
  * @param {'background'|'text'|'border'} colorKind Вид цвета.
+ * @param {boolean} withVariables Подменять ли переменные: их тёмные версии определены только в документе с темой.
  * @returns {string|null} Новое значение или `null`, если менять нечего.
  */
-function convertPropertyValue(value, colorKind) {
+function convertPropertyValue(value, colorKind, withVariables) {
   let convertedValue = value;
   let changed = false;
-  if (value.includes('var(')) {
+  if (withVariables && value.includes('var(')) {
     const withDarkVariables = convertVariables(convertedValue, colorKind);
     if (withDarkVariables) {
       convertedValue = withDarkVariables;
@@ -202,13 +212,14 @@ function convertPropertyValue(value, colorKind) {
  * Собирает пересчитанные под тёмную тему правила из списка CSS-правил.
  * @param {CSSRuleList} ruleList Правила таблицы стилей или группирующего правила.
  * @param {string[]} accumulator Куда складывать готовые правила.
+ * @param {boolean} [withVariables] Подменять ли переменные портала их тёмными версиями.
  */
-function collectConvertedRules(ruleList, accumulator) {
+function collectConvertedRules(ruleList, accumulator, withVariables = true) {
   for (const rule of ruleList) {
     // Группирующие правила (@media, @supports, @layer…) обходим вглубь; обёртку сохраняем только для @media
     if (rule.cssRules && !rule.selectorText) {
       const innerRules = [];
-      collectConvertedRules(rule.cssRules, innerRules);
+      collectConvertedRules(rule.cssRules, innerRules, withVariables);
       if (innerRules.length && rule.media) accumulator.push(`@media ${rule.media.mediaText}{${innerRules.join('')}}`);
       else accumulator.push(...innerRules);
       continue;
@@ -217,7 +228,7 @@ function collectConvertedRules(ruleList, accumulator) {
 
     const declarations = [];
     const addDeclaration = (property, colorKind) => {
-      const convertedValue = convertPropertyValue(rule.style.getPropertyValue(property), colorKind);
+      const convertedValue = convertPropertyValue(rule.style.getPropertyValue(property), colorKind, withVariables);
       if (!convertedValue) return;
       const priority = rule.style.getPropertyPriority(property) ? '!important' : '';
       declarations.push(`${property}:${convertedValue}${priority}`);
@@ -322,6 +333,82 @@ function isOwnStyle(element) {
   return element === themeStyleElement || element.hasAttribute(DYNAMIC_STYLE_ATTRIBUTE);
 }
 
+/**
+ * Документ фрейма, если он с того же домена.
+ * @param {HTMLIFrameElement} frame Фрейм.
+ * @returns {Document|null} Документ или `null` для чужого домена.
+ */
+function getFrameDocument(frame) {
+  try {
+    return frame.contentDocument;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Перекрашивает фрейм без своего скрипта темы: пересчитывает все его таблицы стилей заново (документ редактора
+ * маленький) и ставит `color-scheme: dark` — иначе Chrome заливает фрейм со схемой, отличной от страницы, белым.
+ * @param {HTMLIFrameElement} frame Фрейм.
+ */
+function themeFrame(frame) {
+  // На паузе не пересчитываем: слайдеры — целые страницы портала, а их правила всё равно не применятся
+  if (!isThemeEnabled) return;
+
+  const frameDocument = getFrameDocument(frame);
+  const root = frameDocument?.documentElement;
+  if (!root || root.hasAttribute('data-pts-bitrix-dark-theme')) return;
+
+  let styleElement = frameDocument.querySelector(`style[${FRAME_STYLE_ATTRIBUTE}]`);
+  // Тёмные версии переменных есть только в документе с темой — во фрейме пересчитываем лишь явные цвета
+  const rules = [':root{color-scheme:dark}'];
+  for (const stylesheet of frameDocument.styleSheets) {
+    if (stylesheet.ownerNode === styleElement) continue;
+    try {
+      collectConvertedRules(stylesheet.cssRules, rules, false);
+    } catch {
+      // Таблица с чужого домена — её правила не читаются
+    }
+  }
+
+  if (!styleElement) {
+    styleElement = frameDocument.createElement('style');
+    styleElement.setAttribute(FRAME_STYLE_ATTRIBUTE, '');
+  }
+  styleElement.textContent = rules.join('\n');
+  applyThemeState(styleElement);
+  // После <body>, как и основной стиль темы: копия правила перебивает оригинал, только если идёт позже
+  if (root.lastChild !== styleElement) root.append(styleElement);
+
+  // Стили документов, стёртых document.open(), больше не нужны
+  for (const element of frameStyleElements) {
+    if (!element.isConnected) frameStyleElements.delete(element);
+  }
+  frameStyleElements.add(styleElement);
+}
+
+/**
+ * Перекрашивает все фреймы страницы заново — после включения темы: на паузе фреймы не перекрашивались.
+ * Вызывается из обёртки в scripts/pack.mjs.
+ */
+// eslint-disable-next-line no-unused-vars
+function themeAllFrames() {
+  for (const frame of frameElements) themeFrame(frame);
+}
+
+/**
+ * Перекрашивает новые фреймы страницы и следит за ними: редактор перезаписывает документ фрейма через
+ * document.open(), и перезапись заканчивается событием `load` — к нему же догружаются `<link>` фрейма.
+ */
+function watchNewFrames() {
+  for (const frame of frameElements) {
+    if (watchedFrames.has(frame)) continue;
+    watchedFrames.add(frame);
+    frame.addEventListener('load', () => themeFrame(frame));
+    themeFrame(frame);
+  }
+}
+
 // Несколько новых таблиц за кадр пересчитываем одним проходом
 let isScanQueued = false;
 function queueScan() {
@@ -343,8 +430,10 @@ new MutationObserver((mutations) => {
       else if (node.nodeName === 'STYLE' && !isOwnStyle(node)) queueScan();
     }
   }
+  if (frameElements.length) watchNewFrames();
 }).observe(document.documentElement, {childList: true, subtree: true});
 document.addEventListener('DOMContentLoaded', queueScan);
 window.addEventListener('load', queueScan);
 // Тему включили на уже загруженной странице — таблицы стилей уже на месте, событий загрузки не будет
 if (document.readyState !== 'loading') queueScan();
+watchNewFrames();

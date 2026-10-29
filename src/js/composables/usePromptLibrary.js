@@ -8,7 +8,7 @@ function getStorageKey(spec) {
 }
 
 /**
- * Свои промпты одной AI-фичи: список, выбранный, создание/правка/удаление. Хранятся в
+ * Свои промпты одной ИИ-фичи: список, выбранный, создание/правка/удаление. Хранятся в
  * `chrome.storage.local` под `ai-prompts-<spec.key>` и попадают в экспорт настроек — ими можно
  * поделиться. `activeId: null` — стандартный промпт фичи.
  * @param {import('../aiPromptLibrary.js').PromptSpec} spec - Описание промпта фичи.
@@ -38,7 +38,7 @@ export function usePromptLibrary(spec) {
     activeId.value = stored?.activeId ?? null;
   }
 
-  // Запуск AI сразу после открытия виджета не должен уйти со стандартным промптом только потому,
+  // Запуск ИИ сразу после открытия виджета не должен уйти со стандартным промптом только потому,
   // что выбранный ещё не дочитан из storage — фичи ждут ready перед сборкой промпта
   const ready = chrome.storage.local.get(storageKey).then((stored) => applyStored(stored[storageKey]));
 

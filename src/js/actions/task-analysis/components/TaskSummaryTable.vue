@@ -7,7 +7,6 @@ import {useContentTheme} from '../../../composables/useContentTheme.js';
 import {usePromptLibrary} from '../../../composables/usePromptLibrary.js';
 import {PixelToolsApi} from '../../../PixelToolsApi.js';
 import {renderAiMarkdown} from '../../../renderAiMarkdown.js';
-import {showToast} from '../../../toastHost/showToast.js';
 import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import {colors, downloadBlob, escapeCsvCell} from '../../../utils.js';
 import {buildPeriodLabel, buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
@@ -200,7 +199,7 @@ const aiJob = useAiJob(() => `task-analysis-ai-job-${props.contextKey}`, {
 });
 const aiLoading = aiJob.loading;
 const aiProgress = aiJob.progress;
-const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI анализ (${aiProgress.value}%)` : 'AI анализ');
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `ИИ-анализ (${aiProgress.value}%)` : 'ИИ-анализ');
 
 async function scrollToAiResult() {
   await nextTick();
@@ -235,9 +234,8 @@ async function aiAnalyze() {
   const {onStart, onProgress} = aiJob.chatCallbacks();
   await aiJob.runJob(async () => {
     await promptLibrary.ready;
-    const MAX_PROMPT_LENGTH = 20000;
     const aiData = buildAiData();
-    let prompt = promptLibrary.buildActivePrompt({
+    const prompt = promptLibrary.buildActivePrompt({
       data: JSON.stringify(aiData),
       period: buildPeriodLabel(props.dateRange) ?? '',
       comparePeriod: buildPeriodLabel(props.compareDateRange) ?? '',
@@ -247,12 +245,9 @@ async function aiAnalyze() {
       compareDateRange: props.compareDateRange,
       extraContext: aiContext.value,
     });
-    if (prompt.length > MAX_PROMPT_LENGTH) {
-      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
-    }
-
-    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart, {
+      truncationHint: 'Часть данных не попала в анализ — сократите период.',
+    });
   }, async (result) => {
     aiResult.value = result;
     await scrollToAiResult();
@@ -293,7 +288,7 @@ function exportCsv() {
   const csv = [headers, ...dataRows]
     .map((row) => row.map(escapeCsvCell).join(props.csvSeparator))
     .join('\n');
-  downloadBlob(new Blob([csv], {type: 'text/csv;charset=utf-8;'}), 'task-summary.csv');
+  downloadBlob(new Blob(['\uFEFF', csv], {type: 'text/csv;charset=utf-8;'}), 'task-summary.csv');
 }
 </script>
 
@@ -314,7 +309,7 @@ function exportCsv() {
           @click="aiAnalyze"
         />
         <Button
-          v-tooltip="'Доп. контекст для AI'"
+          v-tooltip="'Доп. контекст для ИИ'"
           size="small"
           severity="secondary"
           :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
@@ -603,7 +598,7 @@ function exportCsv() {
   >
     <div class="flex items-center gap-1 mb-2 text-sm text-surface-400 dark:text-surface-500">
       <i class="pi pi-sparkles" />
-      <span>Результат AI анализа</span>
+      <span>Результат ИИ-анализа</span>
     </div>
     <div
       class="pts-ai-result p-3 rounded border border-surface-200 dark:border-surface-700 text-sm leading-relaxed"
@@ -647,13 +642,13 @@ function exportCsv() {
 
   <Dialog
     v-model:visible="isAiContextModalOpened"
-    header="Доп. контекст для AI"
+    header="Доп. контекст для ИИ"
     dismissable-mask
     modal
     :style="{width: '480px'}"
   >
     <p class="text-sm text-surface-500 dark:text-surface-400 mb-3">
-      Дополнительная информация для AI: особенности команды, периода, что учесть при анализе.
+      Дополнительная информация для ИИ: особенности команды, периода, что учесть при анализе.
     </p>
     <div class="relative">
       <Textarea

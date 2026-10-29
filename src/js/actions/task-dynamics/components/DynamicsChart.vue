@@ -3,6 +3,7 @@ import {SelectButton} from 'primevue';
 import Chart from 'primevue/chart';
 import {computed, nextTick, ref, watch} from 'vue';
 
+import {getLineTooltipPointStyle, lineLegendLabels, lineTooltipOptions} from '../../../chartLineStyle.js';
 import {useContentTheme} from '../../../composables/useContentTheme.js';
 
 const props = defineProps({
@@ -127,13 +128,15 @@ const chartOptions = computed(() => ({
     legend: {
       display: true,
       position: 'bottom',
-      labels: {usePointStyle: true, color: textColor.value},
+      labels: {...lineLegendLabels, color: textColor.value},
     },
     tooltip: {
+      ...lineTooltipOptions,
       // Порядок строк в подсказке иначе следует за порядком отрисовки (order), из-за которого линии
       // выводятся поверх столбцов, — а читать удобнее в том порядке, в котором датасеты объявлены
       itemSort: (first, second) => first.datasetIndex - second.datasetIndex,
       callbacks: {
+        labelPointStyle: getLineTooltipPointStyle,
         label: (context) => `${context.dataset.label}: ${formatValue(context.parsed.y, context.dataset)}`,
       },
     },

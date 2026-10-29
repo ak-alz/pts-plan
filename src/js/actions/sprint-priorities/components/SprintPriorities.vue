@@ -1,8 +1,10 @@
 <script setup>
 import dayjs from 'dayjs';
+import { chunk, debounce, pick } from 'lodash-es';
 import { Avatar, Button, Column, DataTable, Dialog, InputText, MultiSelect, SplitButton } from 'primevue';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import { AI_ESTIMATION_COLUMN_KEYS, AI_ESTIMATION_COLUMNS, AI_ESTIMATION_OUTDATED_NOTE, findLatestAiEstimation, formatAiEstimationValue, getAiEstimationValues } from '../../../aiEstimation.js';
 import { backgroundFetch } from '../../../backgroundFetch.js';
 import BitrixApi from '../../../BitrixApi.js';
 import { showToast } from '../../../toastHost/showToast.js';
@@ -83,6 +85,35 @@ const visibleColumnKeys = computed(() => {
   const configured = settings.value?.visibleColumns
     ?? CONFIGURABLE_COLUMNS.map((column) => column.key).filter((key) => !DEFAULT_HIDDEN_COLUMNS.includes(key));
   return [...LOCKED_COLUMN_KEYS, ...configured];
+});
+
+// Выбранные поля ИИ-оценки выводятся одной колонкой через разделитель, в порядке AI_ESTIMATION_COLUMNS
+const selectedAiFields = computed(() => AI_ESTIMATION_COLUMNS.filter((field) => settings.value?.aiFields?.includes(field.key)));
+const AI_VALUES_SEPARATOR = ' · ';
+
+const aiHeaderTooltip = computed(() => [
+  selectedAiFields.value.map((field) => field.name).join(AI_VALUES_SEPARATOR),
+  'Последняя ИИ-оценка задачи — из комментария или из описания. Загружается только для текущей страницы, сортировки нет.',
+  AI_ESTIMATION_OUTDATED_NOTE,
+].join('\n\n'));
+
+// ИИ-оценка требует комментариев задачи, а на сотнях задач это минуты — считаем её только для текущей
+// страницы таблицы. Небольшие порции по нескольку задач: ячейки заполняются по мере ответа, а не разом в конце
+const AI_CHUNK_SIZE = 5;
+const AI_CONCURRENCY = 3;
+const tableRef = ref(null);
+const aiValuesByTaskId = ref({});
+// Значения из кэша или прошлой загрузки: показываются, пока для задачи не пришли свежие
+const staleAiValuesByTaskId = ref({});
+const aiLoadingTaskIds = ref({});
+let aiLoadGeneration = 0;
+
+// processedData — данные таблицы уже после её собственной сортировки, так страница совпадает с тем, что на экране
+const pageTaskIds = computed(() => {
+  const rows = tableRef.value?.processedData ?? filteredRows.value;
+  return rows.slice(firstRow.value, firstRow.value + rowsPerPage.value)
+    .filter((row) => row.title)
+    .map((row) => row.taskId);
 });
 
 const cacheSignature = computed(() => buildCacheSignature(settings.value, visibleColumnKeys.value));
@@ -230,6 +261,7 @@ async function restoreFromCache() {
   teamTasksRaw.value = cache.teamTasksRaw ?? [];
   groupUsers.value = cache.groupUsers ?? [];
   groupStages.value = cache.groupStages ?? [];
+  staleAiValuesByTaskId.value = cache.aiValuesByTaskId ?? {};
   cachedAt.value = cache.savedAt;
   await restoreMarkedRow();
 }
@@ -246,6 +278,11 @@ async function persistCache() {
     teamTasksRaw: teamTasksRaw.value,
     groupUsers: groupUsers.value,
     groupStages: groupStages.value,
+    // Только задачи текущей таблицы — иначе в кэше копились бы оценки всех прошлых спринтов
+    aiValuesByTaskId: pick(
+      { ...staleAiValuesByTaskId.value, ...aiValuesByTaskId.value },
+      enrichedRows.value.map((row) => row.taskId),
+    ),
   });
   await refreshCacheSize();
 }
@@ -375,6 +412,8 @@ async function fetchTasksData() {
       userIds.length ? bitrixApi.getImUsersBatch(userIds) : Promise.resolve({}),
     ]);
 
+    // До подмены строк: иначе страница успела бы начать загрузку оценок, которую сброс тут же отменит
+    resetAiEstimations();
     enrichedRows.value = sheetRows.value.map(({ priority, taskId }) => {
       const task = tasksMap[taskId];
       if (!task) {
@@ -405,6 +444,7 @@ async function fetchTasksData() {
     await restoreMarkedRow();
     dateUpdated.value = `Обновлено: ${dayjs().format('HH:mm:ss')}`;
     cachedAt.value = null;
+    loadPageAiEstimations();
   } catch (error) {
     console.warn(error);
     showToast({
@@ -417,6 +457,114 @@ async function fetchTasksData() {
     isTasksLoading.value = false;
   }
 }
+
+function getAiValues(taskId) {
+  return aiValuesByTaskId.value[taskId] ?? staleAiValuesByTaskId.value[taskId] ?? null;
+}
+
+function hasAiEstimation(values) {
+  return !!values && AI_ESTIMATION_COLUMN_KEYS.some((key) => values[key] != null);
+}
+
+// В общей ячейке значения идут подряд, поэтому у часов есть единица, а признак устаревания — словом
+function formatAiCellValue(key, value) {
+  if (value == null) return '—';
+  if (key === 'aiAgentHours' || key === 'aiHumanHours') return `${value} ч`;
+  if (key === 'aiOutdated') return value ? 'устарела' : 'актуальна';
+  return formatAiEstimationValue(key, value);
+}
+
+function getAiCellText(taskId) {
+  const values = getAiValues(taskId);
+  if (!hasAiEstimation(values)) return '—';
+  return selectedAiFields.value.map((field) => formatAiCellValue(field.key, values[field.key])).join(AI_VALUES_SEPARATOR);
+}
+
+function getAiCellTooltip(taskId) {
+  const values = getAiValues(taskId);
+  if (!hasAiEstimation(values)) return 'ИИ-оценки нет';
+  return selectedAiFields.value
+    .map((field) => `${field.name}: ${formatAiEstimationValue(field.key, values[field.key]) ?? '—'}`)
+    .join('\n');
+}
+
+function isAiValueLoading(taskId) {
+  return !!aiLoadingTaskIds.value[taskId] && !staleAiValuesByTaskId.value[taskId];
+}
+
+// Данные задач обновились — прежние оценки остаются на экране, пока страница не догрузит свежие
+function resetAiEstimations() {
+  aiLoadGeneration++;
+  staleAiValuesByTaskId.value = { ...staleAiValuesByTaskId.value, ...aiValuesByTaskId.value };
+  aiValuesByTaskId.value = {};
+  aiLoadingTaskIds.value = {};
+}
+
+async function loadAiEstimationChunk(taskIds, generation) {
+  const [tasksMap, commentsByTaskId] = await Promise.all([
+    bitrixApi.getTasksByIdsBatch(taskIds, ['ID', 'DESCRIPTION']),
+    bitrixApi.getCommentsBatch(taskIds),
+  ]);
+  if (generation !== aiLoadGeneration) return;
+
+  const loadedValues = {};
+  taskIds.forEach((taskId) => {
+    const comments = commentsByTaskId[taskId];
+    loadedValues[taskId] = getAiEstimationValues(findLatestAiEstimation(tasksMap[taskId]?.description, comments), comments);
+  });
+  aiValuesByTaskId.value = { ...aiValuesByTaskId.value, ...loadedValues };
+}
+
+async function loadPageAiEstimations() {
+  // Пока на экране кэш, грузить нечего: следом придут свежие данные задач и запустят загрузку сами
+  if (!selectedAiFields.value.length || cachedAt.value) return;
+
+  const missingTaskIds = pageTaskIds.value.filter(
+    (taskId) => !aiValuesByTaskId.value[taskId] && !aiLoadingTaskIds.value[taskId],
+  );
+  if (!missingTaskIds.length) return;
+
+  const generation = aiLoadGeneration;
+  aiLoadingTaskIds.value = { ...aiLoadingTaskIds.value, ...Object.fromEntries(missingTaskIds.map((taskId) => [taskId, true])) };
+
+  const queue = chunk(missingTaskIds, AI_CHUNK_SIZE);
+  let hasError = false;
+  const worker = async () => {
+    while (queue.length) {
+      const taskIds = queue.shift();
+      try {
+        await loadAiEstimationChunk(taskIds, generation);
+      } catch (error) {
+        console.warn(error);
+        hasError = true;
+      } finally {
+        if (generation === aiLoadGeneration) {
+          const loadingTaskIds = { ...aiLoadingTaskIds.value };
+          taskIds.forEach((taskId) => delete loadingTaskIds[taskId]);
+          aiLoadingTaskIds.value = loadingTaskIds;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: AI_CONCURRENCY }, worker));
+  if (generation !== aiLoadGeneration) return;
+
+  if (hasError) {
+    showToast({
+      severity: 'error',
+      summary: 'Ошибка загрузки ИИ-оценок',
+      detail: 'Не удалось загрузить оценку части задач — она подгрузится при следующем открытии страницы таблицы.',
+      life: 5000,
+    });
+  }
+  persistCacheAfterAiLoad();
+}
+
+// Кэш пишется целиком — при быстром листании страниц сохраняем один раз, а не после каждой
+const persistCacheAfterAiLoad = debounce(persistCache, 2000);
+onUnmounted(() => persistCacheAfterAiLoad.cancel());
+
+watch([pageTaskIds, () => selectedAiFields.value.length], loadPageAiEstimations);
 
 async function fetchTeamPoints() {
   if (!settings.value?.showTeamPoints) return;
@@ -709,6 +857,7 @@ onMounted(async () => {
     </div>
 
     <DataTable
+      ref="tableRef"
       v-model:first="firstRow"
       :value="filteredRows"
       :loading="isLoading && !enrichedRows.length"
@@ -860,6 +1009,29 @@ onMounted(async () => {
         sortable
         style="white-space: nowrap;"
       />
+
+      <Column
+        v-if="selectedAiFields.length"
+        header-class="whitespace-nowrap"
+        body-class="whitespace-nowrap"
+      >
+        <template #header>
+          <span v-tooltip.top="aiHeaderTooltip">
+            <b>ИИ-оценка</b>
+            <i class="pi pi-question-circle text-xs text-surface-400 dark:text-surface-500" />
+          </span>
+        </template>
+        <template #body="{ data }">
+          <i
+            v-if="isAiValueLoading(data.taskId)"
+            class="pi pi-spin pi-spinner text-surface-400 dark:text-surface-500"
+          />
+          <span
+            v-else
+            v-tooltip.top="getAiCellTooltip(data.taskId)"
+          >{{ getAiCellText(data.taskId) }}</span>
+        </template>
+      </Column>
     </DataTable>
 
     <Dialog

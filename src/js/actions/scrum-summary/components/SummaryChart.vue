@@ -4,6 +4,7 @@ import {Button} from 'primevue';
 import Chart from 'primevue/chart';
 import {computed, ref, watch} from 'vue';
 
+import {getLineTooltipPointStyle, lineLegendLabels, lineTooltipOptions} from '../../../chartLineStyle.js';
 import {getDistinctLineDashes} from '../../../utils.js';
 
 const props = defineProps({
@@ -71,16 +72,15 @@ const chartOptions = computed(() => {
     plugins: {
       legend: {
         position: 'bottom',
-        labels: {
-          usePointStyle: true,
-          pointStyle: 'rectRounded',
-        },
+        labels: lineLegendLabels,
       },
       tooltip: {
+        ...lineTooltipOptions,
         itemSort(a, b) {
           return b.raw.y - a.raw.y;
         },
         callbacks: {
+          labelPointStyle: getLineTooltipPointStyle,
           title(tooltipItems) {
             const { sprint, x } = tooltipItems[0]?.raw ?? {};
             if (isTrend) {

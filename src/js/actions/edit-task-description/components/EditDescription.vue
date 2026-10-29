@@ -1,5 +1,5 @@
 <script setup>
-import {Button, Skeleton} from 'primevue';
+import {Button, SelectButton, Skeleton} from 'primevue';
 import {onMounted, ref, useTemplateRef} from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
@@ -28,11 +28,31 @@ let originalDescription = '';
 const attachments = createEditorAttachments(api);
 const isUploading = attachments.isUploading;
 
+// Вид поля — личное предпочтение, общее для всех задач
+const EDITOR_MODE_STORAGE_KEY = 'edit-task-description-editor';
+const editorMode = ref('bbcode');
+const editorModeOptions = [
+  {label: 'Редактор', value: 'bbcode', icon: 'pi pi-pen-to-square', tip: 'Визуальный редактор Bitrix: жирный, списки, ссылки, таблицы'},
+  {label: 'Текст', value: 'textarea', icon: 'pi pi-align-left', tip: 'Сырой текст с BBCode-тегами'},
+];
+
+async function changeEditorMode(mode) {
+  if (!mode || mode === editorMode.value) return;
+  // Изменения из визуального редактора приходят с задержкой — забираем их, пока он не исчез
+  await editor.value?.sync();
+  editorMode.value = mode;
+  await chrome.storage.local.set({[EDITOR_MODE_STORAGE_KEY]: mode});
+}
+
 // Текст берём сырым BBCode с сервера, а не из отрендеренного блока: в HTML вместо файлов уже картинки,
 // и их плейсхолдеры при сохранении потерялись бы
 onMounted(async () => {
   try {
-    const {data} = await api.getTask(props.taskId, ['DESCRIPTION']);
+    const [{data}, stored] = await Promise.all([
+      api.getTask(props.taskId, ['DESCRIPTION']),
+      chrome.storage.local.get(EDITOR_MODE_STORAGE_KEY).catch(() => ({})),
+    ]);
+    editorMode.value = stored[EDITOR_MODE_STORAGE_KEY] ?? 'bbcode';
     originalDescription = data?.result?.task?.description ?? '';
     description.value = originalDescription;
     files.value = buildDescriptionFiles(originalDescription, props.pageImages);
@@ -99,6 +119,28 @@ function onKeydown(event) {
     class="flex flex-col gap-2 my-2"
     @keydown="onKeydown"
   >
+    <SelectButton
+      v-if="!isLoading"
+      class="self-end"
+      :model-value="editorMode"
+      :options="editorModeOptions"
+      option-label="label"
+      option-value="value"
+      :allow-empty="false"
+      :disabled="isSaving || isUploading"
+      size="small"
+      @update:model-value="changeEditorMode"
+    >
+      <template #option="{ option }">
+        <span
+          v-tooltip.top="option.tip"
+          class="flex items-center gap-1"
+        >
+          <i :class="option.icon" />
+          {{ option.label }}
+        </span>
+      </template>
+    </SelectButton>
     <Skeleton
       v-if="isLoading"
       height="160px"
@@ -106,7 +148,10 @@ function onKeydown(event) {
     <BbcodeEditor
       v-else
       ref="editor"
+      :key="editorMode"
       v-model="description"
+      :plain="editorMode === 'textarea'"
+      :rows="10"
       :files="[...files, ...attachments.imageInfos.value]"
       :upload-image="attachments.uploadImage"
       :disabled="isSaving"

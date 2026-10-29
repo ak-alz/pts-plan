@@ -273,7 +273,7 @@ function buildSizeDistribution(pointCounts) {
 }
 
 /**
- * Все метрики за набор дней в заданном разрезе — один источник цифр для сводки, графиков, выгрузки и AI.
+ * Все метрики за набор дней в заданном разрезе — один источник цифр для сводки, графиков, выгрузки и ИИ.
  * @param {Record<string, Record<string, Object>>} days - Дневные агрегаты.
  * @param {string[]} dayKeys - Дни, попадающие в расчёт.
  * @param {Object} options

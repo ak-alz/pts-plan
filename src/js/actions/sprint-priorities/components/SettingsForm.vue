@@ -2,6 +2,7 @@
 import { Avatar, Button, InputNumber, InputText, MultiSelect, ToggleSwitch } from 'primevue';
 import { reactive, ref, toRaw } from 'vue';
 
+import { AI_ESTIMATION_COLUMNS, AI_ESTIMATION_OUTDATED_NOTE } from '../../../aiEstimation.js';
 import { showToast } from '../../../toastHost/showToast.js';
 import FormField from '../../../ui/FormField.vue';
 
@@ -59,6 +60,7 @@ const form = reactive({
     : [],
   showTeamPoints: props.initial.showTeamPoints ?? true,
   showRowMarker: props.initial.showRowMarker ?? true,
+  aiFields: props.initial.aiFields ? toRaw(props.initial.aiFields) : [],
   hideUserAvatar: props.initial.hideUserAvatar ?? false,
   teamUsers: props.initial.teamUsers ? toRaw(props.initial.teamUsers) : [],
   teamStages: props.initial.teamStages ? toRaw(props.initial.teamStages) : [],
@@ -169,6 +171,23 @@ async function saveSettings() {
           placeholder="Выбрать колонки"
           fluid
           input-id="settings_visible_columns"
+        />
+      </FormField>
+
+      <FormField
+        id="settings_ai_fields"
+        label="ИИ-оценка задачи"
+        :tip="`Что вывести в колонке «ИИ-оценка» — значения идут через « · ». Берётся последняя ИИ-оценка задачи: из комментария или, если там её нет, из описания. Для неё нужны комментарии задач, поэтому оценка загружается только для текущей страницы таблицы и сортировки по колонке нет. ${AI_ESTIMATION_OUTDATED_NOTE}`"
+      >
+        <MultiSelect
+          v-model="form.aiFields"
+          :options="AI_ESTIMATION_COLUMNS"
+          option-label="name"
+          option-value="key"
+          placeholder="Не выводить"
+          :max-selected-labels="2"
+          fluid
+          input-id="settings_ai_fields"
         />
       </FormField>
 

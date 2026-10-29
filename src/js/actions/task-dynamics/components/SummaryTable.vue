@@ -7,7 +7,6 @@ import {useAiJob} from '../../../composables/useAiJob.js';
 import {usePromptLibrary} from '../../../composables/usePromptLibrary.js';
 import {PixelToolsApi} from '../../../PixelToolsApi.js';
 import {renderAiMarkdown} from '../../../renderAiMarkdown.js';
-import {showToast} from '../../../toastHost/showToast.js';
 import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import {estimateTokenCount, pluralize} from '../../../utils.js';
 import {buildPeriodLabel, buildPromptPreview, buildSystemPrompt} from '../buildSystemPrompt.js';
@@ -235,7 +234,7 @@ const aiJob = useAiJob(() => `task-dynamics-ai-job-${props.contextKey}`, {
 });
 const aiLoading = aiJob.loading;
 const aiProgress = aiJob.progress;
-const aiButtonLabel = computed(() => (aiLoading.value && aiProgress.value !== null ? `AI анализ (${aiProgress.value}%)` : 'AI анализ'));
+const aiButtonLabel = computed(() => (aiLoading.value && aiProgress.value !== null ? `ИИ-анализ (${aiProgress.value}%)` : 'ИИ-анализ'));
 
 async function onAiContextInput(event) {
   aiContext.value = event.target.value.slice(0, AI_CONTEXT_MAX_LENGTH);
@@ -258,9 +257,8 @@ async function aiAnalyze() {
   const {onStart, onProgress} = aiJob.chatCallbacks();
   await aiJob.runJob(async () => {
     await promptLibrary.ready;
-    const MAX_PROMPT_LENGTH = 30000;
     const aiData = buildAiData();
-    let prompt = promptLibrary.buildActivePrompt({
+    const prompt = promptLibrary.buildActivePrompt({
       data: JSON.stringify(aiData),
       period: buildPeriodLabel(props.dateRange) ?? '',
       comparePeriod: buildPeriodLabel(props.compareDateRange) ?? '',
@@ -270,16 +268,9 @@ async function aiAnalyze() {
       compareDateRange: props.compareDateRange,
       extraContext: aiContext.value,
     });
-    if (prompt.length > MAX_PROMPT_LENGTH) {
-      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      showToast({
-        severity: 'warn',
-        summary: 'AI',
-        detail: `Данные обрезаны — запрос превышал ${MAX_PROMPT_LENGTH} символов. Сократите период или укрупните бакет.`,
-        life: 5000,
-      });
-    }
-    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart, {
+      truncationHint: 'Сократите период или укрупните бакет.',
+    });
   }, async (result) => {
     aiResult.value = result;
     await scrollToAiResult();
@@ -336,7 +327,7 @@ onMounted(async () => {
         @click="aiAnalyze"
       />
       <Button
-        v-tooltip="'Дополнительный контекст для AI'"
+        v-tooltip="'Дополнительный контекст для ИИ'"
         size="small"
         severity="secondary"
         :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
@@ -344,7 +335,7 @@ onMounted(async () => {
       />
       <PromptLibraryButton :library="promptLibrary" />
       <Button
-        v-tooltip="'Просмотр запроса к AI'"
+        v-tooltip="'Просмотр запроса к ИИ'"
         size="small"
         severity="secondary"
         icon="pi pi-eye"
@@ -541,7 +532,7 @@ onMounted(async () => {
   >
     <div class="flex items-center gap-1 mb-2 text-sm text-surface-400 dark:text-surface-500">
       <i class="pi pi-sparkles" />
-      <span>Результат AI анализа</span>
+      <span>Результат ИИ-анализа</span>
     </div>
     <div
       class="pts-ai-result p-3 rounded border border-surface-200 dark:border-surface-700 text-sm leading-relaxed"
@@ -585,7 +576,7 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isAiContextModalOpened"
-    header="Дополнительный контекст для AI"
+    header="Дополнительный контекст для ИИ"
     dismissable-mask
     modal
     :style="{width: '480px'}"
@@ -599,7 +590,7 @@ onMounted(async () => {
         :maxlength="AI_CONTEXT_MAX_LENGTH"
         rows="6"
         fluid
-        placeholder="Например: спринт — неделя, итоги подводим в четверг, в марте наняли двух разработчиков, в мае начали использовать AI-агентов..."
+        placeholder="Например: спринт — неделя, итоги подводим в четверг, в марте наняли двух разработчиков, в мае начали использовать ИИ-агентов..."
         @input="onAiContextInput"
       />
       <span class="absolute bottom-2 right-2 text-xs text-surface-400 dark:text-surface-500 pointer-events-none">
@@ -610,7 +601,7 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isPromptPreviewModalOpened"
-    :header="promptLibrary.activePrompt.value ? `Запрос к AI: ${promptLibrary.activePrompt.value.name}` : 'Запрос к AI'"
+    :header="promptLibrary.activePrompt.value ? `Запрос к ИИ: ${promptLibrary.activePrompt.value.name}` : 'Запрос к ИИ'"
     dismissable-mask
     modal
     :style="{width: '760px'}"

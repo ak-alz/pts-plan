@@ -5,7 +5,7 @@ import {computed, onMounted, onUnmounted, ref, watch} from 'vue';
 import {useAiJob} from '../../../composables/useAiJob.js';
 import {usePromptLibrary} from '../../../composables/usePromptLibrary.js';
 import {AI_CODE_FENCE_RE} from '../../../patterns.js';
-import {PixelToolsApi} from '../../../PixelToolsApi.js';
+import {pickAiAttachments, PixelToolsApi} from '../../../PixelToolsApi.js';
 import AiApiKeyDialog from '../../../ui/AiApiKeyDialog.vue';
 import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
 import {estimateTokenCount} from '../../../utils.js';
@@ -21,6 +21,8 @@ const props = defineProps({
   responsibleName: {type: String, default: ''},
   // Забирает из редактора самый свежий текст описания перед генерацией
   syncDescription: {type: Function, default: null},
+  // Файлы, прикреплённые к задаче в форме: первое изображение и первый документ уходят нейросети
+  attachedFiles: {type: Array, default: () => []},
 });
 
 const description = defineModel('description', {type: String, default: ''});
@@ -66,6 +68,9 @@ function getPrompt() {
   return promptLibrary.buildActivePrompt(values) ?? buildPrompt(values);
 }
 
+const aiAttachments = computed(() => pickAiAttachments(props.attachedFiles));
+const aiAttachmentNames = computed(() => Object.values(aiAttachments.value).map((file) => `«${file.name}»`));
+
 const previewPrompt = computed(() => getPrompt());
 const promptTokenEstimate = computed(() => estimateTokenCount(previewPrompt.value));
 
@@ -100,7 +105,7 @@ async function generate() {
     await Promise.all([promptLibrary.ready, props.syncDescription?.()]);
     // Окно закрыли до ответа — useAiJob оставил бы запись генерации в хранилище навсегда, ведь
     // подхватывать её некому
-    return new PixelToolsApi(apiKey).chat(getPrompt(), '', onProgress, onStart)
+    return new PixelToolsApi(apiKey).chat(getPrompt(), '', onProgress, onStart, aiAttachments.value)
       .finally(() => { if (isUnmounted) job.forget(); });
   }, applyResult);
 }
@@ -157,6 +162,9 @@ onUnmounted(() => {
     </div>
     <span class="text-xs text-surface-500 dark:text-surface-400">
       Нейросеть заполнит описание по названию. Если в поле уже есть шаблон или черновик — она сохранит его структуру и дополнит, а чего не знает — отметит «уточнить».
+      <template v-if="aiAttachmentNames.length">
+        Из прикреплённых файлов увидит {{ aiAttachmentNames.join(' и ') }}.
+      </template>
     </span>
 
     <div

@@ -4,18 +4,14 @@ import {ref} from 'vue';
 
 import DecomposeTask from './components/DecomposeTask.vue';
 
-defineProps({
+const props = defineProps({
   sessionId: {
     type: String,
     required: true,
   },
-  responsibleId: {
-    type: Number,
+  readPageTask: {
+    type: Function,
     required: true,
-  },
-  taskTitle: {
-    type: String,
-    default: '',
   },
   taskId: {
     type: String,
@@ -24,6 +20,15 @@ defineProps({
 });
 
 const modalOpened = ref(false);
+const taskTitle = ref('');
+const responsibleId = ref(0);
+
+function openModal() {
+  const pageTask = props.readPageTask();
+  taskTitle.value = pageTask.title;
+  responsibleId.value = pageTask.responsibleId;
+  modalOpened.value = true;
+}
 </script>
 
 <template>
@@ -31,7 +36,7 @@ const modalOpened = ref(false);
     class="decompose-task-button"
     type="button"
     title="Декомпозировать задачу"
-    @click="modalOpened = true"
+    @click="openModal"
   >
     <i class="pi pi-sitemap" />
   </button>

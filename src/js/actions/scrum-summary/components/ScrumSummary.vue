@@ -376,7 +376,7 @@ const aiJob = useAiJob(() => `scrum-summary-ai-job-${props.groupId}`, {
 });
 const aiLoading = aiJob.loading;
 const aiProgress = aiJob.progress;
-const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `AI анализ (${aiProgress.value}%)` : 'AI анализ');
+const aiButtonLabel = computed(() => aiLoading.value && aiProgress.value !== null ? `ИИ-анализ (${aiProgress.value}%)` : 'ИИ-анализ');
 
 async function scrollToAiResult() {
   await nextTick();
@@ -405,19 +405,15 @@ async function aiAnalyze() {
     const {aiData, ignorePoints} = buildAiData();
 
     await promptLibrary.ready;
-    const MAX_PROMPT_LENGTH = 20000;
-    let prompt = promptLibrary.buildActivePrompt({
+    const prompt = promptLibrary.buildActivePrompt({
       data: JSON.stringify(aiData),
       period: buildPeriodLabel(form.dateRange) ?? '',
       ignorePoints: String(ignorePoints),
       extraContext: aiContext.value,
     }) ?? buildSystemPrompt(aiData, ignorePoints, form.dateRange, aiContext.value);
-    if (prompt.length > MAX_PROMPT_LENGTH) {
-      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      showToast({ severity: 'warn', summary: 'AI', detail: `Данные обрезаны — промпт превышал ${MAX_PROMPT_LENGTH} символов`, life: 5000 });
-    }
-
-    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart, {
+      truncationHint: 'Часть данных не попала в анализ — сократите период.',
+    });
   }, async (result) => {
     aiResult.value = result;
     await scrollToAiResult();
@@ -548,7 +544,7 @@ onMounted(async () => {
           @click="aiAnalyze"
         />
         <Button
-          v-tooltip="'Доп. контекст для AI'"
+          v-tooltip="'Доп. контекст для ИИ'"
           size="small"
           severity="secondary"
           :icon="aiContext.trim() ? 'pi pi-bookmark-fill' : 'pi pi-bookmark'"
@@ -603,7 +599,7 @@ onMounted(async () => {
     >
       <div class="flex items-center gap-1 mb-2 text-sm text-surface-400 dark:text-surface-500">
         <i class="pi pi-sparkles" />
-        <span>Результат AI анализа</span>
+        <span>Результат ИИ-анализа</span>
       </div>
       <div
         class="pts-ai-result p-3 rounded border border-surface-200 dark:border-surface-700 text-sm leading-relaxed"
@@ -697,13 +693,13 @@ onMounted(async () => {
 
   <Dialog
     v-model:visible="isAiContextModalOpened"
-    header="Доп. контекст для AI"
+    header="Доп. контекст для ИИ"
     dismissable-mask
     modal
     :style="{width: '480px'}"
   >
     <p class="text-sm text-surface-500 dark:text-surface-400 mb-3">
-      Дополнительная информация для AI: особенности команды, спринта, что учесть при анализе.
+      Дополнительная информация для ИИ: особенности команды, спринта, что учесть при анализе.
     </p>
     <div class="relative">
       <Textarea

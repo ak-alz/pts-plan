@@ -166,14 +166,42 @@ export const SPRINT_SUMMARY_URL_USER_RE = /\[URL=([^\]]*\/company\/personal\/use
 // Она же в старом формате: [USER=ID]Имя[/USER] — N баллов
 export const SPRINT_SUMMARY_BB_USER_RE = /\[USER=(\d+)]([^[\n]+)\[\/USER][^\d\n]*(\d+)\s+балл/g;
 
-// decompose-task: готовая декомпозиция, которую внешний AI-инструмент оценки задач (pts-ai, не эта
+// decompose-task: готовая декомпозиция, которую внешний ИИ-инструмент оценки задач (pts-ai, не эта
 // фича) вставляет в сырое описание задачи. Маркер [AI_DECOMPOSITIONS] содержит "_", поэтому не
 // совпадает с BBCODE_UNKNOWN_TAG_RE и не вырезается. Список подзадач — обычные строки
 // "- {title} — {points} points" внутри [QUOTE] (не BBCode [LIST]).
 export const AI_DECOMPOSITIONS_BLOCK_RE = /\[AI_DECOMPOSITIONS\][\s\S]*?\[QUOTE[^\]]*\]([\s\S]*?)\[\/QUOTE\]/i;
 export const AI_DECOMPOSITIONS_ITEM_RE = /^-\s*(.+?)(?:\s*—\s*(\d+)\s*points?)?\s*$/;
 
-// Библиотека промптов AI-фич: переменная в шаблоне — {{имя}}, пробелы внутри скобок допустимы
+// ИИ-оценка задачи от того же pts-ai, первая версия: блок в сыром описании между маркерами. Значения —
+// в JSON-state внутри [CODE] (см. BBCODE_CODE_RE), дата — только в тексте: «актуально на 21.07.2026, 23:17 …»
+export const AI_ESTIMATION_V1_BLOCK_RE = /⟦AI_ESTIMATION_V1⟧([\s\S]*?)⟦\/AI_ESTIMATION_V1⟧/;
+export const AI_ESTIMATION_DATE_RE = /актуально на\s*(\d{2})\.(\d{2})\.(\d{4})(?:,?\s*(\d{1,2}):(\d{2}))?/i;
+// Вторая версия — комментарий с маркером ⟦AI_ESTIMATION_V2⟧, JSON нет: значения из сводной строки
+// «работа агента [B]~8 ч[/B] · качество [B]C[/B] · сложность анализа [B]4/5 high[/B] · story points [B]40[/B] · … · без агента 58 ч»
+export const AI_ESTIMATION_V2_MARKER = '⟦AI_ESTIMATION_V2⟧';
+export const AI_ESTIMATION_V2_AGENT_TIME_RE = /работа агента\s*\[B\]\s*~?\s*(\d+(?:[.,]\d+)?)\s*(ч|мин)/i;
+export const AI_ESTIMATION_V2_HUMAN_TIME_RE = /без агента:?\s*(?:\[B\])?\s*~?\s*(\d+(?:[.,]\d+)?)\s*(ч|мин)/i;
+export const AI_ESTIMATION_V2_QUALITY_RE = /качество\s*\[B\]\s*([^\s[]+)\s*\[\/B\]/i;
+export const AI_ESTIMATION_V2_COMPLEXITY_RE = /сложность анализа\s*\[B\]\s*(\d)\s*\/\s*5\s*([a-z_]*)/i;
+export const AI_ESTIMATION_V2_POINTS_RE = /story points\s*\[B\]\s*(\d+(?:[.,]\d+)?)/i;
+// «[B]Актуально на[/B]: 2026-10-26 · ревизии: …»
+export const AI_ESTIMATION_V2_DATE_RE = /актуально на(?:\[\/B\])?\s*:?\s*(\d{4})-(\d{2})-(\d{2})(?:[ T]+(\d{1,2}):(\d{2}))?/i;
+// Разделы со списками вопросов: заголовок — строка, начинающаяся с жирного названия; раздел тянется до
+// следующей строки с [B], [SPOILER или маркером. Пункт верхнего уровня — «1.» или «- » без отступа
+export const AI_ESTIMATION_V2_BUSINESS_QUESTIONS_HEADING_RE = /^\[B\]Вопросы постановщику/i;
+export const AI_ESTIMATION_V2_CLARIFICATIONS_HEADING_RE = /^\[B\]Уточним по ходу работы/i;
+export const AI_ESTIMATION_V2_TECHNICAL_QUESTIONS_HEADING_RE = /^\[B\]Технические вопросы/i;
+export const AI_ESTIMATION_V2_SECTION_END_RE = /^\s*(?:\[B\]|\[\/?SPOILER|⟦)/i;
+export const AI_ESTIMATION_V2_LIST_ITEM_RE = /^(?:(?:\d+[.)]|[-•])\s|\[\*\])/;
+// decompose-task: раздел «Рекомендуемая декомпозиция» в оценке второй версии. Пункт — готовое название подзадачи
+// и баллы: «- {title} | {points} (агент ~2 ч · без агента 17.5 ч)»; в самом названии тоже бывает «|», поэтому
+// баллы — последнее «| N» в строке. Запасной вид (группа 3) — «— N points», «(N sp)», как в [AI_DECOMPOSITIONS]
+export const AI_ESTIMATION_V2_DECOMPOSITION_HEADING_RE = /^\[B\]Рекомендуемая декомпозиция/i;
+export const AI_ESTIMATION_V2_DECOMPOSITION_ITEM_RE = /^(?:(?:\d+[.)]|[-•])\s|\[\*\])\s*(.+?)(?:\s*\|\s*(\d+)(?:\s*\([^()]*\))?|(?:\s*[—–-]\s*|\s*\()~?(\d+)\s*(?:points?|sp|балл\w*)\)?)?\s*$/i;
+export const BBCODE_SIMPLE_FORMAT_TAG_RE = /\[\/?[BIUS]\]/gi;
+
+// Библиотека промптов ИИ-фич: переменная в шаблоне — {{имя}}, пробелы внутри скобок допустимы
 export const PROMPT_VARIABLE_RE = /\{\{\s*(\w+)\s*\}\}/g;
 
 // improve-description: обрамление ответа нейросети в ```…``` (с языком или без) — просили его не
@@ -186,6 +214,11 @@ export const NOTIF_COMMENT_RE = /добавил[а]? комментарий|до
 export const NOTIF_REACTION_RE = /отреагировал(\(а\)|а)? на (?:ваш )?комментарий|поставил[а]? реакцию|благодарит вас в сообщении/i;
 export const NOTIF_CLOSE_RE = /закрыл[а]? задачу|закрыта задача/i;
 export const NOTIF_CHANGE_RE = /изменил[а]? задачу|изменена задача/i;
+export const NOTIF_DELETE_RE = /удалил[а]? задачу|удалена задача/i;
+// Состав рабочей группы: «Вас включили в число модераторов группы …» и соседние формулировки
+export const NOTIF_GROUP_RE = /в число (?:модераторов|участников) группы|из (?:числа )?(?:модераторов|участников) группы|владельцем группы|вступить в группу/i;
+// Диск: «Общая папка "…" подключена к вашему диску»
+export const NOTIF_DISK_RE = /подключен[аоы]? к вашему диску/i;
 
 // Исполнитель в тексте уведомления о новой задаче: "Исполнитель: Фамилия Имя". Берём всё до следующего
 // поля или переноса — в баллоне строки склеены без переноса ("…АлександрСоисполнители: …"), а имя

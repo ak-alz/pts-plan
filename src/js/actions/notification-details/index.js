@@ -601,6 +601,7 @@ export function notificationDetails(sessionId, options = {}) {
       // на каждой мутации, и не считалась бы в счётчиках фильтра — те смотрят только на "done"
       if (!taskId) {
         el.setAttribute('data-pts-details', 'done');
+        renderTasklessItem(el);
         return;
       }
 
@@ -891,12 +892,25 @@ export function notificationDetails(sessionId, options = {}) {
     const responsible = cache.users.get(task.responsibleId);
     if (responsible) chips.push(createUserChip(responsible, 'Исполнитель'));
 
+    appendChipsBlock(el, chips);
+  }
+
+  function appendChipsBlock(element, chips) {
     if (!chips.length) return;
 
     const block = document.createElement('div');
     block.className = 'pts-nd';
     chips.forEach((chip) => block.appendChild(chip));
-    el.querySelector(SELECTORS.titleContainer)?.appendChild(block);
+    element.querySelector(SELECTORS.titleContainer)?.appendChild(block);
+  }
+
+  // Карточке без задачи (события групп, реакции на сообщения) нечего подсвечивать по ролям —
+  // только метка типа. tagall вне задач не бывает, поэтому его ключ пропускается
+  function renderTasklessItem(element) {
+    const {notifText} = extractNotifText(element);
+    const matchedTypes = NOTIF_TYPES.filter(({key, re}) => key !== 'tagall' && re.test(notifText));
+    matchedTypes.forEach(({key}) => element.setAttribute(`data-pts-type-${key}`, ''));
+    if (!flags.hideChips) appendChipsBlock(element, matchedTypes.map(createTypeChip));
   }
 
   // Тип подсветки с видимой рамкой (первый совпавший по приоритету) — общий для иконки и метки

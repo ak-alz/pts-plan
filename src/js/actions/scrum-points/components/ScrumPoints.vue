@@ -93,6 +93,29 @@ watch(groupByParent, (enabled) => {
 
 provide('taskGrouping', { groupByParent, loadingAncestors, rootByTaskId });
 
+/* Число родительских задач в ячейке: различные корни, как при группировке; задача без родителя — сама себе корень */
+const showParentTasksCount = computed(() => settings.value.countParentTasks && ancestorsLoaded.value);
+
+function countParentTasks(tasks) {
+  return new Set(tasks.map((task) => rootByTaskId.value.get(String(task.id))?.id ?? String(task.id))).size;
+}
+
+// Считаем один раз на пересчёт данных, а не при каждой отрисовке ячейки
+const parentTasksCountByUserId = computed(() => {
+  if (!showParentTasksCount.value) return new Map();
+  return new Map(visibleUsers.value.map((user) => {
+    const columnCounts = Object.fromEntries(visibleColumns.value.map((column) => [column.id, countParentTasks(user.columns[column.id].tasks)]));
+    const totalTasks = visibleColumns.value
+      .filter((column) => !settings.value.excludeFromTotal?.includes(column.id))
+      .flatMap((column) => user.columns[column.id].tasks);
+    return [user.id, { columns: columnCounts, total: countParentTasks(totalTasks) }];
+  }));
+});
+
+function formatTasksCountTooltip(tasksCount, parentTasksCount) {
+  return `${tasksCount} ${pluralize(tasksCount, ['задача', 'задачи', 'задач'])}, ${parentTasksCount} ${pluralize(parentTasksCount, ['родительская', 'родительские', 'родительских'])}`;
+}
+
 async function fetchData() {
   isLoading.value = true;
 
@@ -115,7 +138,7 @@ async function fetchData() {
     rawTasksById.value = Object.fromEntries(tasks.map((task) => [String(task.id), task]));
     ancestorsById.value = {};
     ancestorsLoaded.value = false;
-    if (groupByParent.value) loadAncestors();
+    if (groupByParent.value || settings.value.countParentTasks) loadAncestors();
 
     groupUsers.value = rawGroupUsers.map((user) => ({
       id: user.ID,
@@ -410,6 +433,7 @@ onMounted(async () => {
       </template>
       <template #body="{data}">
         <Button
+          :title="showParentTasksCount && data.columns[column.id].tasks.length ? formatTasksCountTooltip(data.columns[column.id].tasks.length, parentTasksCountByUserId.get(data.id).columns[column.id]) : null"
           size="small"
           variant="text"
           severity="secondary"
@@ -418,7 +442,9 @@ onMounted(async () => {
         >
           <template v-if="!!data.columns[column.id].tasks.length">
             {{ data.columns[column.id].totalPoints }}
-            ({{ data.columns[column.id].tasks.length }})
+            ({{ data.columns[column.id].tasks.length }}<template v-if="showParentTasksCount">
+              / {{ parentTasksCountByUserId.get(data.id).columns[column.id] }}
+            </template>)
           </template>
           <template v-else>
             –
@@ -440,6 +466,7 @@ onMounted(async () => {
       </template>
       <template #body="{data}">
         <Button
+          :title="showParentTasksCount && data.visibleTasksCount ? formatTasksCountTooltip(data.visibleTasksCount, parentTasksCountByUserId.get(data.id).total) : null"
           size="small"
           variant="text"
           severity="secondary"
@@ -448,7 +475,9 @@ onMounted(async () => {
         >
           <template v-if="!!data.visibleTasksCount">
             {{ data.visibleTotalPoints }}
-            ({{ data.visibleTasksCount }})
+            ({{ data.visibleTasksCount }}<template v-if="showParentTasksCount">
+              / {{ parentTasksCountByUserId.get(data.id).total }}
+            </template>)
           </template>
           <template v-else>
             –

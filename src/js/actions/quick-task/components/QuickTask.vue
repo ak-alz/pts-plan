@@ -409,6 +409,7 @@ async function createTask(title) {
       v-model:generating="isGeneratingDescription"
       :board-key="contextKey"
       :sync-description="() => descriptionEditor?.sync()"
+      :attached-files="attachments.files.map((item) => item.file)"
       :title="form.title"
       :project-name="aiProjectName"
       :stage-name="aiStageName"

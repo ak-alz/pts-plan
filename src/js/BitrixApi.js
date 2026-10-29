@@ -569,6 +569,26 @@ export default class BitrixApi {
     });
   }
 
+  /**
+   * Batch-запрос task.commentitem.getlist: только комментарии новее указанного, по каждой задаче.
+   * Нужен, чтобы узнать, появилось ли что-то после известного комментария, не выкачивая всю переписку.
+   * @param {Record<string, number|string>} lastCommentIdByTaskId - Карта taskId → ID последнего известного комментария.
+   * @return {Promise<Record<string, object[]>>} Карта taskId → комментарии новее указанного (по возрастанию ID).
+   */
+  async getCommentsAfterBatch(lastCommentIdByTaskId) {
+    const commands = {};
+    Object.entries(lastCommentIdByTaskId).forEach(([taskId, commentId]) => {
+      // ORDER обязателен: параметры метода позиционные, без него FILTER читается как сортировка
+      commands[`c${taskId}`] = `task.commentitem.getlist?TASKID=${taskId}&ORDER[ID]=asc&FILTER[>ID]=${commentId}`;
+    });
+    if (!Object.keys(commands).length) return {};
+
+    const results = await this.runBatchCommands(commands);
+    return Object.fromEntries(
+      Object.entries(results).map(([key, comments]) => [key.slice(1), comments ?? []]),
+    );
+  }
+
   getAttachedObjectsBatch(attachmentIds) {
     if (!attachmentIds.length) return Promise.resolve([]);
     const CHUNK_SIZE = 50;

@@ -17,14 +17,13 @@ export async function decomposeTask(sessionId) {
   const initialized = !!titleBlock.querySelector('.js-decompose-task');
   if (initialized) return;
 
-  const responsibleBlock = document.querySelector('.task-user-selector.single:not(.readonly) [data-item-value]');
-  if (!responsibleBlock) return;
-  const responsibleId = Number(responsibleBlock.getAttribute('data-item-value'));
+  const responsibleSelector = '.task-user-selector.single:not(.readonly) [data-item-value]';
+  const initialResponsibleBlock = document.querySelector(responsibleSelector);
+  if (!initialResponsibleBlock) return;
+  const initialResponsibleId = Number(initialResponsibleBlock.getAttribute('data-item-value'));
 
   const buttonContainer = titleBlock.querySelector('.ui-toolbar-after-title');
   if (!buttonContainer) return;
-
-  const taskTitle = titleBlock.querySelector('.ui-toolbar-title-item')?.textContent.trim() ?? '';
 
   const appContainer = Object.assign(document.createElement('div'), {
     className: 'js-decompose-task pts-app',
@@ -35,8 +34,11 @@ export async function decomposeTask(sessionId) {
 
   const app = createApp(DecomposeTaskApp, {
     sessionId,
-    responsibleId,
-    taskTitle,
+    // Название и исполнителя читаем при открытии окна — их могли поменять без перезагрузки страницы
+    readPageTask: () => ({
+      title: document.querySelector('.ui-toolbar-title-item-box .ui-toolbar-title-item')?.textContent.trim() ?? '',
+      responsibleId: Number(document.querySelector(responsibleSelector)?.getAttribute('data-item-value')) || initialResponsibleId,
+    }),
     taskId: ids.taskId,
   });
   app.use(PrimeVue, primeVueOptions);

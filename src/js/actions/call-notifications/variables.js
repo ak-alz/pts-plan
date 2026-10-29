@@ -4,6 +4,9 @@ export const SHOWN_REMINDERS_STORAGE_KEY = 'call-notifications-shown-reminders';
 // Очередь активных (показываемых прямо сейчас) напоминаний с модалкой — общая для всех вкладок,
 // чтобы окно и рингтон «переезжали» на активную вкладку при смене ведущей, а не висели в старой
 export const ACTIVE_REMINDERS_STORAGE_KEY = 'call-notifications-active-reminders';
+// Клик по браузерному уведомлению о встрече: service worker пишет сюда {meetingId, at}, вкладки
+// засчитывают это как «Присоединиться» (at — чтобы повторный клик тоже вызвал onChanged)
+export const JOINED_FROM_NOTIFICATION_STORAGE_KEY = 'call-notifications-joined-from-notification';
 
 export const MEETING_TYPE = {
   ONCE: 'once',

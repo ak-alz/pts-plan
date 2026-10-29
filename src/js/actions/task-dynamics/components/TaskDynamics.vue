@@ -82,7 +82,7 @@ const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFi
 
 // Кэш итогов по дням отдельным ключом на каждый фильтр: цифры за один и тот же день при «всех
 // группах» и при выбранной группе разные, и в общем кэше они бы перетирали друг друга.
-// Настройки и контекст AI намеренно остаются на contextKey — их делить по группам незачем
+// Настройки и контекст ИИ намеренно остаются на contextKey — их делить по группам незачем
 const cacheKey = computed(() => (isPersonal.value && selectedGroupId.value
   ? `${contextKey.value}-group-${selectedGroupId.value}`
   : contextKey.value));

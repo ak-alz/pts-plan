@@ -151,9 +151,9 @@ async function saveSettings() {
         <label
           for="settings_hide_ai"
           class="text-sm cursor-pointer select-none"
-        >Скрыть AI-функции</label>
+        >Скрыть ИИ-функции</label>
         <i
-          v-tooltip.top="'Убирает кнопку «AI анализ» вместе с контекстом, промптами и результатом анализа'"
+          v-tooltip.top="'Убирает кнопку «ИИ-анализ» вместе с контекстом, промптами и результатом анализа'"
           class="pi pi-question-circle"
         />
       </div>

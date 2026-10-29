@@ -1,6 +1,13 @@
 import BitrixApi from '../../BitrixApi.js';
 import {onNewNotificationBalloon} from '../../notificationBalloons.js';
-import {NOTIF_BALLOON_ID_RE, NOTIF_TASK_ID_RE} from '../../patterns.js';
+import {
+  NOTIF_BALLOON_ID_RE,
+  NOTIF_CLOSE_RE,
+  NOTIF_COMMENT_RE,
+  NOTIF_DELETE_RE,
+  NOTIF_REACTION_RE,
+  NOTIF_TASK_ID_RE,
+} from '../../patterns.js';
 import {isUserMentioned, markTagallAndMentions} from '../../utils.js';
 
 const PROCESSED_CLASS = 'js-notification-processed';
@@ -57,10 +64,18 @@ export function closeNotifications(sessionId, firstName, lastName, options = {})
   const transformText = !!options.closeNotificationsTransformText;
   const markRead = !!options.closeNotificationsMarkRead;
   const markTaskViewed = !!options.closeNotificationsMarkTaskViewed;
+  const closeTaskClosed = !!options.closeNotificationsTaskClosed;
   const bitrixApi = markRead || markTaskViewed ? new BitrixApi(sessionId) : null;
 
   onNewNotificationBalloon(PROCESSED_CLASS, ({notification, textElement, text}) => {
-    if (isUserMentioned(text, firstName, lastName)) {
+    // В конце спринта задачи закрывают пачками — такие уведомления закрываем, даже если они адресованы вам
+    // Комментарии и реакции исключаем: «закрыл задачу» может быть в тексте самого комментария
+    const isTaskClosed = closeTaskClosed
+      && (NOTIF_CLOSE_RE.test(text) || NOTIF_DELETE_RE.test(text))
+      && !NOTIF_COMMENT_RE.test(text)
+      && !NOTIF_REACTION_RE.test(text);
+
+    if (!isTaskClosed && isUserMentioned(text, firstName, lastName)) {
       if (transformText && textElement) applyTextTransform(textElement, firstName, lastName);
       return;
     }

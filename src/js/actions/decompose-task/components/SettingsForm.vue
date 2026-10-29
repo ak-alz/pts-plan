@@ -42,6 +42,7 @@ const form = reactive({
   linkCreatedTasks: props.initial.linkCreatedTasks ?? false,
   linkExistingSubtasks: props.initial.linkExistingSubtasks ?? false,
   hideAi: props.initial.hideAi ?? false,
+  aiAttachments: props.initial.aiAttachments ?? false,
 });
 
 async function saveSettings() {
@@ -288,6 +289,26 @@ const auditorOptions = [
       />
     </div>
 
+    <div
+      v-if="!form.hideAi"
+      class="flex gap-1 items-start"
+    >
+      <Checkbox
+        v-model="form.aiAttachments"
+        binary
+        input-id="dt_ai_attachments"
+        class="mt-0.5 shrink-0"
+      />
+      <label
+        for="dt_ai_attachments"
+        class="text-sm cursor-pointer select-none"
+      >Передавать ИИ изображение и файл из вложений задачи</label>
+      <i
+        v-tooltip.top="'При ИИ-декомпозиции нейросеть получит первое изображение (PNG, JPG, WebP, GIF) и первый документ (TXT, PDF, HTML, CSV, XLS, XLSX, DOC, DOCX) из вложений задачи, каждый до 20 МБ — например, макет или ТЗ. Изображение дойдёт до нейросети, только если она принимает изображения, документ — если принимает файлы. Это видно в списке нейросетей в профиле расширения.'"
+        class="pi pi-question-circle mt-0.5 shrink-0"
+      />
+    </div>
+
     <div class="flex gap-1 items-start">
       <Checkbox
         v-model="form.hideAi"
@@ -298,9 +319,9 @@ const auditorOptions = [
       <label
         for="dt_hide_ai"
         class="text-sm cursor-pointer select-none"
-      >Скрыть AI-функции</label>
+      >Скрыть ИИ-функции</label>
       <i
-        v-tooltip.top="'Убирает кнопку «AI декомпозиция» вместе с контекстом, промптами и просмотром промпта'"
+        v-tooltip.top="'Убирает кнопку «ИИ-декомпозиция» вместе с контекстом, промптами и просмотром промпта'"
         class="pi pi-question-circle mt-0.5 shrink-0"
       />
     </div>

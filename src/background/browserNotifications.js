@@ -1,3 +1,4 @@
+import {JOINED_FROM_NOTIFICATION_STORAGE_KEY} from '../js/actions/call-notifications/variables.js';
 import {BROWSER_NOTIFICATION_MESSAGE_TYPE} from '../js/messages.js';
 
 // Пространство имён id уведомлений этого расширения: по нему onClicked отличает свои уведомления
@@ -26,9 +27,14 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (isDuplicateNotification(message.dedupeKey, Date.now())) return false;
 
-  // URL кодируется прямо в id уведомления, а не хранится в памяти service worker'а —
+  // URL и id встречи кодируются прямо в id уведомления, а не хранятся в памяти service worker'а —
   // он может выгружаться между показом уведомления и кликом по нему
-  const notificationId = `${BROWSER_NOTIFICATION_ID_PREFIX}:${encodeURIComponent(message.url ?? '')}:${Math.random().toString(36).slice(2)}`;
+  const notificationId = [
+    BROWSER_NOTIFICATION_ID_PREFIX,
+    encodeURIComponent(message.url ?? ''),
+    encodeURIComponent(message.meetingId ?? ''),
+    Math.random().toString(36).slice(2),
+  ].join(':');
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
@@ -73,7 +79,14 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
 
   chrome.notifications.clear(notificationId);
 
-  const url = decodeURIComponent(notificationId.split(':')[1] ?? '');
+  const [, encodedUrl = '', encodedMeetingId = ''] = notificationId.split(':');
+
+  // Переход на созвон из уведомления call-notifications — то же «Присоединиться», что в окне:
+  // вкладки по этой записи гасят окно и рингтон
+  const meetingId = decodeURIComponent(encodedMeetingId);
+  if (meetingId) chrome.storage.local.set({[JOINED_FROM_NOTIFICATION_STORAGE_KEY]: {meetingId, at: Date.now()}});
+
+  const url = decodeURIComponent(encodedUrl);
   if (!url) return;
 
   if (await focusTabWithUrl(url)) return;

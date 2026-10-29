@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import { Avatar, Badge, Button, Column, DataTable, Message, MultiSelect, Select, SelectButton, Step, StepList, StepPanel, StepPanels, Stepper } from 'primevue';
 import { computed, onMounted, ref, toRaw, watch } from 'vue';
 
+import { AI_ESTIMATION_COLUMNS, AI_ESTIMATION_OUTDATED_NOTE, formatAiEstimationValue, getAiEstimationValues, parseAiEstimation } from '../../../aiEstimation.js';
 import BitrixApi from '../../../BitrixApi.js';
 import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
 import { collectStagesFromGroups, groupStagesByGroup } from '../../../personalPlan.js';
@@ -104,6 +105,8 @@ const COLUMN_DEFINITIONS = [
   { key: 'description', label: 'Описание задачи', default: false, selectField: 'DESCRIPTION' },
   { key: 'comments', label: 'Комментарии', default: false },
   { key: 'url', label: 'Ссылка на задачу', default: true },
+  // ИИ-оценка лежит в описании задачи — его и запрашиваем, даже если колонка «Описание» не выбрана
+  ...AI_ESTIMATION_COLUMNS.map((column) => ({ ...column, default: false, isAiEstimation: true, selectField: 'DESCRIPTION' })),
 ];
 
 const activeStep = ref('1');
@@ -170,6 +173,7 @@ function enrichTask(task) {
   // должно отражать реально экспортируемые (пользовательские) комментарии, поэтому считаем
   // от уже загруженного и отфильтрованного списка, а не от сырого поля задачи.
   const userComments = task.comments?.filter((comment) => !isSystemComment(comment)) ?? null;
+  const aiEstimation = parseAiEstimation(task.description);
   return {
     id: task.id,
     title: task.title,
@@ -193,6 +197,7 @@ function enrichTask(task) {
     description: formatRichText(task.description ?? ''),
     comments: formatCommentsBlock(userComments),
     url: getTaskUrl(isPersonal.value ? null : task.groupId, task.id, linkUserId.value),
+    ...getAiEstimationValues(aiEstimation, task.comments ?? task.commentsAfterEstimation ?? null),
   };
 }
 
@@ -240,24 +245,29 @@ watch([status, stageIds, responsibleId, createdById], () => {
 // а не в общем select[] — чтобы не тянуть их для всех задач, если колонка не выбрана. Если такую колонку
 // включили уже на шаге предпросмотра, previewTasks нужно перезапросить — иначе в уже загруженных задачах
 // этого поля просто не будет.
-const requiredExtraSelectFields = computed(() => (
+const requiredExtraSelectFields = computed(() => [...new Set(
   COLUMN_DEFINITIONS.filter((column) => column.selectField && selectedColumnKeys.value.includes(column.key))
-    .map((column) => column.selectField)
-));
+    .map((column) => column.selectField),
+)]);
 // «Комментарии» и «Число комментариев» не приходят вместе с остальными полями задачи (не через
 // select[]/extraSelectFields), а догружаются отдельным batch-запросом — поэтому отслеживаются
 // отдельным флагом, а не через requiredExtraSelectFields.
 const needsComments = computed(() => (
   selectedColumnKeys.value.includes('comments') || selectedColumnKeys.value.includes('commentsCount')
 ));
+// «ИИ: оценка устарела» — только комментарии новее учтённого оценкой, если вся переписка не загружается и так
+const needsCommentsAfterEstimation = computed(() => selectedColumnKeys.value.includes('aiOutdated'));
 let lastFetchedExtraSelectFields = [];
 let lastFetchedNeedsComments = false;
+let lastFetchedNeedsCommentsAfterEstimation = false;
 
-watch([requiredExtraSelectFields, needsComments], ([fields, needsCommentsNow]) => {
+watch([requiredExtraSelectFields, needsComments, needsCommentsAfterEstimation], ([fields, needsCommentsNow, needsCommentsAfterEstimationNow]) => {
   if (isInitializing || !previewTasks.value.length) return;
   const isMissingField = fields.some((field) => !lastFetchedExtraSelectFields.includes(field));
   const isMissingComments = needsCommentsNow && !lastFetchedNeedsComments;
-  if (isMissingField || isMissingComments) loadPreview();
+  const isMissingCommentsAfterEstimation = needsCommentsAfterEstimationNow
+    && !lastFetchedNeedsCommentsAfterEstimation && !lastFetchedNeedsComments;
+  if (isMissingField || isMissingComments || isMissingCommentsAfterEstimation) loadPreview();
 });
 
 // Постановщик резолвится лениво отдельным batch-запросом, только когда включена соответствующая
@@ -390,9 +400,20 @@ function buildFilterParams() {
 // только когда включена колонка «Комментарии» или «Число комментариев» (счётчик считается от
 // реально загруженных комментариев, а не от сырого поля задачи — см. enrichTask).
 async function attachComments(tasks) {
-  if (!needsComments.value || !tasks.length) return tasks;
-  const commentsByTaskId = await bitrixApi.getCommentsBatch(tasks.map((task) => task.id));
-  return tasks.map((task) => ({ ...task, comments: commentsByTaskId[task.id] ?? [] }));
+  if (!tasks.length) return tasks;
+  if (needsComments.value) {
+    const commentsByTaskId = await bitrixApi.getCommentsBatch(tasks.map((task) => task.id));
+    return tasks.map((task) => ({ ...task, comments: commentsByTaskId[task.id] ?? [] }));
+  }
+  if (!needsCommentsAfterEstimation.value) return tasks;
+
+  const lastCommentIdByTaskId = {};
+  tasks.forEach((task) => {
+    const lastSeenCommentId = parseAiEstimation(task.description)?.lastSeenCommentId;
+    if (lastSeenCommentId != null) lastCommentIdByTaskId[task.id] = lastSeenCommentId;
+  });
+  const commentsAfterByTaskId = await bitrixApi.getCommentsAfterBatch(lastCommentIdByTaskId);
+  return tasks.map((task) => ({ ...task, commentsAfterEstimation: commentsAfterByTaskId[task.id] }));
 }
 
 async function loadPreview() {
@@ -400,11 +421,13 @@ async function loadPreview() {
   try {
     const extraSelectFields = requiredExtraSelectFields.value;
     const needsCommentsNow = needsComments.value;
+    const needsCommentsAfterEstimationNow = needsCommentsAfterEstimation.value;
     let tasks = await runSearch({ ...buildFilterParams(), limit: PREVIEW_LIMIT });
     tasks = await attachComments(tasks);
     previewTasks.value = tasks;
     lastFetchedExtraSelectFields = extraSelectFields;
     lastFetchedNeedsComments = needsCommentsNow;
+    lastFetchedNeedsCommentsAfterEstimation = needsCommentsAfterEstimationNow;
 
     if (selectedColumnKeys.value.includes('creator')) await loadCreatorNames(tasks);
     return true;
@@ -499,6 +522,7 @@ function displayValue(task, column) {
   if (column.isStatus) return TASK_STATUS_LABELS[task[column.key]] ?? '';
   if (column.isPriority) return PRIORITY_LABELS[task[column.key]] ?? '';
   if (column.isMark) return MARK_LABELS[task[column.key]] ?? '';
+  if (column.isAiEstimation) return formatAiEstimationValue(column.key, task[column.key]) ?? '';
   return task[column.key] ?? '';
 }
 
@@ -539,8 +563,10 @@ async function downloadFile() {
   isExporting.value = true;
   try {
     const tasks = (await getExportTasks()).map(enrichTask);
-    const mimeType = format.value === 'json' ? 'application/json' : 'text/csv';
-    const blob = new Blob([buildOutput(tasks)], { type: `${mimeType};charset=utf-8` });
+    const isJson = format.value === 'json';
+    const mimeType = isJson ? 'application/json' : 'text/csv';
+    // BOM нужен Excel на Windows, иначе он читает CSV как cp1251
+    const blob = new Blob([isJson ? '' : '\uFEFF', buildOutput(tasks)], { type: `${mimeType};charset=utf-8` });
     downloadBlob(blob, isPersonal.value ? `tasks-my-plan.${format.value}` : `tasks-group-${props.context.id}.${format.value}`);
   } catch (e) {
     console.warn('[export-group-tasks]', e);
@@ -721,7 +747,10 @@ async function downloadFile() {
             @click="activateCallback('1')"
           />
 
-          <FormField label="Колонки экспорта">
+          <FormField
+            label="Колонки экспорта"
+            :tip="`Колонки «ИИ: …» — из ИИ-оценки в описании задачи. Оценки в комментариях при выгрузке не читаются: для этого пришлось бы загружать переписку всех задач. ${AI_ESTIMATION_OUTDATED_NOTE}`"
+          >
             <MultiSelect
               v-model="selectedColumnKeys"
               :options="COLUMN_DEFINITIONS"
@@ -832,6 +861,9 @@ async function downloadFile() {
                   </template>
                   <template v-else-if="column.isMark">
                     {{ MARK_LABELS[data.mark] || '—' }}
+                  </template>
+                  <template v-else-if="column.isAiEstimation">
+                    {{ formatAiEstimationValue(column.key, data[column.key]) ?? '—' }}
                   </template>
                   <template v-else>
                     {{ data[column.key] || '—' }}

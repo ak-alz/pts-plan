@@ -1,6 +1,6 @@
 // Файлы Диска в визуальном редакторе (BbcodeEditor): сведения о картинках для плагина File,
 // список вложений с загрузкой на Диск и прикрепление их к задаче
-import {computed, reactive, toRaw} from 'vue';
+import {computed, markRaw, reactive, toRaw} from 'vue';
 
 import {DISK_FILE_TAG_RE} from './patterns.js';
 
@@ -141,7 +141,7 @@ export function removeDiskFileTag(text, serverFileId) {
  *   remove: (item: object) => void,
  *   attachToTask: (taskId: string|number) => Promise<void>,
  * }}
- *   `files` — реактивный список `{key, diskFileId, name, size, isImage, info, isUploading}`;
+ *   `files` — реактивный список `{key, diskFileId, name, size, isImage, info, isUploading, file}` (`file` — исходный `File`);
  *   `imageInfos` — сведения о загруженных картинках для `files` редактора (передавайте их и там,
  *   где редактор пересоздаётся, иначе картинка станет тегом); `uploadImage` — для `uploadImage` редактора
  */
@@ -158,6 +158,8 @@ export function createEditorAttachments(api) {
       info: null,
       isUploading: true,
       isAttached: false,
+      // Исходный файл — его, без повторного скачивания с Диска, можно передать нейросети
+      file: markRaw(file),
     });
     const item = files[files.length - 1];
     try {

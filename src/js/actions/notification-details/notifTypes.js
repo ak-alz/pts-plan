@@ -2,6 +2,9 @@ import {
   NOTIF_CHANGE_RE,
   NOTIF_CLOSE_RE,
   NOTIF_COMMENT_RE,
+  NOTIF_DELETE_RE,
+  NOTIF_DISK_RE,
+  NOTIF_GROUP_RE,
   NOTIF_NEW_TASK_RE,
   NOTIF_REACTION_RE,
 } from '../../patterns.js';
@@ -43,5 +46,23 @@ export const NOTIF_TYPES = [
     key: 'close',
     color: '#64748b',
     re: NOTIF_CLOSE_RE,
+  },
+  {
+    label: 'Удаление',
+    key: 'delete',
+    color: '#ef4444',
+    re: NOTIF_DELETE_RE,
+  },
+  {
+    label: 'Группа',
+    key: 'group',
+    color: '#14b8a6',
+    re: NOTIF_GROUP_RE,
+  },
+  {
+    label: 'Диск',
+    key: 'disk',
+    color: '#eab308',
+    re: NOTIF_DISK_RE,
   },
 ];

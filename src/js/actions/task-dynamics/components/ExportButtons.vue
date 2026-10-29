@@ -56,7 +56,7 @@ function exportCsv() {
   const csv = [props.headers, ...props.rows]
     .map((row) => row.map(escapeCsvCell).join(props.csvSeparator))
     .join('\n');
-  downloadBlob(new Blob([csv], {type: 'text/csv;charset=utf-8;'}), props.fileName);
+  downloadBlob(new Blob(['\uFEFF', csv], {type: 'text/csv;charset=utf-8;'}), props.fileName);
 }
 </script>
 

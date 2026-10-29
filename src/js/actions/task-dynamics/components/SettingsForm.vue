@@ -368,9 +368,9 @@ async function saveSettings() {
                 for="task-dynamics-hide-ai"
                 class="text-sm cursor-pointer"
               >
-                Скрыть AI-функции
+                Скрыть ИИ-функции
                 <i
-                  v-tooltip="'Убирает кнопку «AI анализ» вместе с контекстом, промптами и результатом анализа'"
+                  v-tooltip="'Убирает кнопку «ИИ-анализ» вместе с контекстом, промптами и результатом анализа'"
                   class="pi pi-question-circle text-surface-400 dark:text-surface-500"
                 />
               </label>

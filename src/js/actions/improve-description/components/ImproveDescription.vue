@@ -1,5 +1,6 @@
 <script setup>
 import dayjs from 'dayjs';
+import { sortBy } from 'lodash-es';
 import { Button, Checkbox, Dialog, Message, SelectButton, Skeleton, Step, StepList, StepPanel, StepPanels, Stepper, Textarea } from 'primevue';
 import { computed, onMounted, reactive, ref, toRaw, useTemplateRef, watch } from 'vue';
 
@@ -10,12 +11,13 @@ import { buildDescriptionFiles, collectPageImages, createEditorAttachments, getD
 import { AI_CODE_FENCE_RE, DISK_FILE_TAG_RE } from '../../../patterns.js';
 import { PixelToolsApi } from '../../../PixelToolsApi.js';
 import { renderAiMarkdown } from '../../../renderAiMarkdown.js';
+import { downloadTaskAiAttachments, findTaskAiAttachments } from '../../../taskAiAttachments.js';
 import { showToast } from '../../../toastHost/showToast.js';
 import AiApiKeyDialog from '../../../ui/AiApiKeyDialog.vue';
 import BbcodeEditor from '../../../ui/BbcodeEditor.vue';
 import EditorAttachments from '../../../ui/EditorAttachments.vue';
 import PromptLibraryButton from '../../../ui/PromptLibraryButton.vue';
-import { bbcodeToMarkdown, downloadBlob, estimateTokenCount, isSystemComment } from '../../../utils.js';
+import { bbcodeToMarkdown, downloadBlob, estimateTokenCount, isSystemComment, pluralize } from '../../../utils.js';
 import { buildPrompt, buildRecommendationsSection, buildTaskBlock } from '../buildPrompt.js';
 import { PROMPT_SPECS } from '../promptSpec.js';
 import {
@@ -25,7 +27,6 @@ import {
   getAiContextStorageKey,
   getAiJobStorageKey,
   getBackupStorageKey,
-  MAX_PROMPT_LENGTH,
   MAX_TREE_DEPTH,
   MODE,
   MODE_OPTIONS,
@@ -59,6 +60,7 @@ const context = reactive({
   deadline: '',
   startDatePlan: '',
   endDatePlan: '',
+  attachmentIds: [],
   // Ленивые части: null — ещё не загружены
   checklist: null,
   comments: null,
@@ -70,10 +72,13 @@ const context = reactive({
   parents: null,
   // ID родительской задачи → её комментарии
   parentComments: null,
+  // Первое изображение и первый документ из вложений задачи: {image, document}, каждое — {name, url} или null
+  attachments: null,
 });
 // Части контекста, которые грузятся лениво — только когда их галка включена
 const loadingParts = reactive({
   checklist: false, comments: false, subtasks: false, subtaskComments: false, parent: false, parentComments: false,
+  attachments: false,
 });
 
 /* Настройки: режим и состав контекста */
@@ -148,7 +153,7 @@ const jobs = {
 const aiLoading = computed(() => jobs[MODE.REWRITE].loading.value || jobs[MODE.RECOMMEND].loading.value);
 const isContextLoading = computed(() => Object.values(loadingParts).some(Boolean));
 
-// Процент — у кнопки того запроса, который идёт, а не у всех кнопок AI сразу
+// Процент — у кнопки того запроса, который идёт, а не у всех кнопок ИИ сразу
 function withProgress(label, promptMode) {
   const job = jobs[promptMode];
   return job.loading.value && job.progress.value !== null ? `${label} (${job.progress.value}%)` : label;
@@ -168,7 +173,7 @@ function onApiKeySaved() {
 async function loadTask() {
   const { data } = await bitrixApi.getTask(props.taskId, [
     'TITLE', 'DESCRIPTION', 'STATUS', 'STAGE_ID', 'GROUP_ID', 'PARENT_ID', 'CREATED_BY', 'RESPONSIBLE_ID',
-    'CREATED_DATE', 'DEADLINE', 'START_DATE_PLAN', 'END_DATE_PLAN',
+    'CREATED_DATE', 'DEADLINE', 'START_DATE_PLAN', 'END_DATE_PLAN', 'UF_TASK_WEBDAV_FILES',
   ]);
   const task = data?.result?.task ?? {};
 
@@ -182,6 +187,7 @@ async function loadTask() {
     deadline: task.deadline ?? '',
     startDatePlan: task.startDatePlan ?? '',
     endDatePlan: task.endDatePlan ?? '',
+    attachmentIds: (task.ufTaskWebdavFiles ?? []).map(String).filter(Boolean),
   });
 
   const userIds = [...new Set([task.createdBy, task.responsibleId].filter(Boolean).map(String))];
@@ -269,6 +275,9 @@ const PART_LOADERS = {
     if (!context.parents) throw new Error('Родительские задачи не загрузились');
     context.parentComments = await loadUserComments(context.parents.map((parent) => parent.id));
   },
+  async attachments() {
+    context.attachments = await findTaskAiAttachments(bitrixApi, context.attachmentIds);
+  },
 };
 
 const CONTEXT_KEY_BY_PART = { parent: 'parents' };
@@ -320,14 +329,24 @@ const partCounts = computed(() => ({
   subtaskComments: countComments(context.subtaskComments),
   parent: context.parents?.length ?? null,
   parentComments: countComments(context.parentComments),
+  attachments: context.attachments ? attachmentNames.value.length : null,
 }));
+
+const attachmentNames = computed(() => [context.attachments?.image, context.attachments?.document]
+  .filter(Boolean)
+  .map((attachment) => attachment.name));
+
+function downloadAttachments() {
+  if (!include.attachments || !context.attachments) return { files: {}, promptNote: '' };
+  return downloadTaskAiAttachments(context.attachments);
+}
 
 /* Промпт */
 const taskBlock = computed(() => buildTaskBlock(context, include));
 
-function getPrompt(promptMode) {
+function getPrompt(promptMode, excludedCommentIds = null) {
   const values = {
-    taskData: taskBlock.value,
+    taskData: excludedCommentIds ? buildTaskBlock(context, include, excludedCommentIds) : taskBlock.value,
     extraContext: aiContext.value,
     // Второй этап: переписываем с учётом рекомендаций и ответов постановщика
     recommendationsSection: isAnswersStep(promptMode)
@@ -350,6 +369,45 @@ function openPromptPreview(promptMode) {
 
 const promptTokenEstimate = computed(() => estimateTokenCount(getPrompt(mode.value)));
 
+// Чем жертвовать, когда запрос не влезает в лимит нейросети: сначала комментарии подзадач, затем
+// родителей, затем свои — каждые от старых к новым
+function getDroppableComments() {
+  const oldestFirst = (commentsByTaskId) => sortBy(
+    Object.values(commentsByTaskId ?? {}).flat(),
+    (comment) => dayjs(comment.POST_DATE).valueOf(),
+  );
+  return [
+    ...(include.subtaskComments ? oldestFirst(context.subtaskComments) : []),
+    ...(include.parentComments ? oldestFirst(context.parentComments) : []),
+    ...(include.comments ? context.comments ?? [] : []),
+  ];
+}
+
+// Не влезает в лимит — выкидываем комментарии целиком, а не режем текст посередине. Сколько выкинуть,
+// ищем бинарным поиском по итоговой длине запроса: так подгонка работает и для своих промптов из библиотеки
+function buildFittingPrompt(promptMode, limit) {
+  const prompt = getPrompt(promptMode);
+  const droppable = getDroppableComments();
+  if (!limit || prompt.length <= limit || !droppable.length) return prompt;
+
+  const buildWithout = (count) => getPrompt(promptMode, new Set(droppable.slice(0, count).map((comment) => comment.ID)));
+  let low = 1;
+  let high = droppable.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (buildWithout(middle).length <= limit) high = middle;
+    else low = middle + 1;
+  }
+
+  showToast({
+    severity: 'warn',
+    summary: 'Не весь контекст поместился',
+    detail: `Нейросеть принимает до ${limit.toLocaleString('ru-RU')} символов — в запрос не попали ${low} ${pluralize(low, ['комментарий', 'комментария', 'комментариев'])}: сначала убраны комментарии подзадач и родительских задач, затем самые старые.`,
+    life: 10000,
+  });
+  return buildWithout(low);
+}
+
 /* Генерация */
 async function generate(promptMode) {
   const job = jobs[promptMode];
@@ -363,14 +421,15 @@ async function generate(promptMode) {
   const { onStart, onProgress } = job.chatCallbacks();
   await job.runJob(async () => {
     await Promise.all([loadEnabledParts(), getPromptLibrary(promptMode).ready]);
+    const { files, promptNote } = await downloadAttachments();
 
-    let prompt = getPrompt(promptMode);
-    if (prompt.length > MAX_PROMPT_LENGTH) {
-      prompt = prompt.slice(0, MAX_PROMPT_LENGTH);
-      showToast({ severity: 'warn', summary: 'ИИ', detail: `Промпт длиннее ${MAX_PROMPT_LENGTH} символов — конец (старые комментарии) обрезан`, life: 6000 });
-    }
-
-    return new PixelToolsApi(apiKey).chat(prompt, '', onProgress, onStart);
+    const api = new PixelToolsApi(apiKey);
+    const prompt = buildFittingPrompt(promptMode, await api.getPromptLengthLimit(promptNote));
+    // Комментарии уже подогнаны под лимит — обрезка дойдёт до текста, только если не влезают сами данные задачи
+    return api.chat(prompt, promptNote, onProgress, onStart, {
+      truncationHint: 'Обрезан конец данных задачи — можно отключить часть контекста.',
+      ...files,
+    });
   }, (result) => applyAiResult(promptMode, result));
 }
 
@@ -661,12 +720,28 @@ onMounted(async () => {
                     >{{ partCounts[part.key] }}</span>
                   </label>
                   <i
+                    v-if="part.tip"
+                    v-tooltip.top="part.tip"
+                    class="pi pi-question-circle text-surface-400 dark:text-surface-500"
+                  />
+                  <i
                     v-if="loadingParts[part.key]"
                     class="pi pi-spinner pi-spin text-surface-400 dark:text-surface-500"
                   />
                 </div>
               </template>
             </div>
+            <span
+              v-if="include.attachments && context.attachments"
+              class="text-xs text-surface-500 dark:text-surface-400"
+            >
+              <template v-if="attachmentNames.length">
+                Из вложений: {{ attachmentNames.map((name) => `«${name}»`).join(', ') }}.
+              </template>
+              <template v-else>
+                Во вложениях нет изображений и документов, которые можно передать нейросети.
+              </template>
+            </span>
           </div>
 
           <div class="flex flex-col gap-1">

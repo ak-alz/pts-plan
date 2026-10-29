@@ -80,7 +80,8 @@ ${runtime}
 document.addEventListener(TOGGLE_EVENT, (event) => {
   isThemeEnabled = Boolean(event.detail);
   document.documentElement.classList.toggle('pts-bitrix-dark', isThemeEnabled);
-  [themeStyleElement, ...dynamicStyleElements].forEach(applyThemeState);
+  [themeStyleElement, ...dynamicStyleElements, ...frameStyleElements].forEach(applyThemeState);
+  if (isThemeEnabled) themeAllFrames();
 });
 })();
 `;

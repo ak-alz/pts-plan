@@ -22,24 +22,16 @@ const props = defineProps({
 const previewUrl = computed(() => getPreview(props.optionKey));
 const popover = ref(null);
 const videoSrc = ref(null);
-let hideTimeout = null;
 
 function showPopover(event) {
-  clearTimeout(hideTimeout);
   if (previewUrl.value && !videoSrc.value) {
     videoSrc.value = previewUrl.value;
   }
   popover.value?.show(event);
 }
 
-// Подсказка почти всегда открывается поверх самой иконки, поэтому курсору дают время перейти на неё
-function scheduleHide() {
-  clearTimeout(hideTimeout);
-  hideTimeout = setTimeout(() => popover.value?.hide(), 150);
-}
-
-function cancelHide() {
-  clearTimeout(hideTimeout);
+function hidePopover() {
+  popover.value?.hide();
 }
 </script>
 
@@ -47,11 +39,11 @@ function cancelHide() {
   <i
     class="pi pi-question-circle text-surface-500 dark:text-surface-400 cursor-help"
     @mouseenter="showPopover($event)"
-    @mouseleave="scheduleHide"
+    @mouseleave="hidePopover"
   />
   <Popover
     ref="popover"
-    :pt="{ root: { class: 'option-hint-popover', onMouseenter: cancelHide, onMouseleave: scheduleHide } }"
+    :pt="{ root: { class: 'option-hint-popover' } }"
   >
     <div class="flex w-[300px] flex-col gap-2">
       <video
@@ -78,6 +70,11 @@ function cancelHide() {
 </template>
 
 <style>
+.option-hint-popover {
+  /* Подсказка может открыться поверх иконки — без этого она перехватит курсор и закроется сразу */
+  pointer-events: none;
+}
+
 .option-hint-popover::before,
 .option-hint-popover::after {
   display: none;

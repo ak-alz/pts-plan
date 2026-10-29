@@ -3,9 +3,10 @@ import { debounce } from 'lodash-es';
 import { Button, InputNumber, InputText, Message, Password, Select } from 'primevue';
 import { computed, ref, watch } from 'vue';
 
-import { DEFAULT_MODEL_VALUE } from '../../js/aiModel.js';
+import { DEFAULT_MODEL_VALUE, getModelPromptLength } from '../../js/aiModel.js';
 import { getAiModels } from '../../js/PixelToolsApi.js';
 import FormField from '../../js/ui/FormField.vue';
+import { pluralize } from '../../js/utils.js';
 import { useAutoFill } from '../useAutoFill.js';
 
 const model = defineModel({ type: Object, required: true });
@@ -13,19 +14,37 @@ const model = defineModel({ type: Object, required: true });
 const { autoFill, isFetching } = useAutoFill(model);
 
 const aiModels = ref([]);
-const defaultAiModelName = ref('');
+const defaultAiModelValue = ref('');
 const aiModelsError = ref('');
 const isLoadingAiModels = ref(false);
 
-const aiModelChoices = computed(() => [
-  {
-    label: defaultAiModelName.value
-      ? `По умолчанию (${defaultAiModelName.value})`
-      : 'По умолчанию',
-    value: DEFAULT_MODEL_VALUE,
-  },
-  ...aiModels.value.map((aiModel) => ({ label: aiModel.name, value: aiModel.value })),
-]);
+const aiModelChoices = computed(() => {
+  const defaultAiModel = aiModels.value.find((aiModel) => aiModel.value === defaultAiModelValue.value);
+  return [
+    {
+      label: defaultAiModel ? `По умолчанию (${defaultAiModel.name})` : 'По умолчанию',
+      value: DEFAULT_MODEL_VALUE,
+      promptLength: defaultAiModel && getModelPromptLength(defaultAiModel),
+      isVision: defaultAiModel?.isVision,
+      isFile: defaultAiModel?.isFile,
+    },
+    ...aiModels.value.map((aiModel) => ({
+      label: aiModel.name,
+      value: aiModel.value,
+      promptLength: getModelPromptLength(aiModel),
+      isVision: aiModel.isVision,
+      isFile: aiModel.isFile,
+    })),
+  ];
+});
+
+function formatModelCapabilities(option) {
+  return [
+    option.isVision && 'изображения',
+    option.isFile && 'файлы',
+    `до ${option.promptLength.toLocaleString('ru-RU')} ${pluralize(option.promptLength, ['символа', 'символов', 'символов'])}`,
+  ].filter(Boolean).join(' · ');
+}
 
 // Номер последнего запроса справочника: ключ правят посимвольно, и ответ на устаревший вариант
 // ключа не должен затереть список, загруженный по актуальному
@@ -37,7 +56,7 @@ async function loadAiModels(apiKey) {
 
   if (!apiKey) {
     aiModels.value = [];
-    defaultAiModelName.value = '';
+    defaultAiModelValue.value = '';
     return;
   }
 
@@ -46,7 +65,7 @@ async function loadAiModels(apiKey) {
     const { models, defaultModel } = await getAiModels(apiKey);
     if (request !== lastModelsRequest) return;
     aiModels.value = models;
-    defaultAiModelName.value = models.find((aiModel) => aiModel.value === defaultModel)?.name ?? '';
+    defaultAiModelValue.value = defaultModel;
 
     // Сохранённую нейросеть могли отключить в Пиксель Тулс или сменился тариф ключа
     const selected = model.value.pixelToolsAiModel;
@@ -56,7 +75,7 @@ async function loadAiModels(apiKey) {
   } catch (error) {
     if (request !== lastModelsRequest) return;
     aiModels.value = [];
-    defaultAiModelName.value = '';
+    defaultAiModelValue.value = '';
     aiModelsError.value = error.message;
   } finally {
     if (request === lastModelsRequest) isLoadingAiModels.value = false;
@@ -131,7 +150,7 @@ watch(() => model.value.pixelToolsApiKey?.trim() ?? '', (apiKey) => {
     <FormField
       id="profile_pixelToolsApiKey"
       label="API ключ Пиксель Тулс"
-      tip="Нужен для AI-функций расширения. Сгенерировать можно в настройках аккаунта на tools.pixelplus.ru"
+      tip="Нужен для ИИ-функций расширения. Сгенерировать можно в настройках аккаунта на tools.pixelplus.ru"
     >
       <Password
         v-model="model.pixelToolsApiKey"
@@ -153,8 +172,8 @@ watch(() => model.value.pixelToolsApiKey?.trim() ?? '', (apiKey) => {
     </FormField>
     <FormField
       id="profile_pixelToolsAiModel"
-      label="Нейросеть для AI-функций"
-      tip="Какой нейросетью выполняются AI-функции расширения: быстрое создание подзадач, сводка по итогам спринтов, анализ баллов задач, динамика задач группы. Список зависит от тарифа вашего ключа и может меняться."
+      label="Нейросеть для ИИ-функций"
+      tip="Какой нейросетью выполняются ИИ-функции расширения: быстрое создание задачи и подзадач, улучшение описания задачи, сводка по итогам спринтов, анализ баллов задач, динамика задач группы. Справа у каждой нейросети — что она принимает: изображения и файлы (их можно передать в улучшении описания задачи) и до скольких символов запроса. Список зависит от тарифа вашего ключа и может меняться."
     >
       <Select
         v-model="model.pixelToolsAiModel"
@@ -166,7 +185,17 @@ watch(() => model.value.pixelToolsApiKey?.trim() ?? '', (apiKey) => {
         fluid
         :loading="isLoadingAiModels"
         :disabled="!model.pixelToolsApiKey?.trim()"
-      />
+      >
+        <template #option="{ option }">
+          <div class="flex items-center justify-between gap-3 w-full">
+            <span>{{ option.label }}</span>
+            <span
+              v-if="option.promptLength"
+              class="text-xs text-surface-500 dark:text-surface-400 whitespace-nowrap"
+            >{{ formatModelCapabilities(option) }}</span>
+          </div>
+        </template>
+      </Select>
       <p
         v-if="!model.pixelToolsApiKey?.trim()"
         class="text-xs text-surface-400 dark:text-surface-500 mt-1"

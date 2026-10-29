@@ -2,14 +2,14 @@ import {onUnmounted, ref, watch} from 'vue';
 
 import {showToast} from '../toastHost/showToast.js';
 
-// Опрос конкретной AI-задачи (report_id) не привязан к жизненному циклу Vue-компонента — если виджет
+// Опрос конкретной ИИ-задачи (report_id) не привязан к жизненному циклу Vue-компонента — если виджет
 // закрыть до получения ответа, промис из startJob() продолжает выполняться. Реестр не даёт второму
 // экземпляру композабла (например, после повторного открытия того же виджета) запустить дублирующий
 // опрос того же ключа — он просто дожидается уже идущего промиса.
 const activePolls = new Map();
 
 /**
- * Управляет жизненным циклом одной AI-задачи PixelTools в рамках виджета: состояние загрузки/прогресса,
+ * Управляет жизненным циклом одной ИИ-задачи PixelTools в рамках виджета: состояние загрузки/прогресса,
  * персистентность report_id в chrome.storage.local (чтобы восстановить опрос, если виджет был закрыт до
  * получения ответа) и единообразную обработку ошибок с тостом. Не знает, как строить промпт и что делать
  * с результатом — это остаётся на стороне вызывающего компонента.
@@ -24,7 +24,7 @@ const activePolls = new Map();
  *   chatCallbacks: () => {onStart: (reportId: string) => void, onProgress: (progress: number) => void},
  *   resumeProgressCallback: (reportId: string) => (progress: number) => void,
  *   runJob: (startJob: () => Promise<string>, onSuccess?: (result: string) => (void|Promise<void>)) => Promise<void>,
- * }} API для запуска, восстановления и отслеживания AI-задачи.
+ * }} API для запуска, восстановления и отслеживания ИИ-задачи.
  */
 export function useAiJob(getStorageKey, {onAuthError} = {}) {
   const loading = ref(false);
@@ -85,7 +85,7 @@ export function useAiJob(getStorageKey, {onAuthError} = {}) {
         if (onSuccess) await onSuccess(result);
       } catch (e) {
         if (!unmounted) {
-          showToast({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+          showToast({ severity: 'error', summary: 'ИИ', detail: e.message, life: 5000 });
           if (e.isAuthError && onAuthError) onAuthError();
         }
       } finally {
@@ -113,7 +113,7 @@ export function useAiJob(getStorageKey, {onAuthError} = {}) {
       // Задача завершилась ошибкой (или устарела) — продолжать её опрос при следующем открытии виджета нет смысла
       await forget();
       if (!unmounted) {
-        showToast({ severity: 'error', summary: 'AI', detail: e.message, life: 5000 });
+        showToast({ severity: 'error', summary: 'ИИ', detail: e.message, life: 5000 });
         if (e.isAuthError && onAuthError) onAuthError();
       }
     } finally {

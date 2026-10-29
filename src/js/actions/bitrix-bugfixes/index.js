@@ -1,4 +1,4 @@
-import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges, waitForElement} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, prefixBitrixDarkSelector, rehydrateOnChanges, waitForElement} from '../../utils.js';
 
 async function redirectAfterTaskCreate() {
   const url = new URL(window.location.href);
@@ -41,6 +41,29 @@ function scrollUserLists() {
       right: 0 !important;
     }
   `, 'pts-scroll-user-lists');
+}
+
+// table.data-table — таблицы из BBCode [TABLE] в описаниях и комментариях. Bitrix красит рамки
+// почти невидимым #efefef !important, а в описании ещё и не схлопывает их — рамки двоятся
+const TABLE_CELL_SELECTOR = 'table.data-table td, table.data-table th';
+
+function tableBorders() {
+  // Префикс html поднимает специфичность: стили комментариев Bitrix подгружает позже нашего <style>,
+  // и при равной специфичности его !important победил бы
+  insertCSS(`
+    html table.data-table {
+      border-collapse: collapse !important;
+    }
+    html table.data-table td,
+    html table.data-table th {
+      border: 1px solid #c9ced6 !important;
+      padding: 4px 8px !important;
+      vertical-align: top;
+    }
+    ${prefixBitrixDarkSelector(TABLE_CELL_SELECTOR)} {
+      border-color: #4a5260 !important;
+    }
+  `, 'pts-table-borders');
 }
 
 // Окно «Редактирование рабочего дня» Bitrix позиционирует до того, как в него дорисуются
@@ -107,5 +130,9 @@ export function bitrixBugfixes(options = {}) {
 
   if (options.bitrixBugfixesTimemanPopupPosition) {
     fixTimemanPopupPosition();
+  }
+
+  if (options.bitrixBugfixesTableBorders) {
+    tableBorders();
   }
 }

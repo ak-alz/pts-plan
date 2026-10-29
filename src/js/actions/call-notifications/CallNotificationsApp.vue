@@ -17,6 +17,7 @@ import {
 import {
   ACTIVE_REMINDERS_STORAGE_KEY,
   DEFAULT_SETTINGS,
+  JOINED_FROM_NOTIFICATION_STORAGE_KEY,
   MEETING_STATUS,
   MEETING_TYPE,
   MEETINGS_STORAGE_KEY,
@@ -210,6 +211,8 @@ function sendBrowserNotification(meeting, reminderKey, title) {
     dedupeKey: reminderKey,
     title,
     url: meeting.link || window.location.href,
+    // Только когда клик ведёт на созвон — тогда он засчитывается как «Присоединиться»
+    meetingId: meeting.link ? meeting.id : undefined,
     silent: settings.value.browserNotificationSilent,
   });
 }
@@ -225,14 +228,21 @@ const shownToastKeys = new Set();
 // id тоста — это же ключ напоминания (meetingId+offset[+дата]), уникален глобально благодаря
 // UUID встречи. Без life — тост не скрывается сам, висит до ручного закрытия (тут это
 // осознанное решение, а не забытый таймер)
-function showReminderToast({reminderKey, title, link}) {
+function showReminderToast({reminderKey, meetingId, title, link}) {
   shownToastKeys.add(reminderKey);
   showToast({
     id: reminderKey,
     severity: 'warn',
     summary: title,
-    links: link ? [{url: link, label: 'Присоединиться'}] : [],
+    links: link ? [{url: link, label: 'Присоединиться', onClick: () => joinFromToast(reminderKey, meetingId)}] : [],
   });
+}
+
+// Ссылку открывает сам тост, нам остаётся засчитать встречу принятой (это гасит окно и рингтон
+// во всех вкладках) и закрыть тост — закрытие разойдётся по вкладкам через handleReminderToastClosed
+function joinFromToast(reminderKey, meetingId) {
+  if (meetingId) acceptMeeting(meetingId);
+  removeToast(reminderKey);
 }
 
 // Тост — единственная поверхность напоминания, которую показывают все открытые вкладки сразу:
@@ -319,7 +329,7 @@ async function runEvaluate() {
     const title = getReminderTitle(meeting, {remainingMinutes, elapsedMinutes});
 
     if (settings.value.browserNotificationEnabled) sendBrowserNotification(meeting, reminderKey, title);
-    if (settings.value.toastEnabled) broadcastReminderToast({reminderKey, title, link: meeting.link ?? ''});
+    if (settings.value.toastEnabled) broadcastReminderToast({reminderKey, meetingId: meeting.id, title, link: meeting.link ?? ''});
 
     if (!settings.value.modalEnabled) return;
 
@@ -347,13 +357,22 @@ function persistMeetingStatus(meetingId, status) {
   chrome.storage.local.set({[MEETINGS_STORAGE_KEY]: toPlainMeetings(updated)});
 }
 
+// Общая часть «Присоединиться» для окна, тоста и браузерного уведомления. Клик по уведомлению
+// обрабатывают все вкладки сразу, поэтому пишем в storage только то, что ещё не записано
+function acceptMeeting(meetingId) {
+  const meeting = meetings.value.find((item) => item.id === meetingId);
+  if (meeting?.type === MEETING_TYPE.ONCE && meeting.status !== MEETING_STATUS.ACCEPTED) {
+    persistMeetingStatus(meetingId, MEETING_STATUS.ACCEPTED);
+  }
+  if (activeReminders.value.some((reminder) => reminder.meetingId === meetingId)) removeActiveReminder(meetingId);
+}
+
 function onAccept() {
   const meeting = activeMeeting.value;
   if (!meeting) return;
 
   if (meeting.link) window.open(meeting.link, '_blank');
-  if (meeting.type === MEETING_TYPE.ONCE) persistMeetingStatus(meeting.id, MEETING_STATUS.ACCEPTED);
-  removeActiveReminder(meeting.id);
+  acceptMeeting(meeting.id);
 }
 
 function onDismiss() {
@@ -373,11 +392,15 @@ function handleStorageChanged(changes, area) {
   const settingsChange = changes[SETTINGS_STORAGE_KEY];
   const shownChange = changes[SHOWN_REMINDERS_STORAGE_KEY];
   const activeChange = changes[ACTIVE_REMINDERS_STORAGE_KEY];
-  if (!meetingsChange && !settingsChange && !shownChange && !activeChange) return;
+  const joinedChange = changes[JOINED_FROM_NOTIFICATION_STORAGE_KEY];
+  if (!meetingsChange && !settingsChange && !shownChange && !activeChange && !joinedChange) return;
 
   if (meetingsChange) meetings.value = meetingsChange.newValue ?? [];
   if (settingsChange) settings.value = {...DEFAULT_SETTINGS, ...settingsChange.newValue};
   if (activeChange) activeReminders.value = activeChange.newValue ?? [];
+
+  const joinedMeetingId = joinedChange?.newValue?.meetingId;
+  if (typeof joinedMeetingId === 'string') acceptMeeting(joinedMeetingId);
 
   if (shownChange) {
     const newShownMap = shownChange.newValue ?? {};
