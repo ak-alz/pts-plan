@@ -385,6 +385,12 @@ function themeFrame(frame) {
     if (!element.isConnected) frameStyleElements.delete(element);
   }
   frameStyleElements.add(styleElement);
+
+  // Редактор дописывает <link> во фрейм, и к его `load` они ещё грузятся — без повтора пропадёт, например,
+  // цвет текста из iframe-style.css (тёмный текст на тёмном фоне)
+  for (const link of frameDocument.querySelectorAll('link[rel="stylesheet"]')) {
+    if (!link.sheet) link.addEventListener('load', () => themeFrame(frame), {once: true});
+  }
 }
 
 /**
