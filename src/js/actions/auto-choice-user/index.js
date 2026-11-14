@@ -3,7 +3,7 @@ import {debounce} from 'lodash-es';
 import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   function autoChoiceUser() {

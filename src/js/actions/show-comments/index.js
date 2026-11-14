@@ -2,7 +2,7 @@ import { getTaskIdFromUrl, pluralize } from '../../utils.js';
 
 export function showComments(rawCount = 50) {
   const count = Math.ceil(rawCount / 10) * 10;
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const buttonContainer = document.querySelector('.feed-com-header');

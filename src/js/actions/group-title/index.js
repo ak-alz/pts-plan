@@ -1,9 +1,9 @@
 import {getGroupIdFromUrl, getPersonalPlanUserIdFromUrl, getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskIdFromUrl(window.location.href);
-  const groupId = getGroupIdFromUrl(window.location.href);
-  const isPersonalPlan = !!getPersonalPlanUserIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
+  const groupId = getGroupIdFromUrl(window.location.pathname);
+  const isPersonalPlan = !!getPersonalPlanUserIdFromUrl(window.location.pathname);
   if (!groupId && !ids?.taskId && !isPersonalPlan) return;
 
   const metaTitle = document.querySelector('title');

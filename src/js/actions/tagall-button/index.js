@@ -163,7 +163,7 @@ function renderReviewText(template, link) {
 }
 
 async function setupTaskCommentButton(bitrixApi, options) {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const commentsBlock = document.querySelector('.feed-comments-block');
@@ -204,6 +204,7 @@ async function setupTaskCommentButton(bitrixApi, options) {
       icon: 'pi-check-circle',
       text: authorOnly ? getTagallCommentText(commentSuffix, mention) : getTagallCommentText(commentSuffix),
       displayText: authorOnly ? getTagallCommentText(commentSuffix, mentionName) : getTagallCommentText(commentSuffix),
+      usesTagall: !authorOnly,
     });
   }
 
@@ -223,37 +224,40 @@ async function setupTaskCommentButton(bitrixApi, options) {
   if (!buttons.length) return;
 
   function addCommentButtons() {
-    // .bx-b-pixeplus-tag-all — нативная кнопка тегания всех участников в тулбаре редактора комментария,
-    // рядом с ней располагаем свои
-    const tagAllIcons = commentsBlock.querySelectorAll('.bx-b-pixeplus-tag-all');
-
-    tagAllIcons.forEach((tagAllIcon) => {
-      const toolbarItem = tagAllIcon.closest('.main-post-form-toolbar-button');
-      if (!toolbarItem || toolbarItem.dataset.tagallCommentProcessed) return;
-
-      toolbarItem.dataset.tagallCommentProcessed = '1';
-
-      const form = toolbarItem.closest('.feed-add-post');
+    commentsBlock.querySelectorAll('.main-post-form-toolbar-buttons-container').forEach((toolbar) => {
+      const form = toolbar.closest('.feed-add-post');
       if (!form) return;
 
-      // Каждая следующая кнопка встаёт за предыдущей — иначе порядок в тулбаре был бы обратным
-      let previousElement = toolbarItem;
+      // .bx-b-pixeplus-tag-all — кнопка портала для обращения ко всем участникам. В части задач портал
+      // её не показывает — там и свою кнопку с TAGALL не ставим, а кнопки с именем постановщика
+      // остаются. Портал добавляет кнопку позже тулбара, поэтому проверка идёт на каждом проходе
+      const portalTagallButton = toolbar.querySelector('.bx-b-pixeplus-tag-all')?.closest('.main-post-form-toolbar-button');
 
-      buttons.forEach(({icon, text, displayText}) => {
+      buttons.forEach(({icon, text, displayText, usesTagall}, index) => {
+        if (usesTagall && !portalTagallButton) return;
+        if (toolbar.querySelector(`[data-pts-tagall-button="${index}"]`)) return;
+
         const button = Object.assign(document.createElement('div'), {
           className: 'tagall-comment-button',
           title: `Вставить «${displayText}»`,
           innerHTML: `<i class="pi ${icon}"></i>`,
         });
+        button.dataset.ptsTagallButton = index;
 
         button.addEventListener('click', (event) => {
           event.stopPropagation();
           insertTextIntoEditor(form, text, displayText).catch((error) => console.warn(error));
         });
 
-        previousElement.insertAdjacentElement('afterend', button);
-        previousElement = button;
+        toolbar.append(button);
       });
+
+      // Свои кнопки стоят вместе, по порядку и сразу за кнопкой портала. Портал добавляет её позже
+      // тулбара, так что к этому моменту свои кнопки могли встать раньше — переставляем
+      const ownButtons = [...toolbar.querySelectorAll('[data-pts-tagall-button]')]
+        .sort((first, second) => first.dataset.ptsTagallButton - second.dataset.ptsTagallButton);
+      const isInPlace = ownButtons.every((ownButton, position) => ownButton.previousElementSibling === (ownButtons[position - 1] ?? portalTagallButton));
+      if (portalTagallButton && ownButtons.length && !isInPlace) portalTagallButton.after(...ownButtons);
     });
   }
 

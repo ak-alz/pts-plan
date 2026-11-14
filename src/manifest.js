@@ -4,6 +4,15 @@ import packageData from '../package.json';
 
 const isDev = process.env.NODE_ENV == 'development';
 
+// Адреса портала, на которых работает расширение. В dev-сборке — ещё и локальная копия портала в
+// Docker (http://localhost:<порт>, порт в шаблоне адреса не указывается): на ней проверяются сценарии,
+// которые на живом портале не воспроизвести. В публикуемую сборку localhost не попадает
+const PORTAL_MATCHES = [
+  'https://plan.pixelplus.ru/*',
+  'https://*.bitrix24.ru/*',
+  ...(isDev ? ['http://localhost/*'] : []),
+];
+
 export default defineManifest({
   name: `${packageData.displayName || packageData.name}${isDev ? ' ➡️ Dev' : ''}`,
   description: packageData.description,
@@ -26,10 +35,7 @@ export default defineManifest({
   content_scripts: [
     {
       all_frames: true,
-      matches: [
-        'https://plan.pixelplus.ru/*',
-        'https://*.bitrix24.ru/*',
-      ],
+      matches: PORTAL_MATCHES,
       js: ['src/content-scripts/isolated.js'],
       type: 'module',
       world: 'ISOLATED',
@@ -45,10 +51,7 @@ export default defineManifest({
         'assets/*',
         'img/logo.png',
       ],
-      matches: [
-        'https://plan.pixelplus.ru/*',
-        'https://*.bitrix24.ru/*',
-      ],
+      matches: PORTAL_MATCHES,
     },
   ],
   permissions: [

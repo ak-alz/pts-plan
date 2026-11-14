@@ -23,9 +23,25 @@ import {
   BBCODE_URL_PLAIN_RE,
   BBCODE_USER_RE,
   FIRST_LINK_RE,
+  HTML_ENTITY_RE,
   HTML_IMG_TAG_RE,
+  NOTIF_CHANGE_RE,
+  NOTIF_CLOSE_RE,
+  NOTIF_COMMENT_RE,
+  NOTIF_CRM_RE,
+  NOTIF_DEADLINE_RE,
+  NOTIF_DEAL_ID_RE,
+  NOTIF_DELETE_RE,
+  NOTIF_DISK_RE,
+  NOTIF_FEEDBACK_RE,
+  NOTIF_GROUP_RE,
   NOTIF_NEW_TASK_RE,
   NOTIF_NEW_TASK_RESPONSIBLE_RE,
+  NOTIF_OFFER_RE,
+  NOTIF_REACTION_RE,
+  NOTIF_REMINDER_RE,
+  NOTIF_SURVEY_RE,
+  NOTIF_TASK_ID_RE,
   OUTSIDE_HTML_TAG_LOOKAHEAD,
   SYSTEM_COMMENT_PHRASES,
   TAGALL_LEADING_RE,
@@ -37,29 +53,30 @@ import {
 
 /**
  * Строит URL страницы просмотра задачи. Задачи без группы (personal, `groupId` пустой или `'0'`)
- * не имеют `/workgroups/group/...` адреса — для них нужен `userId`. Важно: страница открывается
- * только когда `userId` совпадает с текущим залогиненным пользователем (Bitrix проверяет доступ
- * по сегменту `/company/personal/user/{userId}/` в URL) — ID исполнителя или другого произвольного
- * пользователя задачи здесь не подойдёт, ссылка не откроется.
+ * не имеют `/workgroups/group/...` адреса — они открываются через личный раздел пользователя.
+ * Чей именно раздел — Bitrix не важно: доступ проверяется по самой задаче, а не по ID в адресе
+ * (проверено на портале: открывается и с чужим ID, и с `0`, не открывается только с ID, которого нет).
+ * Поэтому без `userId` подставляется `0`.
  * @param {string|number} groupId
  * @param {string|number} taskId
- * @param {string|number} [userId] - ID текущего пользователя для ссылки на личную страницу, когда группы нет
- * @returns {string|null} URL задачи, либо `null`, если группы нет и `userId` не передан
+ * @param {string|number} [userId] - ID пользователя для ссылки через личный раздел, когда группы нет
+ * @returns {string} URL задачи
  */
 export function getTaskUrl(groupId, taskId, userId) {
   if (groupId && groupId !== '0') {
     return `/workgroups/group/${groupId}/tasks/task/view/${taskId}/`;
   }
 
-  if (userId) {
-    return `/company/personal/user/${userId}/tasks/task/view/${taskId}/`;
-  }
-
-  return null;
+  return `/company/personal/user/${userId || 0}/tasks/task/view/${taskId}/`;
 }
 
+// Парсеры ниже ищут адрес в любом тексте (ячейка таблицы, описание, href ссылки), поэтому совпадение
+// внутри параметров другого адреса («…/search/?q=https://…/tasks/task/view/5/») они тоже находят.
+// Чтобы узнать, какая страница открыта, им передают `window.location.pathname`, а не `href` —
+// иначе страница поиска по вставленной ссылке сошла бы за страницу задачи
+
 export function getTaskIdFromUrl(url) {
-  const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)(?:\/|\?|$)/;
+  const pattern = /\/(\d+)\/tasks\/task\/view\/(\d+)(?:\/|\?|#|$)/;
   const match = url.match(pattern);
 
   if (match && match[1] && match[2]) {
@@ -158,11 +175,27 @@ export function getTagallCommentText(suffix, mention = TAGALL_TOKEN) {
 export function getFirstLink(text) {
   if (typeof text !== 'string' || !text) return '';
 
-  const withoutImages = text.replace(BBCODE_IMG_RE, '').replace(HTML_IMG_TAG_RE, '');
+  // Сущности раскодируются до поиска: в экранированном описании кавычка и угловая скобка после
+  // адреса записаны как &quot; и &gt; и иначе попали бы в саму ссылку
+  const withoutImages = decodeHtmlEntities(text).replace(BBCODE_IMG_RE, '').replace(HTML_IMG_TAG_RE, '');
   const match = withoutImages.match(FIRST_LINK_RE);
   if (!match) return '';
 
   return (match[1] ?? match[2] ?? match[3] ?? '').trim().replace(TRAILING_PUNCTUATION_RE, '');
+}
+
+const HTML_ENTITIES = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': '\'', '&#039;': '\'', '&nbsp;': ' '};
+
+/**
+ * Раскодирует HTML-сущности в сыром тексте задачи. Описания задач, поставленных из личных кабинетов,
+ * портал сохраняет уже экранированными (`&quot;`, `&amp;`): на странице Bitrix показывает их как
+ * обычные символы, а в сыром тексте из REST они остаются — и попали бы в выгрузку, в запрос к
+ * нейросети и в адрес ссылки.
+ * @param {string} text
+ * @returns {string}
+ */
+export function decodeHtmlEntities(text) {
+  return text.replace(HTML_ENTITY_RE, (entity) => HTML_ENTITIES[entity]);
 }
 
 /**
@@ -962,6 +995,77 @@ export function markTagallAndMentions(html, firstName, lastName) {
   return result;
 }
 
+// Событие задачи, о котором сообщает уведомление: ключ → фраза, которой оно начинается
+const NOTIFICATION_EVENT_PATTERNS = {
+  reaction: NOTIF_REACTION_RE,
+  comment: NOTIF_COMMENT_RE,
+  new: NOTIF_NEW_TASK_RE,
+  change: NOTIF_CHANGE_RE,
+  close: NOTIF_CLOSE_RE,
+  delete: NOTIF_DELETE_RE,
+};
+
+// Уведомления не о событии задачи. Их текст тоже содержит написанное людьми (название задачи в сводке
+// дедлайнов, текст обратной связи), и слова «закрыл задачу» там — не событие
+const NOTIFICATION_NON_EVENT_PATTERNS = [
+  NOTIF_DEADLINE_RE,
+  NOTIF_REMINDER_RE,
+  NOTIF_FEEDBACK_RE,
+  NOTIF_CRM_RE,
+  NOTIF_OFFER_RE,
+  NOTIF_SURVEY_RE,
+  NOTIF_GROUP_RE,
+  NOTIF_DISK_RE,
+];
+
+/**
+ * Определяет, о каком событии задачи сообщает уведомление. Фраза события стоит в начале текста, а
+ * дальше идёт произвольный текст — название задачи, превью комментария, описание — где те же слова
+ * («закрыл задачу», «добавил комментарий») могут встретиться случайно. Поэтому событием считается
+ * та фраза, что найдена в тексте раньше остальных, а не любая совпавшая. Если ещё раньше стоит фраза
+ * уведомления другого рода (сводка дедлайнов, обратная связь, CRM…), события задачи в нём нет.
+ * @param {string} text - Текст уведомления.
+ * @returns {'reaction'|'comment'|'new'|'change'|'close'|'delete'|null} Ключ события (совпадает с
+ * ключами `NOTIF_TYPES`) или `null`, если уведомление не про событие задачи.
+ */
+export function getNotificationEvent(text) {
+  let event = null;
+  let eventIndex = Infinity;
+
+  Object.entries(NOTIFICATION_EVENT_PATTERNS).forEach(([key, pattern]) => {
+    const index = (text ?? '').search(pattern);
+    if (index !== -1 && index < eventIndex) {
+      event = key;
+      eventIndex = index;
+    }
+  });
+
+  const isOtherNotification = event
+    && NOTIFICATION_NON_EVENT_PATTERNS.some((pattern) => {
+      const index = text.search(pattern);
+      return index !== -1 && index < eventIndex;
+    });
+
+  return isOtherNotification ? null : event;
+}
+
+/**
+ * Ключи событий задачи, которые различает `getNotificationEvent`.
+ * @type {string[]}
+ */
+export const NOTIFICATION_EVENT_KEYS = Object.keys(NOTIFICATION_EVENT_PATTERNS);
+
+/**
+ * Достаёт ID задачи из текста уведомления, где он записан как `[#481203]`. В напоминании о сделке
+ * в том же виде записан номер сделки — для него возвращается `null`.
+ * @param {string} text - Текст уведомления.
+ * @returns {string|null} ID задачи или `null`, если его в тексте нет.
+ */
+export function getNotificationTaskId(text) {
+  if (!text || NOTIF_DEAL_ID_RE.test(text)) return null;
+  return text.match(NOTIF_TASK_ID_RE)?.[1] ?? null;
+}
+
 /**
  * Проверяет, упомянут ли пользователь в тексте уведомления.
  * Считается упоминанием: имя+фамилия (в любом порядке) или TAGALL. В уведомлении о новой задаче
@@ -976,7 +1080,7 @@ export function isUserMentioned(text, firstName, lastName) {
   if (text.includes('TAGALL')) return true;
 
   const nameVariants = getNameVariants(firstName, lastName);
-  if (NOTIF_NEW_TASK_RE.test(text)) {
+  if (getNotificationEvent(text) === 'new') {
     const responsible = text.match(NOTIF_NEW_TASK_RESPONSIBLE_RE)?.[1] ?? '';
     return nameVariants.some((name) => responsible.includes(name));
   }
@@ -1260,5 +1364,6 @@ export function bbcodeToMarkdown(text) {
     .replace(BBCODE_ITALIC_RE, (match, content) => `*${content}*`)
     .replace(BBCODE_UNDERLINE_RE, (match, content) => content)
     .replace(BBCODE_STRIP_WRAPPER_RE, (match, tag, content) => content)
-    .replace(BBCODE_UNKNOWN_TAG_RE, '');
+    .replace(BBCODE_UNKNOWN_TAG_RE, '')
+    .replace(HTML_ENTITY_RE, (entity) => HTML_ENTITIES[entity]);
 }

@@ -40,11 +40,9 @@ const props = defineProps({
 
 const emit = defineEmits(['success']);
 
-async function resolveGroupId(url, sessionId, taskId) {
-  if (!url.includes('/company/personal/user/')) {
-    const match = url.match(/\/(\d+)\/tasks\/task\/view\/\d+/);
-    if (match?.[1]) return match[1];
-  }
+// Группа — из самой задачи, а не из адреса страницы: после переноса задачи в другую группу она
+// по-прежнему открывается по старой ссылке, и подзадачи ушли бы в прежнюю группу
+async function resolveGroupId(sessionId, taskId) {
   const api = new BitrixApi(sessionId);
   const { data } = await api.getTask(taskId, ['GROUP_ID']);
   const id = String(data?.result?.task?.groupId ?? '');
@@ -325,7 +323,7 @@ async function fetchData() {
   isLoading.value = true;
 
   try {
-    const resolved = await resolveGroupId(window.location.href, props.sessionId, props.taskId);
+    const resolved = await resolveGroupId(props.sessionId, props.taskId);
     if (!resolved) throw new Error('Не удалось определить группу задачи');
     groupId.value = resolved;
 

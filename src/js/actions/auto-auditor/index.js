@@ -15,7 +15,11 @@ const TARGET_BUTTON_SELECTOR = '[data-target="auditor"]';
   const addButton = document.querySelector(ADD_BUTTON_SELECTOR);
   const targetButton = document.querySelector(TARGET_BUTTON_SELECTOR);
 
-  if (addButton) {
+  // «Добавить участников группы» — ссылка портала: без выбранной группы она показывает окно с ошибкой
+  // (форма открыта из «Моих задач», а не из группы), поэтому там её не нажимаем
+  const groupId = addButton?.closest('form')?.querySelector('[name*="[SE_PROJECT][ID]"]')?.value;
+
+  if (addButton && groupId && groupId !== '0') {
     const preventNavigation = (event) => event.preventDefault();
     addButton.addEventListener('click', preventNavigation, true);
     addButton.click();

@@ -37,10 +37,10 @@ async function fetchCurrentUserId(sessionId) {
  * @returns {Promise<{type: 'group'|'personal', id: string}|null>}
  */
 export async function resolveKanbanContext(sessionId) {
-  const groupId = getGroupIdFromUrl(window.location.href);
+  const groupId = getGroupIdFromUrl(window.location.pathname);
   if (groupId) return {type: 'group', id: groupId};
 
-  const personalUserId = getPersonalPlanUserIdFromUrl(window.location.href);
+  const personalUserId = getPersonalPlanUserIdFromUrl(window.location.pathname);
   if (!personalUserId) return null;
 
   // Промис общий на все фичи страницы, чтобы user.current запрашивался один раз, а не по разу на

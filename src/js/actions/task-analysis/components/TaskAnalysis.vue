@@ -462,41 +462,9 @@ function findRootId(taskId, taskMap) {
   }
 }
 
-async function fetchUserData(userId, userName, dateFrom, dateTo, groupFilter) {
-  const userTasks = await bitrixApi.searchTasks({
-    groupId: groupFilter === 'current' ? props.context.id : null,
-    responsibleId: userId,
-    closedDateFrom: dateFrom,
-    closedDateTo: dateTo,
-    status: 'closed',
-  });
-
-  return buildUserRows(userId, userName, userTasks);
-}
-
-// Достраивает дерево до корневых задач и сворачивает выборку в строки по корню.
-// Вынесено из fetchUserData: на личном плане задачи приходят одной общей выборкой и делятся
-// по исполнителям на клиенте, то есть запрос нужен один, а сборка — на каждого исполнителя
-async function buildUserRows(userId, userName, userTasks) {
-  const taskMap = new Map(userTasks.map((task) => [String(task.id), task]));
-
-  let unknownParentIds = new Set();
-  taskMap.forEach((task) => {
-    const parentId = String(task.parentId ?? '0');
-    if (parentId !== '0' && !taskMap.has(parentId)) unknownParentIds.add(parentId);
-  });
-
-  while (unknownParentIds.size > 0) {
-    const parents = await bitrixApi.searchTasks({ids: [...unknownParentIds]});
-    const nextUnknown = new Set();
-    parents.forEach((parentTask) => {
-      const parentId = String(parentTask.id);
-      taskMap.set(parentId, parentTask);
-      const grandParentId = String(parentTask.parentId ?? '0');
-      if (grandParentId !== '0' && !taskMap.has(grandParentId)) nextUnknown.add(grandParentId);
-    });
-    unknownParentIds = nextUnknown;
-  }
+// Сворачивает задачи одного исполнителя в строки по корневой задаче. taskMap — вся выборка периода
+// вместе с догруженными предками: корень задачи может принадлежать другому исполнителю
+function buildUserRows(userId, userName, userTasks, taskMap) {
 
   const rootMap = new Map();
 
@@ -562,42 +530,49 @@ function registerPerformers(tasks) {
   users.value = [...performerById.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 
-// Задачи за период. Для группы — по запросу на каждого выбранного исполнителя, как и было.
-// Для личного плана запрос на исполнителя невозможен: «мой план» — объединение 4 ролей текущего
-// пользователя, и сузить его до «ответственный X, а я участник» одним фильтром нельзя (OR между
-// ACCOMPLICE и AUDITOR Bitrix молча превращает в пересечение). Поэтому берём выборку целиком
-// и делим по исполнителям на клиенте — заодно это один запрос вместо запроса на человека
+// Задачи за период — одной выборкой на всех исполнителей, с делением по исполнителям на клиенте:
+// для группы это фильтр по списку исполнителей, для личного плана — все задачи, где пользователь
+// участвует. Предки догружаются тоже один раз на всю выборку, а не отдельно по каждому исполнителю
 async function fetchPeriodData(dateFrom, dateTo) {
-  if (!isPersonal.value) {
-    return Promise.all(form.selectedUserIds.map((userId) => {
-      const userName = users.value.find((user) => user.id === userId)?.name ?? userId;
-      return fetchUserData(userId, userName, dateFrom, dateTo, form.groupFilter);
-    }));
-  }
+  const period = {closedDateFrom: dateFrom, closedDateTo: dateTo, status: 'closed'};
+  let poolTasks = [];
 
-  const poolTasks = await bitrixApi.searchMyTasks(props.context.id, {
-    groupId: selectedGroupId.value,
-    closedDateFrom: dateFrom,
-    closedDateTo: dateTo,
-    status: 'closed',
-  });
-  registerPerformers(poolTasks);
+  if (isPersonal.value) {
+    poolTasks = await bitrixApi.searchMyTasks(props.context.id, {...period, groupId: selectedGroupId.value});
+    registerPerformers(poolTasks);
+  } else if (form.selectedUserIds.length) {
+    // Без выбранных исполнителей запрос не шлём: пустой список в фильтре означал бы «все задачи группы»
+    poolTasks = await bitrixApi.searchTasks({
+      ...period,
+      groupId: form.groupFilter === 'current' ? props.context.id : null,
+      responsibleId: form.selectedUserIds,
+    });
+  }
 
   const selectedIds = new Set(form.selectedUserIds);
   const tasksByPerformer = new Map();
+  // В группе выбранный исполнитель остаётся в результате и без задач за период — как нулевой ряд
+  if (!isPersonal.value) form.selectedUserIds.forEach((userId) => tasksByPerformer.set(userId, []));
   poolTasks.forEach((task) => {
-    const performerId = String(task.responsible?.id ?? '');
-    // Пустой выбор означает «все исполнители»
+    const performerId = String(task.responsibleId ?? task.responsible?.id ?? '');
+    // Пустой выбор на личном плане означает «все исполнители»
     if (!performerId || (selectedIds.size && !selectedIds.has(performerId))) return;
     if (!tasksByPerformer.has(performerId)) tasksByPerformer.set(performerId, []);
     tasksByPerformer.get(performerId).push(task);
   });
 
-  return Promise.all([...tasksByPerformer].map(([performerId, performerTasks]) => buildUserRows(
+  const ancestors = await bitrixApi.getAncestorTasks(poolTasks);
+  const taskMap = new Map([
+    ...Object.entries(ancestors),
+    ...poolTasks.map((task) => [String(task.id), task]),
+  ]);
+
+  return [...tasksByPerformer].map(([performerId, performerTasks]) => buildUserRows(
     performerId,
     users.value.find((user) => user.id === performerId)?.name ?? performerId,
     performerTasks,
-  )));
+    taskMap,
+  ));
 }
 
 async function fetchData() {

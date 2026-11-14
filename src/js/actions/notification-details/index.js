@@ -5,10 +5,9 @@ import {createApp, reactive} from 'vue';
 
 import BitrixApi from '../../BitrixApi.js';
 import {
-  NOTIF_NEW_TASK_RE,
+  NOTIF_DEADLINE_RE,
   NOTIF_QUOTE_RE,
   NOTIF_QUOTE_STRIP_RE,
-  NOTIF_REACTION_RE,
   TAGALL_STATUS_RE,
   TAGALL_TOKEN,
 } from '../../patterns.js';
@@ -18,6 +17,7 @@ import {
   escapeRegExp,
   getBitrixDarkBackground,
   getNameVariants,
+  getNotificationEvent,
   getTaskIdFromUrl,
   insertCSS,
   markTagallAndMentions,
@@ -26,7 +26,7 @@ import {
   triggerScrollLoadMore,
 } from '../../utils.js';
 import FilterBar from './components/FilterBar.vue';
-import {NOTIF_TYPES} from './notifTypes.js';
+import {matchNotifTypes} from './notifTypes.js';
 
 const SELECTORS = {
   container: '.bx-im-content-notification__elements',
@@ -192,6 +192,12 @@ function isUserQuoted(text, firstName, lastName) {
 function textHasUserName(text, firstName, lastName) {
   if (!text || !firstName || !lastName) return false;
   return getNameVariants(firstName, lastName).some((name) => nameAsWord(text, name));
+}
+
+// Обращение ко всем участникам: в канонизированном тексте есть токен TAGALL. Реакция не в счёт —
+// там токен приходит из текста комментария, на который отреагировали
+function isTagallText(text) {
+  return text.includes(TAGALL_TOKEN) && getNotificationEvent(text) !== 'reaction';
 }
 
 // Жирные метки прямо в тексте уведомления (под галочкой) — см. markTagallAndMentions
@@ -573,6 +579,18 @@ export function notificationDetails(sessionId, options = {}) {
     });
   }
 
+  // Задача, к которой относится уведомление, — по первой ссылке на задачу. Исключение — сводка
+  // дедлайнов: в ней несколько задач, и метки с подсветкой по одной из них вводили бы в заблуждение
+  function getSingleTaskId(element) {
+    const taskIds = [...element.querySelectorAll(SELECTORS.taskLink)]
+      .map((link) => getTaskIdFromUrl(link.getAttribute('href') ?? '')?.taskId)
+      .filter(Boolean);
+    if (!taskIds.length) return null;
+
+    const isDeadlineDigest = NOTIF_DEADLINE_RE.test(element.querySelector(SELECTORS.contentText)?.textContent ?? '');
+    return isDeadlineDigest && new Set(taskIds).size > 1 ? null : taskIds[0];
+  }
+
   /**
    * Помечает все ещё не обработанные уведомления: у каждого читает автора, а уведомлениям о
    * задачах вдобавок навешивает скелетон и отдаёт их на догрузку деталей.
@@ -594,8 +612,7 @@ export function notificationDetails(sessionId, options = {}) {
         if (avatarUrl) cache.authorAvatars.set(authorName, avatarUrl);
       }
 
-      const href = el.querySelector(SELECTORS.taskLink)?.getAttribute('href') ?? '';
-      const taskId = getTaskIdFromUrl(href)?.taskId ?? null;
+      const taskId = getSingleTaskId(el);
 
       // Обработанной помечается и карточка без задачи: без метки она и попадала бы в выборку новых
       // на каждой мутации, и не считалась бы в счётчиках фильтра — те смотрят только на "done"
@@ -766,7 +783,7 @@ export function notificationDetails(sessionId, options = {}) {
     if (!mentioned) return;
 
     // Новая задача, где пользователь не исполнитель: упоминание не считаем персональным
-    const isNewTaskForOthers = NOTIF_NEW_TASK_RE.test(notifText)
+    const isNewTaskForOthers = getNotificationEvent(notifText) === 'new'
       && (!userId || task.responsibleId !== userId);
     if (!isNewTaskForOthers) {
       el.setAttribute('data-pts-my-mention', '');
@@ -904,11 +921,11 @@ export function notificationDetails(sessionId, options = {}) {
     element.querySelector(SELECTORS.titleContainer)?.appendChild(block);
   }
 
-  // Карточке без задачи (события групп, реакции на сообщения) нечего подсвечивать по ролям —
-  // только метка типа. tagall вне задач не бывает, поэтому его ключ пропускается
+  // Карточке без задачи (события групп, CRM, сводка дедлайнов) нечего подсвечивать по ролям —
+  // только метка типа. tagall бывает и здесь: портал обращается так к ответственному за лид
   function renderTasklessItem(element) {
     const {notifText} = extractNotifText(element);
-    const matchedTypes = NOTIF_TYPES.filter(({key, re}) => key !== 'tagall' && re.test(notifText));
+    const matchedTypes = matchNotifTypes(notifText, isTagallText(notifText));
     matchedTypes.forEach(({key}) => element.setAttribute(`data-pts-type-${key}`, ''));
     if (!flags.hideChips) appendChipsBlock(element, matchedTypes.map(createTypeChip));
   }
@@ -941,13 +958,18 @@ export function notificationDetails(sessionId, options = {}) {
     }
 
     el.setAttribute('data-pts-details', 'done');
-    if (!task) return;
+    // Задача недоступна (удалена, нет прав) — группу и стадию показать нечем, но тип уведомления
+    // виден из его текста: без этого карточка оставалась вовсе без меток
+    if (!task) {
+      renderTasklessItem(el);
+      return;
+    }
 
     el.setAttribute('data-pts-group', task.groupId || '0');
 
     const {notifText, hasQuote, rawText} = extractNotifText(el);
-    const isReaction = NOTIF_REACTION_RE.test(notifText);
-    const isTagall = notifText.includes(TAGALL_TOKEN) && !isReaction;
+    const isReaction = getNotificationEvent(notifText) === 'reaction';
+    const isTagall = isTagallText(notifText);
 
     // Реакции не подсвечиваем вообще: ни ролью (исполнитель/постановщик), ни упоминанием, ни tagall
     if (!isReaction) {
@@ -961,9 +983,7 @@ export function notificationDetails(sessionId, options = {}) {
       applyTextHighlights(el, notifText, rawText, isTagall, task);
     }
 
-    // tagall-тип берём из готового isTagall (канонический токен + исключение реакций), а не из
-    // общего глобального TAGALL_WORD_RE — чтобы не мутировать его lastIndex (его делит tag-all-color)
-    const matchedTypes = NOTIF_TYPES.filter(({key, re}) => (key === 'tagall' ? isTagall : re.test(notifText)));
+    const matchedTypes = matchNotifTypes(notifText, isTagall);
     matchedTypes.forEach(({key}) => el.setAttribute(`data-pts-type-${key}`, ''));
     if (hasQuote) el.setAttribute('data-pts-type-quote', '');
 

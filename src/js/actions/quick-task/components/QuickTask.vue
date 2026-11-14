@@ -299,6 +299,12 @@ async function createTask(title) {
 
     // Неудавшиеся перенос и прикрепление файлов задачу не отменяют — только предупреждаем
     const warnings = [];
+    // Портал вправе сам решить, в какой колонке быть задаче (например, по стадии связанной сделки),
+    // и молча заменяет выбранную — запрос при этом успешен
+    const createdStageId = data.result.task.stageId;
+    if (fields.STAGE_ID && createdStageId != null && String(createdStageId) !== String(fields.STAGE_ID)) {
+      warnings.push('Портал поставил задачу в другую колонку, а не в выбранную.');
+    }
     await Promise.all([
       (async () => {
         if (!personalStageId) return;

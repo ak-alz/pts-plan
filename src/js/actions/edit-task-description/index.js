@@ -50,7 +50,7 @@ async function refreshTaskBlocks(descriptionElement) {
 }
 
 export async function editTaskDescription(sessionId) {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const descriptionElement = await waitForElement(DESCRIPTION_SELECTOR);

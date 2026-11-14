@@ -1016,10 +1016,9 @@ onMounted(async () => {
         body-class="whitespace-nowrap"
       >
         <template #header>
-          <span v-tooltip.top="aiHeaderTooltip">
-            <b>ИИ-оценка</b>
-            <i class="pi pi-question-circle text-xs text-surface-400 dark:text-surface-500" />
-          </span>
+          <span
+            v-tooltip.top="aiHeaderTooltip"
+          ><b>ИИ-оценка</b> <i class="pi pi-question-circle text-xs text-surface-400 dark:text-surface-500" /></span>
         </template>
         <template #body="{ data }">
           <i

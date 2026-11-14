@@ -88,32 +88,21 @@ const cacheKey = computed(() => (isPersonal.value && selectedGroupId.value
   : contextKey.value));
 
 // Одна логическая выборка задач: на групповом канбане это запрос по GROUP_ID, на личном плане —
-// объединение 4 ролей внутри searchMyTasks(), то есть в неё попадают и чужие задачи, где
-// пользователь наблюдатель или соисполнитель
+// все задачи, где пользователь участвует в любой роли (searchMyTasks()), то есть в неё попадают и
+// чужие задачи, где он наблюдатель или соисполнитель
 function fetchScopedTasks(params) {
   return isPersonal.value
     ? bitrixApi.searchMyTasks(props.context.id, {...params, groupId: selectedGroupId.value})
     : bitrixApi.searchTasks({...params, groupId: props.context.id});
 }
 
-// Для подсчёта объединение ролей недоступно: OR между ACCOMPLICE и AUDITOR Bitrix молча
-// превращает в пересечение, а посчитать уникальные задачи по трём запросам сервер не умеет.
-// Поэтому на личном плане берём сумму по ролям — она завышена на пересечения, и это допустимо:
-// число идёт только в прогресс и в проверку «есть ли что грузить», а нулевая сумма всё равно
-// означает пустое объединение
-const countScopes = computed(() => (isPersonal.value
-  ? [{responsibleOrCreatedBy: props.context.id}, {accompliceId: props.context.id}, {auditorId: props.context.id}]
-    .map((scope) => ({...scope, groupId: selectedGroupId.value}))
-  : [{groupId: props.context.id}]));
+// Тот же охват, что у fetchScopedTasks, — параметрами фильтра для подсчёта
+const countScope = computed(() => (isPersonal.value
+  ? {memberId: props.context.id, groupId: selectedGroupId.value}
+  : {groupId: props.context.id}));
 
-async function countScopedTasks(requests) {
-  const scopes = countScopes.value;
-  const counts = await bitrixApi.countTasksBatch(
-    requests.flatMap((request) => scopes.map((scope) => ({...request, ...scope}))),
-  );
-  return requests.map((_, index) => counts
-    .slice(index * scopes.length, (index + 1) * scopes.length)
-    .reduce((sum, value) => sum + value, 0));
+function countScopedTasks(requests) {
+  return bitrixApi.countTasksBatch(requests.map((request) => ({...request, ...countScope.value})));
 }
 
 // Историческим выборкам нужны свои поля: без STATUS не отфильтровать отклонённые, без COMMENTS_COUNT

@@ -3,7 +3,7 @@ import {showToast} from '../../toastHost/showToast.js';
 import { getTaskIdFromUrl, insertCSS } from '../../utils.js';
 
 export async function editTaskTitle(sessionId, options = {}) {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const titleBlock = document.querySelector('.ui-toolbar-title-item-box');

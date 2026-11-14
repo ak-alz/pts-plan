@@ -91,31 +91,40 @@ async function completeSelectedTasks() {
   try {
     const taskIds = completingTasks.map((task) => task.id);
 
-    await bitrixApi.completeTasksBatch(taskIds);
+    // Bitrix отказывает по отдельным задачам (нет прав, обязателен результат), не роняя весь запрос:
+    // завершёнными считаем только те, по которым пришло подтверждение
+    const { doneIds, failedIds: failedCompleteIds } = await bitrixApi.completeTasksBatch(taskIds);
+    const doneTasks = completingTasks.filter((task) => doneIds.includes(task.id));
 
     let failedApproveCount = 0;
 
     if (approveControlledTasks.value) {
-      const controlledTaskIds = completingTasks.filter((task) => task.taskControl).map((task) => task.id);
+      const controlledTaskIds = doneTasks.filter((task) => task.taskControl).map((task) => task.id);
       if (controlledTaskIds.length) {
         const { failedIds } = await bitrixApi.approveTasksBatch(controlledTaskIds);
         failedApproveCount = failedIds.length;
       }
     }
 
+    const warnings = [];
+    if (failedCompleteIds.length) {
+      warnings.push(`Не удалось завершить ${failedCompleteIds.length} из ${taskIds.length}. Обычно причина — нет прав или у задачи обязателен результат. Они остались в списке.`);
+    }
+    if (failedApproveCount) {
+      warnings.push(`Не удалось подтвердить выполнение для ${failedApproveCount} из завершённых — обычно это значит, что вы не постановщик и не наблюдатель.`);
+    }
+
     showToast({
-      severity: failedApproveCount ? 'warn' : 'success',
-      summary: 'Сохранено',
-      detail: failedApproveCount
-        ? `Задачи завершены, но не удалось подтвердить выполнение (нет прав постановщика/наблюдателя) для ${failedApproveCount} из них.`
-        : 'Задачи успешно завершены.',
-      life: 5000,
+      severity: warnings.length ? 'warn' : 'success',
+      summary: doneTasks.length ? 'Сохранено' : 'Задачи не завершены',
+      detail: warnings.length ? warnings.join(' ') : 'Задачи успешно завершены.',
+      life: warnings.length ? 8000 : 5000,
     });
 
-    completedTasks.value = [...completedTasks.value, ...completingTasks];
-    selectedCompletedTasks.value = [...selectedCompletedTasks.value, ...completingTasks];
-    selectedPendingTasks.value = [];
-    emit('change');
+    completedTasks.value = [...completedTasks.value, ...doneTasks];
+    selectedCompletedTasks.value = [...selectedCompletedTasks.value, ...doneTasks];
+    selectedPendingTasks.value = completingTasks.filter((task) => !doneIds.includes(task.id));
+    if (doneTasks.length) emit('change');
   } catch (e) {
     console.warn(e);
     showToast({
@@ -142,19 +151,22 @@ async function undoSelectedTasks() {
   try {
     const taskIds = undoingTasks.map((task) => task.id);
 
-    await bitrixApi.renewTasksBatch(taskIds);
+    const { doneIds, failedIds } = await bitrixApi.renewTasksBatch(taskIds);
+    const renewedTasks = undoingTasks.filter((task) => doneIds.includes(task.id));
 
     showToast({
-      severity: 'success',
-      summary: 'Отменено',
-      detail: 'Задачи вернулись в свою колонку канбана со статусом «Ждёт выполнения».',
-      life: 5000,
+      severity: failedIds.length ? 'warn' : 'success',
+      summary: renewedTasks.length ? 'Отменено' : 'Задачи не возвращены',
+      detail: failedIds.length
+        ? `Не удалось вернуть в работу ${failedIds.length} из ${taskIds.length} — скорее всего, на это нет прав. Они остались завершёнными.`
+        : 'Задачи вернулись в свою колонку канбана со статусом «Ждёт выполнения».',
+      life: failedIds.length ? 8000 : 5000,
     });
 
-    completedTasks.value = completedTasks.value.filter((task) => !taskIds.includes(task.id));
-    selectedCompletedTasks.value = [];
-    selectedPendingTasks.value = [...selectedPendingTasks.value, ...undoingTasks];
-    emit('change');
+    completedTasks.value = completedTasks.value.filter((task) => !doneIds.includes(task.id));
+    selectedCompletedTasks.value = undoingTasks.filter((task) => !doneIds.includes(task.id));
+    selectedPendingTasks.value = [...selectedPendingTasks.value, ...renewedTasks];
+    if (renewedTasks.length) emit('change');
   } catch (e) {
     console.warn(e);
     showToast({

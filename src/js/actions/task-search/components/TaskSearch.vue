@@ -16,7 +16,7 @@ import {
 } from 'primevue';
 import {computed, onMounted, reactive, ref, watch} from 'vue';
 
-import BitrixApi from '../../../BitrixApi.js';
+import BitrixApi, {getTitleIndexWords} from '../../../BitrixApi.js';
 import { usePersonalGroupFilter } from '../../../composables/usePersonalGroupFilter.js';
 import { collectStagesFromTasks } from '../../../personalPlan.js';
 import {showToast} from '../../../toastHost/showToast.js';
@@ -305,7 +305,20 @@ async function search() {
       order: { field: sortField.value, direction: 'DESC' },
     };
 
-    const requests = [runSearch(baseParams)];
+    // Поиск по каждому слову сначала идёт через индекс портала по началам слов — он в разы быстрее.
+    // Ничего не нашлось — повторяем обычным поиском по любой части слова («ведомлен» → «уведомления»)
+    // Без слов от трёх букв индекс к запросу не применяется: запрос с ним совпал бы с обычным
+    const hasIndexedTitle = !!(form.smartTitleSearch && getTitleIndexWords(baseParams.title).length);
+    const searchByTitle = async () => {
+      if (!hasIndexedTitle) return runSearch(baseParams);
+
+      // Отказ запроса с индексом (на портале есть ключ фильтра, но нет самого индекса) — не повод
+      // оставлять пользователя без результата: обычный поиск от индекса не зависит
+      const indexedResults = await runSearch({...baseParams, titleIndexSearch: true}).catch(() => []);
+      return indexedResults.length ? indexedResults : runSearch(baseParams);
+    };
+
+    const requests = [searchByTitle()];
 
     if (form.extendedSearch && form.title.trim()) {
       requests.push(
@@ -575,7 +588,7 @@ function formatDate(dateString) {
             size="small"
           />
           <label
-            v-tooltip.top="'Разбивает запрос на слова и ищет каждое отдельно — порядок не важен'"
+            v-tooltip.top="'Разбивает запрос на слова и ищет каждое отдельно — порядок не важен. Слова ищутся с начала: «лог» найдёт «логин», но не «каталог». Если так ничего не нашлось, поиск повторяется по любой части слова. Выключите, чтобы сразу искать точную фразу в любом месте названия'"
             for="smart-title-toggle"
             class="text-sm cursor-pointer"
           >

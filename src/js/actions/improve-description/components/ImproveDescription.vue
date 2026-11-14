@@ -172,10 +172,11 @@ function onApiKeySaved() {
 /* Загрузка данных задачи */
 async function loadTask() {
   const { data } = await bitrixApi.getTask(props.taskId, [
-    'TITLE', 'DESCRIPTION', 'STATUS', 'STAGE_ID', 'GROUP_ID', 'PARENT_ID', 'CREATED_BY', 'RESPONSIBLE_ID',
-    'CREATED_DATE', 'DEADLINE', 'START_DATE_PLAN', 'END_DATE_PLAN', 'UF_TASK_WEBDAV_FILES',
+    'TITLE', 'DESCRIPTION', 'DESCRIPTION_IN_BBCODE', 'STATUS', 'STAGE_ID', 'GROUP_ID', 'PARENT_ID', 'CREATED_BY',
+    'RESPONSIBLE_ID', 'CREATED_DATE', 'DEADLINE', 'START_DATE_PLAN', 'END_DATE_PLAN', 'UF_TASK_WEBDAV_FILES',
   ]);
   const task = data?.result?.task ?? {};
+  isHtmlDescription.value = task.descriptionInBbcode === 'N';
 
   Object.assign(context, {
     title: task.title ?? '',
@@ -488,6 +489,8 @@ function renderBbcode(text) {
 
 const applying = ref(false);
 const applied = ref(false);
+// Описание хранится как HTML, а не BBCode (старый формат): записать поверх него BBCode нельзя
+const isHtmlDescription = ref(false);
 const rollingBack = ref(false);
 const backup = ref(null);
 
@@ -504,6 +507,16 @@ async function updateDescription(description) {
 }
 
 async function applyDescription() {
+  if (isHtmlDescription.value) {
+    showToast({
+      severity: 'warn',
+      summary: 'Описание в старом формате',
+      detail: 'Описание этой задачи хранится как HTML — скопируйте новый текст и вставьте его через обычную форму задачи.',
+      life: 8000,
+    });
+    return;
+  }
+
   applying.value = true;
   try {
     await descriptionEditor.value?.sync();

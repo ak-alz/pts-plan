@@ -112,7 +112,8 @@ function addGroupNames() {
  * @param {Map<string, number>} countsByGroup имя группы (или NO_GROUP_VALUE) → количество блоков
  */
 function renderFilterOptions(select, countsByGroup) {
-  const items = [{value: ALL_GROUPS_VALUE, label: 'Все группы'}];
+  // Список собран из сообщений на этой странице: остальные страницы портал отдаёт отдельно
+  const items = [{value: ALL_GROUPS_VALUE, label: 'Все группы на странице'}];
 
   if (countsByGroup.has(NO_GROUP_VALUE)) {
     items.push({value: NO_GROUP_VALUE, label: `Без группы (${countsByGroup.get(NO_GROUP_VALUE)})`});
@@ -154,6 +155,9 @@ function addGroupFilter() {
       font-size: 12px;
       border: 1px solid #dbdbdb;
     }
+    .pts-bitrix-dark .pts-alert-group-filter {
+      border-color: #444c56;
+    }
     .pts-alert-filtered-out {
       display: none !important;
     }
@@ -173,13 +177,20 @@ function addGroupFilter() {
   settingsRow.append(select);
 }
 
-// Bitrix показывает вверху страницы не то число, что реально в списке
-function fixTotalCount() {
+// Число вверху страницы портал считает по всему фильтру (все страницы списка), но после удаления
+// сообщений не пересчитывает — удаление идёт без перезагрузки. Вычитаем то, что исчезло со страницы
+function keepTotalCountActual() {
   const messages = document.querySelector('div.im-messages');
   const total = document.querySelector('span.alert-total b');
   if (!messages || !total) return;
 
-  total.textContent = messages.children.length;
+  const initialTotal = Number(total.textContent);
+  if (!Number.isFinite(initialTotal)) return;
+
+  const initialCountOnPage = messages.children.length;
+  new MutationObserver(() => {
+    total.textContent = initialTotal - (initialCountOnPage - messages.children.length);
+  }).observe(messages, {childList: true});
 }
 
 export function alertPage(options = {}) {
@@ -189,5 +200,5 @@ export function alertPage(options = {}) {
   if (options.alertPageGroupName) addGroupNames();
   if (options.alertPageGroupFilter) addGroupFilter();
 
-  fixTotalCount();
+  keepTotalCountActual();
 }

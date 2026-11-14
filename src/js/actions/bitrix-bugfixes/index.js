@@ -7,6 +7,10 @@ async function redirectAfterTaskCreate() {
   const taskId = url.searchParams.get('EVENT_TASK_ID');
   if (!taskId) return;
 
+  // «Создать и добавить ещё»: Bitrix сам открывает пустую форму следующей задачи (edit/0) с теми же
+  // параметрами события — уводить с неё на просмотр только что созданной нельзя
+  if (/\/task\/edit\/0\/?$/.test(url.pathname)) return;
+
   // Эта страница — прямой ответ на POST формы создания задачи (Bitrix не делает серверный
   // редирект на чистый GET). Пока ждём BACKURL ниже, текущая запись в истории остаётся
   // «POST-страницей» — обновление или переход назад в это время просит подтвердить повторную
@@ -27,7 +31,7 @@ async function redirectAfterTaskCreate() {
 }
 
 function scrollUserLists() {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   // .task-detail-sidebar-info-users-list — общий класс Bitrix для блоков «Соисполнители»

@@ -6,7 +6,8 @@ import { computed, onMounted, provide, ref, watch } from 'vue';
 
 import BitrixApi from '../../../BitrixApi.js';
 import {showToast} from '../../../toastHost/showToast.js';
-import {findRootTaskId, getInaccessibleTaskTitle, getTaskPointsFromName, getTaskUrl, pluralize, simplifyColumnName} from '../../../utils.js';
+import {findRootTaskId, getInaccessibleTaskTitle, getTaskPointsFromName, pluralize, simplifyColumnName} from '../../../utils.js';
+import { createGroupSource, createPersonalSource } from '../taskSource.js';
 import { defaultSortColumn, GROUP_BY_PARENT_STORAGE_KEY } from '../variables.js';
 import ColumnTable from './ColumnTable.vue';
 import CompleteTasksTable from './CompleteTasksTable.vue';
@@ -18,23 +19,31 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  // Группу выбирает оболочка: на личном плане селектом, на групповом канбане это сама группа
-  // (см. ScrumPointsApp.vue). Сюда всегда приходит уже выбранная
+  // Группу выбирает оболочка: на групповом канбане это сама группа, на личном плане — выбранная
+  // в селекте (см. ScrumPointsApp.vue). Пусто — таблица строится по личным колонкам «Моего плана»
   groupId: {
     type: String,
-    required: true,
+    default: null,
+  },
+  // Чей это личный план; нужен только когда группа не выбрана
+  personalUserId: {
+    type: String,
+    default: null,
   },
 });
 
 const bitrixApi = new BitrixApi(props.sessionId);
+// Оболочка пересоздаёт компонент при смене группы, поэтому источник выбирается один раз
+const source = props.groupId
+  ? createGroupSource(bitrixApi, props.groupId)
+  : createPersonalSource(bitrixApi, props.personalUserId);
 
-provide('groupId', props.groupId);
 provide('bitrixApi', bitrixApi);
 
 const settings = ref({});
 const emptySettings = computed(() => !settings.value.users?.length || !settings.value.columns?.length);
-// Ключ общий с виджетом самой группы: колонки и исполнители настраиваются один раз
-const settingsStorageKey = computed(() => `scrum-points-settings-${props.groupId}`);
+// У группы ключ общий с виджетом на её канбане: колонки и исполнители настраиваются один раз
+const settingsStorageKey = source.settingsStorageKey;
 const columns = ref([]);
 const columnsMap = computed(() => new Map(columns.value.map((column) => [column.id, column])));
 const visibleColumns = computed(() => columns.value.filter(({ id }) => settings.value.columns?.length && settings.value.columns?.includes(id)));
@@ -63,7 +72,7 @@ const rootByTaskId = computed(() => {
       id: rootId,
       // Корня нет среди известных уже после загрузки предков — значит, к нему нет доступа
       title: rootTask?.title ?? (ancestorsLoaded.value ? getInaccessibleTaskTitle(rootId) : `Задача #${rootId}`),
-      url: rootTask ? getTaskUrl(rootTask.groupId ?? props.groupId, rootId) : null,
+      url: rootTask ? source.getTaskUrl(rootId, rootTask.groupId) : null,
     }];
   }));
 });
@@ -119,23 +128,19 @@ function formatTasksCountTooltip(tasksCount, parentTasksCount) {
 async function fetchData() {
   isLoading.value = true;
 
-  // Присваиваем всегда, а не только при наличии записи: на личном плане группу можно переключить,
-  // и без сброса у новой группы остались бы колонки и исполнители предыдущей
-  const stored = await chrome.storage.local.get([settingsStorageKey.value]);
-  settings.value = stored[settingsStorageKey.value] ?? {};
+  const stored = await chrome.storage.local.get([settingsStorageKey]);
+  settings.value = stored[settingsStorageKey] ?? {};
 
   try {
-    // Запускаем параллельно: метаданные колонок, задачи выбранных колонок и участники группы.
-    // Колонки берём из уже загруженных настроек
+    // Метаданные колонок, задачи и те, кого можно выбрать в настройках. Колонки берём из уже
+    // загруженных настроек
     const savedColumnIds = settings.value.columns || [];
+    const { stages, tasks, members: rawGroupUsers } = await source.load(savedColumnIds);
 
-    const [stagesResponse, tasks, rawGroupUsers] = await Promise.all([
-      bitrixApi.getStages(props.groupId),
-      bitrixApi.getAllTasksByStages(savedColumnIds, props.groupId),
-      bitrixApi.getGroupUsers(props.groupId),
-    ]);
-
-    rawTasksById.value = Object.fromEntries(tasks.map((task) => [String(task.id), task]));
+    // Личный план отдаёт задачи всех колонок; предки нужны только тем, что попадут в таблицу
+    rawTasksById.value = Object.fromEntries(
+      tasks.filter((task) => savedColumnIds.includes(task.stageId)).map((task) => [String(task.id), task]),
+    );
     ancestorsById.value = {};
     ancestorsLoaded.value = false;
     if (groupByParent.value || settings.value.countParentTasks) loadAncestors();
@@ -147,7 +152,7 @@ async function fetchData() {
       url: user.DETAIL_URL || '',
     }));
 
-    columns.value = Object.values(stagesResponse.data.result)
+    columns.value = stages
       .sort((a, b) => a.SORT - b.SORT)
       .map((stage) => ({
         id: stage.ID,
@@ -185,7 +190,7 @@ async function fetchData() {
         usersMap[responsible.id].columns[stageId].tasks.push({
           id: task.id,
           name: task.title,
-          url: getTaskUrl(props.groupId, task.id),
+          url: source.getTaskUrl(task.id),
           dateUpdated: dayjs(task.activityDate).unix(),
           formattedDateUpdated: dayjs(task.activityDate).format('DD.MM.YYYY HH:mm:ss'),
           points,
@@ -339,7 +344,7 @@ async function postSummary(column) {
     const response = await bitrixApi.addComment(settings.value.summaryTaskId, `TAGALL,\n${buildSummaryText(column)}`);
     const commentId = response.data?.result;
     const commentUrl = commentId
-      ? `/workgroups/group/${props.groupId}/tasks/task/view/${settings.value.summaryTaskId}/?MID=${commentId}#com${commentId}`
+      ? `${source.getTaskUrl(settings.value.summaryTaskId)}?MID=${commentId}#com${commentId}`
       : null;
     showToast({
       severity: 'success',

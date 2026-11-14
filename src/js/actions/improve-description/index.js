@@ -8,7 +8,7 @@ import { getTaskIdFromUrl } from '../../utils.js';
 import ImproveDescriptionApp from './ImproveDescriptionApp.vue';
 
 export function improveDescription(sessionId) {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const titleBlock = document.querySelector('.ui-toolbar-title-item-box');

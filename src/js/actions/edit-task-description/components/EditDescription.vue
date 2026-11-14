@@ -49,9 +49,21 @@ async function changeEditorMode(mode) {
 onMounted(async () => {
   try {
     const [{data}, stored] = await Promise.all([
-      api.getTask(props.taskId, ['DESCRIPTION']),
+      api.getTask(props.taskId, ['DESCRIPTION', 'DESCRIPTION_IN_BBCODE']),
       chrome.storage.local.get(EDITOR_MODE_STORAGE_KEY).catch(() => ({})),
     ]);
+    // Описание в старом формате — HTML, а не BBCode (редкость: задачи, поставленные через API без
+    // перевода в BBCode). Редактор показал бы сырые теги, а сохранение смешало бы два формата
+    if (data?.result?.task?.descriptionInBbcode === 'N') {
+      showToast({
+        severity: 'warn',
+        summary: 'Описание в старом формате',
+        detail: 'Описание этой задачи хранится как HTML — отредактируйте его через обычную форму задачи.',
+        life: 6000,
+      });
+      emit('close', false);
+      return;
+    }
     editorMode.value = stored[EDITOR_MODE_STORAGE_KEY] ?? 'bbcode';
     originalDescription = data?.result?.task?.description ?? '';
     description.value = originalDescription;

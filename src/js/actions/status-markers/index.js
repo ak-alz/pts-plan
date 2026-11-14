@@ -1,7 +1,7 @@
 import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const statusContainer = document.querySelector('.task-section-status-container-flex');

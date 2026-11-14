@@ -3,7 +3,7 @@ import {showToast} from '../../toastHost/showToast.js';
 import {getTaskIdFromUrl} from '../../utils.js';
 
 export function removeNotifications(sessionId) {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const buttonContainer = document.querySelector('.task-detail-extra-right');
@@ -20,7 +20,18 @@ export function removeNotifications(sessionId) {
     async onclick() {
       this.setAttribute('disabled', '');
 
-      let notifications = await BitrixApi.getUserNotifications(ids.taskId);
+      let notifications;
+      try {
+        notifications = await bitrixApi.getTaskNotificationIds(ids.taskId);
+        if (notifications.length) await bitrixApi.removeNotifications(notifications);
+      } catch (error) {
+        console.warn(error);
+        this.removeAttribute('disabled');
+        showToast({severity: 'error', summary: 'Не удалось удалить уведомления', detail: error.message, life: 5000});
+
+        return;
+      }
+
       if (!notifications.length) {
         this.removeAttribute('disabled');
         showToast({severity: 'info', summary: 'Уведомлений нет', detail: 'Удалять нечего.', life: 3000});
@@ -28,11 +39,6 @@ export function removeNotifications(sessionId) {
         return;
       }
 
-      notifications = notifications.map((notification) => {
-        return notification.getAttribute('data-id');
-      });
-
-      await bitrixApi.removeNotifications(notifications);
       this.textContent = 'Уведомления успешно удалены';
       this.classList.add('remove-notifications--success');
       showToast({severity: 'success', summary: 'Уведомления удалены', detail: `Удалено: ${notifications.length}`, life: 3000});

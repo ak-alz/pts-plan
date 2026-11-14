@@ -1,5 +1,5 @@
 <script setup>
-import {Button, Dialog, Message, Select} from 'primevue';
+import {Button, Dialog, Select} from 'primevue';
 import { computed, onMounted, ref } from 'vue';
 
 import BitrixApi from '../../BitrixApi.js';
@@ -20,16 +20,25 @@ const props = defineProps({
 
 const isPersonal = computed(() => props.context.type === 'personal');
 
-// У «Моего плана» нет своего канбана, а таблица баллов держится на его колонках, поэтому на личном
-// плане виджет работает по выбранной группе. Настройки при этом общие с виджетом самой группы
+// На личном плане таблица по умолчанию строится по личным колонкам «Моего плана», а выбор группы
+// переключает её на колонки канбана этой группы — с теми же настройками, что у виджета самой группы
 const { groupOptions, selectedGroupId, restoreGroupFilter } = usePersonalGroupFilter(
   new BitrixApi(props.sessionId),
   `scrum-points-personal-group-${props.context.id}`,
 );
 const activeGroupId = computed(() => (isPersonal.value ? selectedGroupId.value : props.context.id));
 
-onMounted(() => {
-  if (isPersonal.value) restoreGroupFilter();
+// До восстановления выбора неизвестно, по чему строить таблицу: без ожидания она сначала загрузила
+// бы весь личный план, а потом переключилась на сохранённую группу
+const isSourceReady = ref(!isPersonal.value);
+
+onMounted(async () => {
+  if (!isPersonal.value) return;
+  try {
+    await restoreGroupFilter();
+  } finally {
+    isSourceReady.value = true;
+  }
 });
 
 const modalOpened = ref(false);
@@ -71,14 +80,15 @@ const isInfoModalOpened = ref(false);
     >
       <FormField
         label="Группа"
-        tip="У личного плана нет своего канбана, поэтому баллы считаются по колонкам выбранной группы"
+        tip="Пусто — баллы считаются по личным колонкам «Моего плана». Выберите группу, чтобы считать по колонкам её канбана"
       >
         <Select
           v-model="selectedGroupId"
           :options="groupOptions"
           option-label="name"
           option-value="id"
-          placeholder="Выберите группу"
+          placeholder="Мой план — личные колонки"
+          show-clear
           filter
           filter-placeholder="Поиск"
           size="small"
@@ -87,20 +97,12 @@ const isInfoModalOpened = ref(false);
       </FormField>
     </div>
 
-    <Message
-      v-if="isPersonal && !activeGroupId"
-      severity="info"
-      size="small"
-      :closable="false"
-    >
-      Выберите группу — баллы считаются по колонкам её канбана.
-    </Message>
-
     <ScrumPoints
-      v-if="activeGroupId"
-      :key="activeGroupId"
+      v-if="isSourceReady"
+      :key="activeGroupId ?? 'personal'"
       :session-id
       :group-id="activeGroupId"
+      :personal-user-id="isPersonal ? context.id : null"
     />
   </Dialog>
 

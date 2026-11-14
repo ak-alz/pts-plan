@@ -1,7 +1,7 @@
 import {BROWSER_NOTIFICATION_MESSAGE_TYPE} from '../../messages.js';
 import {onNewNotificationBalloon} from '../../notificationBalloons.js';
-import {NOTIF_TASK_ID_RE} from '../../patterns.js';
-import {getTaskUrl, isUserMentioned} from '../../utils.js';
+import {NOTIF_DEAL_ID_RE} from '../../patterns.js';
+import {getNotificationTaskId, getTaskUrl, isUserMentioned} from '../../utils.js';
 
 const PROCESSED_CLASS = 'js-pts-browser-processed';
 
@@ -11,13 +11,16 @@ export function browserNotifications(options = {}) {
   const showOwnOnly = !!(options.browserNotificationsOwnOnly && options.userFirstName && options.userLastName);
 
   // Всплывающее уведомление не содержит ссылки на задачу, только её ID в тексте вида "[#481203]".
-  // Group ID неизвестен, но getTaskUrl резолвит задачу по любому userId — свой userId всегда под рукой
-  function extractTaskUrl(text) {
-    const taskId = text.match(NOTIF_TASK_ID_RE)?.[1];
-    if (!taskId || !options.userId) return null;
+  // Group ID неизвестен, но задача открывается и через личный раздел — см. getTaskUrl.
+  // В напоминании о сделке так же записан номер сделки — оно ведёт на её карточку
+  function extractTargetUrl(text) {
+    const dealId = text.match(NOTIF_DEAL_ID_RE)?.[1];
+    if (dealId) return new URL(`/crm/deal/details/${dealId}/`, window.location.origin).href;
 
-    const path = getTaskUrl(null, taskId, options.userId);
-    return path ? new URL(path, window.location.origin).href : null;
+    const taskId = getNotificationTaskId(text);
+    if (!taskId) return null;
+
+    return new URL(getTaskUrl(null, taskId, options.userId), window.location.origin).href;
   }
 
   onNewNotificationBalloon(PROCESSED_CLASS, ({notification, text}) => {
@@ -27,7 +30,7 @@ export function browserNotifications(options = {}) {
     const title = titleElement?.textContent.trim() || 'Bitrix24';
 
     // Если задачу не удалось определить, кликом по браузерному уведомлению возвращаемся на текущую страницу
-    const url = extractTaskUrl(text) ?? window.location.href;
+    const url = extractTargetUrl(text) ?? window.location.href;
 
     // Один и тот же баллон Bitrix одновременно приходит во все открытые вкладки — по этому ключу
     // фоновый скрипт схлопывает повторы в одно системное уведомление вместо N дублей

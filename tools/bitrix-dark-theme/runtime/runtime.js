@@ -155,8 +155,11 @@ function convertColorValue(value, colorKind) {
   return changed ? convertedValue : null;
 }
 
+// <html> документа, в котором скрипт темы запустился: после document.open() у документа будет уже другой
+const themedRoot = document.documentElement;
+
 // Есть ли у Dark Reader тёмная версия переменной — проверяем один раз на имя
-const rootStyle = getComputedStyle(document.documentElement);
+const rootStyle = getComputedStyle(themedRoot);
 const darkVariableExists = new Map();
 
 /**
@@ -259,6 +262,11 @@ function isExtensionStylesheet(ownerNode) {
  * Проходит по таблицам стилей документа и пересчитывает те, что ещё не видели и которых нет в снимке.
  */
 function scanNewStylesheets() {
+  // Документ перезаписали через document.open() — так делает редактор комментариев в своём фрейме about:blank.
+  // Стиль темы остался в прежнем <html>, вставлять порции правил некуда, а новый документ перекрашивает
+  // страница-владелец (themeFrame): у его <html> нет отметки о своём скрипте темы
+  if (document.documentElement !== themedRoot) return;
+
   const addedRules = [];
   for (const stylesheet of document.styleSheets) {
     const ownerNode = stylesheet.ownerNode;
@@ -310,7 +318,9 @@ function placeDynamicStyles() {
   for (const styleElement of dynamicStyleElements) {
     const isAfterBody = !document.body || Boolean(document.body.compareDocumentPosition(styleElement) & Node.DOCUMENT_POSITION_FOLLOWING);
     if (styleElement.parentNode === document.documentElement && isAfterBody) continue;
-    document.documentElement.insertBefore(styleElement, themeStyleElement);
+    // Стиль темы на мгновение может оказаться вне <html> (его вернёт keepThemeStyleLast) — тогда просто в конец
+    const nextElement = themeStyleElement.parentNode === document.documentElement ? themeStyleElement : null;
+    document.documentElement.insertBefore(styleElement, nextElement);
   }
 }
 

@@ -1,9 +1,15 @@
 import dayjs from 'dayjs';
 
 import BitrixApi from '../../BitrixApi.js';
-import {NOTIF_CHANGE_RE, NOTIF_CLOSE_RE, NOTIF_NEW_TASK_RE, NOTIF_REACTION_RE, TAGALL_STATUS_RE} from '../../patterns.js';
+import {NOTIF_DEADLINE_RE, NOTIF_FEEDBACK_RE, TAGALL_STATUS_RE} from '../../patterns.js';
 import {showToast} from '../../toastHost/showToast.js';
-import {canonicalizeTagallHtml, getTaskIdFromUrl, rehydrateOnChanges, triggerScrollLoadMore} from '../../utils.js';
+import {
+  canonicalizeTagallHtml,
+  getNotificationEvent,
+  getTaskIdFromUrl,
+  rehydrateOnChanges,
+  triggerScrollLoadMore,
+} from '../../utils.js';
 
 const TASK_STATUS_CLOSED = 5;
 
@@ -65,9 +71,14 @@ export function removeSystemNotifications(sessionId, options = {}) {
     removeSystemNotificationsNew: removeNew = false,
     removeSystemNotificationsReactions: removeReactions = false,
     removeSystemNotificationsStatus: removeStatus = false,
+    removeSystemNotificationsDeadlines: removeDeadlines = false,
   } = options;
 
-  if (!dedupe && !removeSystem && !removeChanges && !removeClosed && !removeClosedTasks && !removeNew && !removeReactions && !removeStatus) return;
+  if (!dedupe && !removeSystem && !removeChanges && !removeClosed && !removeClosedTasks && !removeNew && !removeReactions && !removeStatus && !removeDeadlines) return;
+
+  // Событие задачи → включена ли очистка таких уведомлений. По событию, а не по фразе в тексте:
+  // комментарий со словами «закрыл задачу» — всё ещё комментарий, удалять его нельзя
+  const removedEvents = {change: removeChanges, close: removeClosed, new: removeNew, reaction: removeReactions};
 
   const bitrixApi = new BitrixApi(sessionId);
 
@@ -80,6 +91,7 @@ export function removeSystemNotifications(sessionId, options = {}) {
     removeNew && 'новые задачи',
     removeReactions && 'реакции',
     removeStatus && 'статусные уведомления',
+    removeDeadlines && 'напоминания о дедлайнах',
     dedupe && 'дубли',
   ].filter(Boolean);
   const buttonTitle = activeFilterLabels.length ? `Удаляет: ${activeFilterLabels.join(', ')}` : '';
@@ -109,15 +121,16 @@ export function removeSystemNotifications(sessionId, options = {}) {
         // нескольких подгрузок бывает длинным
         const systemIds = new Set(allNotifications
           .filter((notification) => {
-            // Если вместо аватарки серый колокольчик (в новых версиях синяя системная иконка)
+            // Если вместо аватарки серый колокольчик (в новых версиях синяя системная иконка).
+            // С ней приходят и уведомления самого портала, у которых нет отправителя, — сводки
+            // дедлайнов, напоминания о сделках, обратная связь по задачам, потерянные лиды (проверено
+            // на локальной копии портала): под эту настройку попадают и они
             if (removeSystem && notification.querySelector('.bx-im-content-notification-item-avatar__system-icon')) return true;
 
             const contentElement = notification.querySelector('.bx-im-content-notification-item-content__content-text');
             const notificationText = contentElement?.textContent?.trim();
-            if (removeChanges && NOTIF_CHANGE_RE.test(notificationText)) return true;
-            if (removeClosed && NOTIF_CLOSE_RE.test(notificationText)) return true;
-            if (removeNew && NOTIF_NEW_TASK_RE.test(notificationText)) return true;
-            if (removeReactions && NOTIF_REACTION_RE.test(notificationText)) return true;
+            if (removedEvents[getNotificationEvent(notificationText)]) return true;
+            if (removeDeadlines && NOTIF_DEADLINE_RE.test(notificationText)) return true;
 
             if (removeStatus) {
               const canonicalText = contentElement ? canonicalizeTagallHtml(contentElement.innerHTML) : '';
@@ -135,6 +148,11 @@ export function removeSystemNotifications(sessionId, options = {}) {
           for (const notification of allNotifications) {
             const id = notification.getAttribute('data-id');
             if (systemIds.has(id)) continue;
+
+            // Сводка дедлайнов перечисляет несколько задач, а обратная связь — отдельное событие со
+            // ссылкой на задачу: ни то, ни другое не «дубль» и не «уведомление закрытой задачи»
+            const notificationText = notification.querySelector('.bx-im-content-notification-item-content__content-text')?.textContent ?? '';
+            if (NOTIF_DEADLINE_RE.test(notificationText) || NOTIF_FEEDBACK_RE.test(notificationText)) continue;
 
             const taskLink = notification.querySelector('a[href*="/tasks/task/view/"]');
             const ids = getTaskIdFromUrl(taskLink?.getAttribute('href') ?? '');

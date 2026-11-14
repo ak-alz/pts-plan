@@ -10,11 +10,22 @@ export const PORTAL_ORIGIN = 'https://plan.pixelplus.ru';
 const TOOL_DIRECTORY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD_DIRECTORY = path.join(TOOL_DIRECTORY, 'build');
 
+/**
+ * Включать ли в тему собственные доработки портала (config/portal/). Всё остальное в теме — только
+ * стандартный Битрикс. Чтобы убрать кастом, достаточно поставить `false` или удалить папку
+ * config/portal/ целиком: без неё сборка идёт как обычно, а стили портала на странице, как и раньше,
+ * перекрашивает подстраховка (runtime/runtime.js).
+ */
+export const INCLUDE_PORTAL_CUSTOM = true;
+
 /** Пути к файлам генератора. */
 export const PATHS = {
   // Правятся руками
   stylesheetList: path.join(TOOL_DIRECTORY, 'config/paths.json'),
   extraCss: path.join(TOOL_DIRECTORY, 'config/extra.css'),
+  // Кастом портала — см. INCLUDE_PORTAL_CUSTOM
+  portalStylesheetList: path.join(TOOL_DIRECTORY, 'config/portal/paths.json'),
+  portalExtraCss: path.join(TOOL_DIRECTORY, 'config/portal/extra.css'),
   // Код подстраховки, который pack.mjs вставляет в скрипт темы
   runtime: path.join(TOOL_DIRECTORY, 'runtime/runtime.js'),
   // Промежуточные файлы сборки — в .gitignore
@@ -49,11 +60,33 @@ export const PALETTE = {
 };
 
 /**
- * Читает список таблиц стилей портала, из которых собирается тема.
+ * Есть ли в сборке файл из слоя кастома портала.
+ * @param {string} filePath Путь к файлу из config/portal/.
+ * @returns {boolean}
+ */
+function hasPortalCustomFile(filePath) {
+  return INCLUDE_PORTAL_CUSTOM && fs.existsSync(filePath);
+}
+
+/**
+ * Читает список таблиц стилей портала, из которых собирается тема: стандартные стили Битрикса и,
+ * если слой кастома включён, собственные стили портала — после стандартных, как и на странице.
  * @returns {string[]} Пути от корня портала, например `/bitrix/js/ui/buttons/dist/ui.buttons.bundle.min.css`.
  */
 export function readStylesheetPaths() {
-  return JSON.parse(fs.readFileSync(PATHS.stylesheetList, 'utf8'));
+  const stylesheetPaths = JSON.parse(fs.readFileSync(PATHS.stylesheetList, 'utf8'));
+  if (!hasPortalCustomFile(PATHS.portalStylesheetList)) return stylesheetPaths;
+
+  return [...stylesheetPaths, ...JSON.parse(fs.readFileSync(PATHS.portalStylesheetList, 'utf8'))];
+}
+
+/**
+ * Файлы ручных правок в том порядке, в котором они дописываются в тему: правки кастома портала —
+ * последними.
+ * @returns {string[]} Пути к CSS-файлам.
+ */
+export function getExtraCssFiles() {
+  return hasPortalCustomFile(PATHS.portalExtraCss) ? [PATHS.extraCss, PATHS.portalExtraCss] : [PATHS.extraCss];
 }
 
 /**

@@ -1,0 +1,77 @@
+/* Ручные правки для собственных доработок портала plan.pixelplus.ru — поверх того, что Dark Reader
+   сгенерировал по стилям из config/portal/paths.json. На других порталах этих элементов нет,
+   правила там просто ни к чему не применяются. Правила оформления — как в config/extra.css:
+   перед каждым комментарий, что чинится и почему Dark Reader с этим не справился. */
+
+/* Время в заголовке колонки канбана (доработка портала): фон — цвет колонки (inline), светлый или
+   тёмный. Белый текст с тенью читается на любом — как у остальных подписей заголовка в config/extra.css. */
+.main-kanban-column-px-time {
+  color: #fff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 0 1px rgba(0, 0, 0, .6);
+}
+
+/* Окно при завершении рабочего дня: текст лежит поверх светлой картинки и своего цвета не задаёт —
+   наследует цвет окна, который тема делает светлым. Картинку тема не меняет, поэтому текст остаётся тёмным. */
+.pixelplus-close-day-notify .text,
+.pixelplus-close-day-notify .link-button-wrapper {
+  color: #1c2128 !important;
+}
+
+/* Стрелки всплывающих подсказок нарисованы рамкой: Dark Reader красит рамки светлее фона, и стрелка
+   перестаёт совпадать со своим окном. Возвращаем ей цвет фона темы. */
+.message-delete-alert::after {
+  border-top-color: #22272e !important;
+}
+
+.template-bitrix24 .v-popper--theme-tooltip .v-popper__arrow-inner {
+  border-color: #22272e !important;
+}
+
+/* Кнопка «задача SEO-Jun» в панели редактора комментария — светлая картинка 20×20 с красной подписью,
+   а не CSS-иконка. Инверсия делает фон тёмным, поворот оттенка возвращает подписи красный цвет, а
+   яркость с контрастом нужны, чтобы она читалась: без них красный на тёмном получался слишком глухим. */
+.main-post-form-toolbar-button .bx-b-pixeplus-promo-jun-task {
+  filter: invert(1) hue-rotate(180deg) brightness(1.6) contrast(1.2);
+}
+
+/* Иллюстрация «никто не отсутствует» в окне «Пиксель Плюс Сегодня»: тёмная заливка задана прямо
+   в разметке SVG, до неё Dark Reader не добирается. */
+.motivation-popup .absence-wrapper svg path[fill="#1D1D1D"] {
+  fill: #cdd9e5;
+}
+
+/* Графики Highcharts (NPS, обратная связь по задачам): цвета заданы атрибутами SVG. */
+.highcharts-background {
+  fill: #22272e;
+}
+
+.highcharts-container text {
+  fill: #cdd9e5 !important;
+}
+
+/* Подписи оси X, легенда и подсказка у точки — HTML-элементы с цветом #333 в style. Только сам
+   элемент подписи: вложенные цветные маркеры серий в подсказке остаются своего цвета. */
+.highcharts-axis-labels > span,
+.highcharts-legend-item > span,
+.highcharts-tooltip > span {
+  color: #cdd9e5 !important;
+}
+
+/* Фон подсказки у точки — отдельная фигура SVG с белой заливкой в атрибуте. */
+.highcharts-tooltip-box {
+  fill: #2d333b;
+}
+
+/* Серия, выключенная щелчком по легенде. */
+.highcharts-legend-item-hidden > span {
+  color: #636e7b !important;
+}
+
+.highcharts-grid-line {
+  stroke: #373e47;
+}
+
+.highcharts-axis-line,
+.highcharts-tick {
+  stroke: #444c56;
+}

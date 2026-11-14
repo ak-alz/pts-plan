@@ -1,8 +1,19 @@
-import {getTaskIdFromUrl, rehydrateOnChanges} from '../../utils.js';
+import {getTaskIdFromUrl, insertCSS, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
+
+  // У портала есть свои кнопки «Раскрыть ссылки» — в панели задачи и под каждым комментарием. Ссылки
+  // уже раскрыты, а нажатие на такую кнопку заменило бы адресом любую подпись с многоточием
+  // Кнопку в панели задачи показывает правило Bitrix с !important и тремя классами в селекторе
+  // (.task-view-buttonset.<состояние> .task-more-button) — для неё селектор длиннее, чтобы его перебить
+  insertCSS(`
+    .pixelplus-repair-long-links,
+    .task-view-buttonset .pixelplus-repair-long-links.task-more-button.webform-small-button.webform-small-button-transparent {
+      display: none !important;
+    }
+  `, 'pts-fix-links');
 
   // Bitrix обрезает длинный адрес, заменяя середину или конец на «...», но начало (и хвост, если он
   // остался) совпадают с настоящим href. Проверяем именно это, а не просто наличие многоточия:

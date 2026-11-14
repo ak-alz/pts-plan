@@ -21,7 +21,7 @@ const storageUsage = ref(null);
 // пересылать коллеге, а ключ вводится в профиле под скрытым полем именно потому, что он личный
 // installedVersion и seenNewOptions — тоже личные: с чужой выгрузкой пользователь получил бы
 // чужую версию установки и чужой список просмотренных новинок (красные точки в попапе)
-const PRIVATE_STORAGE_KEYS = ['sessionId', 'bitrixOrigin', 'installedVersion', 'seenNewOptions'];
+const PRIVATE_STORAGE_KEYS = ['sessionId', 'sessionIds', 'bitrixOrigin', 'installedVersion', 'seenNewOptions'];
 const PRIVATE_OPTION_KEYS = ['pixelToolsApiKey'];
 
 // Производные и временные ключи: кэш аналитики (у «Динамики задач» это сотни килобайт на группу) и

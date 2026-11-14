@@ -1,7 +1,7 @@
 import {getTaskIdFromUrl, getUserIdFromUrl, rehydrateOnChanges} from '../../utils.js';
 
 (() => {
-  const ids = getTaskIdFromUrl(window.location.href);
+  const ids = getTaskIdFromUrl(window.location.pathname);
   if (!ids?.taskId) return;
 
   const commentsBlock = document.querySelector('.feed-comments-block');

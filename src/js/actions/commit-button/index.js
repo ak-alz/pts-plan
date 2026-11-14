@@ -5,7 +5,7 @@ const TITLE_SELECTOR = '.ui-toolbar-title-item-box .ui-toolbar-title-item';
 
 (() => {
   async function init() {
-    const ids = getTaskIdFromUrl(window.location.href);
+    const ids = getTaskIdFromUrl(window.location.pathname);
     if (!ids?.taskId) return;
 
     const titleBlock = document.querySelector('.ui-toolbar-title-item-box');

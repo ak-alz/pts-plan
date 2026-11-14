@@ -1,12 +1,12 @@
-// Шаг 6: build/darkReader.css + результаты шагов 3–5 + ручные правки (config/extra.css) → public/assets/bitrix-dark-theme.js.
+// Шаг 6: build/darkReader.css + результаты шагов 3–5 + ручные правки (config/extra.css, config/portal/extra.css) → public/assets/bitrix-dark-theme.js.
 // CSS вшит в скрипт строкой, чтобы вставить его синхронно на document_start, без вспышки белого.
 import fs from 'fs';
 
 import {minifyThemeCss} from '../lib/minify.mjs';
-import {PATHS, readLocalCssFiles, readStylesheetPaths, stripCssComments, writeFile} from '../lib/shared.mjs';
+import {getExtraCssFiles, PATHS, readLocalCssFiles, readStylesheetPaths, stripCssComments, writeFile} from '../lib/shared.mjs';
 
-// Дописываются после CSS Dark Reader в этом порядке; extra.css последним, чтобы ручные правки побеждали
-const ADDITIONAL_CSS_FILES = [PATHS.rgbVariablesCss, PATHS.masksCss, PATHS.iconsCss, PATHS.extraCss];
+// Дописываются после CSS Dark Reader в этом порядке; ручные правки последними, чтобы они побеждали
+const ADDITIONAL_CSS_FILES = [PATHS.rgbVariablesCss, PATHS.masksCss, PATHS.iconsCss, ...getExtraCssFiles()];
 // Место в runtime.js, куда подставляется список таблиц стилей из снимка
 const KNOWN_STYLESHEET_PATHS_PLACEHOLDER = '/* @known-stylesheet-paths */ []';
 

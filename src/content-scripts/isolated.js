@@ -15,12 +15,20 @@ import {isBitrixDarkThemeActive, onBitrixDarkThemeChange} from '../js/utils.js';
     if (event.data?.key !== 'BX_SESSION_ID' || !event.data?.data) return;
 
     const sessionId = event.data.data;
+    const {sessionIds = {}} = await chrome.storage.local.get(['sessionIds']);
 
     await chrome.storage.local.set({
       sessionId,
       // Домен Bitrix намеренно не хардкодится (расширение работает и на *.bitrix24.ru) — страницы
       // расширения (попап, «Что нового») берут его отсюда, чтобы обратиться к API без хардкода
       bitrixOrigin: window.location.origin,
+      // Тот же sessid, но по каждому порталу отдельно — для iframe (см. initIFrame): одиночный ключ
+      // выше принадлежит порталу, открытому последним, и вкладке другого портала не подходит.
+      // Чтение и запись карты не атомарны: два разных портала, загрузившиеся в один момент, могут
+      // затереть запись друг друга — тогда во фреймах одного из них фичи не запустятся до
+      // перезагрузки его страницы. Случай редкий, отдельных ключей на портал ради него не заводим:
+      // их пришлось бы исключать из выгрузки настроек по шаблону
+      sessionIds: {...sessionIds, [window.location.origin]: sessionId},
     });
 
     init(sessionId);
@@ -61,9 +69,14 @@ import {isBitrixDarkThemeActive, onBitrixDarkThemeChange} from '../js/utils.js';
   async function initIFrame() {
     if (window.self === window.top) return;
 
-    const { sessionId } = await chrome.storage.local.get(['sessionId']);
-    if (sessionId) {
-      init(sessionId);
+    const frameOrigin = window.location.origin;
+    const {sessionId, bitrixOrigin, sessionIds} = await chrome.storage.local.get(['sessionId', 'bitrixOrigin', 'sessionIds']);
+    // Одиночный ключ годится, только если он записан этим же порталом (страница открыта ещё до
+    // обновления расширения и в карту ничего не записала). Фрейм чужого сайта, встроенный в портал
+    // или встроивший его, своего sessid не получает
+    const frameSessionId = sessionIds?.[frameOrigin] ?? (bitrixOrigin === frameOrigin ? sessionId : null);
+    if (frameSessionId) {
+      init(frameSessionId);
     }
   }
 

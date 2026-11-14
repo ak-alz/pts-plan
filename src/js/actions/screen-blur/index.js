@@ -9,6 +9,10 @@ const selectors = [
   '.ui-toolbar-title-item',
   '.pts-blur',
   '.ui-notification-manager-browser-text',
+  // Страница всех уведомлений и поиск по названиям задач — собственные страницы портала
+  '.im-messages .message-message',
+  '.im-messages .group-title-text',
+  '.search-page .search-item',
   // Ответ ИИ — свободный текст, в котором модель называет и людей, и задачи
   '.pts-ai-result',
 ];

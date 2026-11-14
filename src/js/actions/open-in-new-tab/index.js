@@ -12,8 +12,8 @@ export function openInNewTab(options) {
     const createButton = document.querySelector('#tasks-buttonAdd .ui-btn-main');
     if (createButton) {
       createButton.addEventListener('click', (e) => {
-        const groupId = getGroupIdFromUrl(window.location.href);
-        const userId = getUserIdFromUrl(window.location.href);
+        const groupId = getGroupIdFromUrl(window.location.pathname);
+        const userId = getUserIdFromUrl(window.location.pathname);
 
         if (!groupId && !userId) return;
 
@@ -29,7 +29,7 @@ export function openInNewTab(options) {
   }
 
   if (options.openInNewTabCopy || options.openInNewTabSubtask) {
-    if (!getTaskIdFromUrl(window.location.href)) return;
+    if (!getTaskIdFromUrl(window.location.pathname)) return;
 
     document.addEventListener('click', (e) => {
       const match = window.location.href.match(/^(.*\/tasks\/task\/)view\/(\d+)\//);

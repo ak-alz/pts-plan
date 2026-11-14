@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+import {NOTIF_DEADLINE_TAG_RE, NOTIF_TASK_TAG_RE} from './patterns.js';
+
 // Паузы перед повторами, когда Bitrix просит сбавить темп. Длинные не случайно:
 // QUERY_LIMIT_EXCEEDED (503) — слишком частые запросы, OPERATION_TIME_LIMIT (429) — исчерпан лимит
 // ресурсоёмкости, после которого метод блокируется на 10 минут, так что короткий повтор бесполезен.
@@ -64,6 +66,20 @@ function isRateLimitResponse(data, status) {
   return RATE_LIMIT_ERROR_CODES.includes(code);
 }
 
+// Минимальная длина слова, которое знает полнотекстовый индекс по названию (см. buildTasksFilter)
+const TITLE_INDEX_MIN_WORD_LENGTH = 3;
+
+/**
+ * Слова запроса, которые можно искать через полнотекстовый индекс портала по названию задачи
+ * (`titleIndexSearch` у searchTasks). Пустой список — индекс к запросу не применится, и поиск
+ * с флагом ничем не отличается от обычного.
+ * @param {string} title - Строка поиска по названию.
+ * @returns {string[]}
+ */
+export function getTitleIndexWords(title) {
+  return (title ?? '').trim().split(/\s+/).filter((word) => word.length >= TITLE_INDEX_MIN_WORD_LENGTH);
+}
+
 const DEFAULT_TASK_SELECT_FIELDS = [
   'ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'CHANGED_DATE', 'CLOSED_DATE',
   'GROUP_ID', 'STAGE_ID', 'FAVORITE', 'PARENT_ID',
@@ -80,6 +96,7 @@ function buildTasksFilter({
   favorite,
   title,
   smartTitleSearch,
+  titleIndexSearch,
   excludeTitle,
   status,
   parentType,
@@ -87,9 +104,7 @@ function buildTasksFilter({
   groupId,
   createdBy,
   responsibleId,
-  responsibleOrCreatedBy,
-  accompliceId,
-  auditorId,
+  memberId,
   stageIds,
   createdDateFrom,
   createdDateTo,
@@ -111,6 +126,14 @@ function buildTasksFilter({
     } else {
       filter['%TITLE'] = title;
     }
+
+    // Ускоритель для порталов с собственным полнотекстовым индексом по названию (plan.pixelplus.ru):
+    // условие идёт вдобавок к LIKE, и сервер сначала сужает выборку по индексу — поиск по всем задачам
+    // занимает ~0,4 с вместо ~2,3 с. Индекс знает только начала слов от трёх букв, поэтому короткие
+    // слова в него не передаются. Незнакомый ключ фильтра Bitrix молча пропускает — на других
+    // порталах остаётся обычный LIKE
+    const indexedWords = titleIndexSearch ? getTitleIndexWords(title) : [];
+    if (indexedWords.length) filter['*PIXELPLUS_FULL_SEARCH_TITLE'] = indexedWords.join(' ');
   }
 
   const excludeWords = excludeTitle ? excludeTitle.trim().split(/\s+/).filter(Boolean) : [];
@@ -132,24 +155,11 @@ function buildTasksFilter({
   if (groupId) filter['GROUP_ID'] = groupId;
   if (createdBy) filter['CREATED_BY'] = createdBy;
   if (responsibleId) filter['RESPONSIBLE_ID'] = responsibleId;
-  if (accompliceId) filter['ACCOMPLICE'] = accompliceId;
-  if (auditorId) filter['AUDITOR'] = auditorId;
-  if (responsibleOrCreatedBy) {
-    // Единственный OR, который Bitrix действительно выполняет как объединение: RESPONSIBLE_ID и
-    // CREATED_BY — обычные колонки самой задачи. Форма ровно из документированного примера
-    // CTasks::GetList — ::LOGIC=OR внутри подфильтра верхнего уровня, поля в пронумерованных
-    // дочерних подфильтрах по одному. Замер на реальном портале: 1982 и 1622 по отдельности,
-    // 2649 вместе — то есть объединение с пересечением, а не одно из двух.
-    // Для ACCOMPLICE и AUDITOR та же форма молча вырождается в AND (678 и 9028 по отдельности,
-    // 467 вместе) — они приходят JOIN'ом к таблице участников, и общий JOIN даёт пересечение.
-    // Поэтому наблюдатель и соисполнитель по-прежнему требуют отдельных запросов.
-    if (!filter['::LOGIC']) filter['::LOGIC'] = 'AND';
-    filter['::SUBFILTER-1'] = {
-      '::LOGIC': 'OR',
-      '::SUBFILTER-1': {'RESPONSIBLE_ID': responsibleOrCreatedBy},
-      '::SUBFILTER-2': {'CREATED_BY': responsibleOrCreatedBy},
-    };
-  }
+  // Участник задачи в любой роли: постановщик, исполнитель, соисполнитель или наблюдатель — одним
+  // условием на сервере. Ровно так Bitrix собирает «Мой план» (сверено на портале: выборка
+  // совпала с объединением четырёх ролевых запросов задача в задачу). Собирать то же самое через
+  // ::LOGIC=OR по ACCOMPLICE и AUDITOR нельзя: такой OR молча вырождается в AND
+  if (memberId) filter['MEMBER'] = memberId;
   if (stageIds?.length) filter['STAGE_ID'] = stageIds;
   if (createdDateFrom) filter['>=CREATED_DATE'] = createdDateFrom;
   if (createdDateTo) filter['<=CREATED_DATE'] = createdDateTo;
@@ -237,26 +247,49 @@ export default class BitrixApi {
     });
   }
 
-  static getUserNotifications(taskId) {
-    const request = taskId
-      ? axios.postForm('/alert/', {
-        notifyFilterIn: {
-          taskId,
-          countOnPage: 999999,
-        },
-      })
-      : axios.get('/alert/');
+  /**
+   * ID всех уведомлений пользователя по задаче — поиском по истории уведомлений
+   * (im.notify.history.search по номеру задачи, страницами по 50). Номер встречается и в чужих
+   * текстах, поэтому уведомление берётся, только если оно действительно про эту задачу: по тегу
+   * (`TASKS|COMMENT|<id>|…`) либо по ссылке на задачу в тексте — так находятся реакции и
+   * упоминания, у которых в теге номера задачи нет. Сводка дедлайнов не в счёт: в ней несколько задач.
+   * @param {string|number} taskId
+   * @return {Promise<number[]>}
+   */
+  async getTaskNotificationIds(taskId) {
+    const PAGE_SIZE = 50;
+    // Поиск идёт по подстроке, и короткий номер находится внутри чужих номеров и ссылок — без
+    // потолка такой запрос листал бы всю историю уведомлений
+    const MAX_PAGES = 20;
+    // Текст короче трёх символов метод принимает только вместе с фильтром по типу
+    const MIN_SEARCH_TEXT_LENGTH = 3;
+    const taskLink = `/tasks/task/view/${taskId}/`;
+    const notificationIds = [];
+    let lastId = null;
 
-    return request.then(({data}) => {
-      const parser = new DOMParser();
-      const html = parser.parseFromString(data, 'text/html');
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const {data} = await this.requestWithRateLimitRetry(() => this.http.postForm('/rest/im.notify.history.search.json', {
+        sessid: this.sessionId,
+        SEARCH_TEXT: taskId,
+        LIMIT: PAGE_SIZE,
+        ...(String(taskId).length < MIN_SEARCH_TEXT_LENGTH && {SEARCH_TYPE: 'tasks'}),
+        ...(lastId && {LAST_ID: lastId}),
+      }));
+      const notifications = data?.result?.notifications ?? [];
 
-      if (taskId) {
-        return [...html.querySelectorAll(`.message-item:has(a[href*="/tasks/task/view/${taskId}/"]) .message-delete-checkbox[data-id]:not([data-id=""])`)];
-      }
+      notifications.forEach((notification) => {
+        const tag = String(notification.notify_tag ?? '');
+        const isTaskTag = tag.match(NOTIF_TASK_TAG_RE)?.[1] === String(taskId);
+        const hasTaskLink = !NOTIF_DEADLINE_TAG_RE.test(tag) && String(notification.text ?? '').includes(taskLink);
+        if (isTaskTag || hasTaskLink) notificationIds.push(notification.id);
+      });
 
-      return [...html.querySelectorAll('.message-delete-checkbox[data-id]:not([data-id=""])')];
-    });
+      const nextLastId = notifications[notifications.length - 1]?.id;
+      if (notifications.length < PAGE_SIZE || nextLastId === lastId) break;
+      lastId = nextLastId;
+    }
+
+    return notificationIds;
   }
 
   /**
@@ -339,10 +372,11 @@ export default class BitrixApi {
   /**
    * Batch-запросы tasks.task.list по колонкам, исключая завершённые задачи.
    * @param {Array<{key: string, stageId: string, start: number}>} stageRequests
-   * @param {string} groupId
+   * @param {(stageId: string) => Record<string, any>} buildStageFilter - Условия фильтра, которыми
+   * выбираются задачи одной колонки: у группового канбана и у «Моего плана» они разные.
    * @return {Promise<axios.AxiosResponse<any>[]>}
    */
-  getTasksBatch(stageRequests, groupId) {
+  getTasksBatch(stageRequests, buildStageFilter) {
     if (!stageRequests.length) return Promise.resolve([]);
 
     const BATCH_SIZE = 50;
@@ -354,15 +388,10 @@ export default class BitrixApi {
     return Promise.all(chunks.map((chunk) => {
       const cmd = {};
       chunk.forEach(({key, stageId, start}) => {
-        const params = new URLSearchParams({
-          'filter[GROUP_ID]': groupId,
-          'filter[STAGE_ID]': stageId,
-          'filter[!STATUS]': 5,
-          start,
-        });
         // Только нужные поля — исключаем description, auditorsData, accomplicesData и т.д.
-        ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL', 'PARENT_ID'].forEach((field) => {
-          params.append('select[]', field);
+        const params = buildTaskListParams({...buildStageFilter(stageId), '!STATUS': 5}, {
+          start,
+          selectFields: ['ID', 'TITLE', 'STAGE_ID', 'RESPONSIBLE_ID', 'ACTIVITY_DATE', 'TASK_CONTROL', 'PARENT_ID'],
         });
         cmd[key] = `tasks.task.list?${params.toString()}`;
       });
@@ -376,71 +405,140 @@ export default class BitrixApi {
   }
 
   /**
-   * Все незавершённые задачи указанных колонок канбана, со всеми страницами.
+   * Все незавершённые задачи указанных колонок, со всеми страницами, разложенные по колонкам.
    * Первым batch-запросом берёт по первой странице каждой колонки, из ответа узнаёт общее число
-   * задач (`result_total`) и вторым запросом добирает недостающие страницы — виджетам нужен готовый
-   * плоский список, а не постраничная выдача.
+   * задач (`result_total`) и вторым запросом добирает недостающие страницы.
+   * @param {Array<string|number>} stageIds - ID колонок.
+   * @param {(stageId: string) => Record<string, any>} buildStageFilter - См. getTasksBatch.
+   * @return {Promise<Map<string|number, any[]>>} Карта «ID колонки → её задачи».
+   */
+  async getTasksByStageMap(stageIds, buildStageFilter) {
+    const tasksByStageId = new Map(stageIds.map((stageId) => [stageId, []]));
+    if (!stageIds.length) return tasksByStageId;
+
+    const PAGE_SIZE = 50;
+    // Ключ команды — «s<номер колонки>» у первой страницы и «s<номер>p<страница>» у остальных
+    const getStageId = (key) => stageIds[Number.parseInt(key.slice(1), 10)];
+    const collectTasks = (responses) => {
+      responses.forEach((response) => {
+        Object.entries(response.data?.result?.result ?? {}).forEach(([key, stageResult]) => {
+          tasksByStageId.get(getStageId(key)).push(...(stageResult.tasks ?? []));
+        });
+      });
+    };
+
+    const firstPageRequests = stageIds.map((stageId, index) => ({key: `s${index}`, stageId, start: 0}));
+    const firstResponses = await this.getTasksBatch(firstPageRequests, buildStageFilter);
+    collectTasks(firstResponses);
+
+    const remainingRequests = [];
+    firstResponses.forEach((response) => {
+      Object.entries(response.data?.result?.result_total ?? {}).forEach(([key, total]) => {
+        const pageCount = Math.ceil(total / PAGE_SIZE);
+        for (let page = 1; page < pageCount; page++) {
+          remainingRequests.push({key: `${key}p${page}`, stageId: getStageId(key), start: page * PAGE_SIZE});
+        }
+      });
+    });
+
+    if (remainingRequests.length) collectTasks(await this.getTasksBatch(remainingRequests, buildStageFilter));
+
+    return tasksByStageId;
+  }
+
+  /**
+   * Все незавершённые задачи указанных колонок канбана группы, со всеми страницами — виджетам нужен
+   * готовый плоский список, а не постраничная выдача.
    * @param {Array<string|number>} stageIds - ID колонок канбана.
    * @param {string} groupId
    * @return {Promise<any[]>} Задачи всех колонок одним массивом.
    */
   async getAllTasksByStages(stageIds, groupId) {
-    if (!stageIds.length) return [];
-
-    const PAGE_SIZE = 50;
-    const firstPageRequests = stageIds.map((stageId, index) => ({key: `s${index}`, stageId, start: 0}));
-    const firstResponses = await this.getTasksBatch(firstPageRequests, groupId);
-
-    const tasks = [];
-    const remainingRequests = [];
-
-    firstResponses.forEach((response) => {
-      const {result, result_total: resultTotal} = response.data?.result ?? {};
-      Object.entries(result ?? {}).forEach(([key, stageResult]) => {
-        tasks.push(...(stageResult.tasks ?? []));
-
-        const total = resultTotal?.[key] ?? 0;
-        if (total <= PAGE_SIZE) return;
-
-        const stageId = stageIds[Number(key.slice(1))];
-        const pageCount = Math.ceil(total / PAGE_SIZE);
-        for (let page = 1; page < pageCount; page++) {
-          remainingRequests.push({key: `${key}p${page}`, stageId, start: page * PAGE_SIZE});
-        }
-      });
-    });
-
-    if (remainingRequests.length) {
-      const remainingResponses = await this.getTasksBatch(remainingRequests, groupId);
-      remainingResponses.forEach((response) => {
-        Object.values(response.data?.result?.result ?? {}).forEach((stageResult) => {
-          tasks.push(...(stageResult.tasks ?? []));
-        });
-      });
-    }
-
-    return tasks;
+    const tasksByStageId = await this.getTasksByStageMap(stageIds, (stageId) => ({GROUP_ID: groupId, STAGE_ID: stageId}));
+    return [...tasksByStageId.values()].flat();
   }
 
-  completeTasksBatch(taskIds) {
-    const CHUNK_SIZE = 50;
-    const chunks = [];
-    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
-      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
+  /**
+   * Все незавершённые задачи указанных личных колонок «Моего плана» (их ID отдаёт `getStages(0)`).
+   * Личная колонка — отдельная связь задачи с пользователем, выбирается фильтром `STAGES_ID`; поле
+   * `stageId` задачи при этом по-прежнему указывает на колонку канбана её группы, поэтому личная
+   * колонка кладётся в `personalStageId`. В системную колонку (первую) Bitrix относит и задачи,
+   * которые по колонкам не раскладывали. Проверено на портале.
+   * @param {Array<string|number>} stageIds - ID личных колонок текущего пользователя.
+   * @param {string|number} userId - Текущий пользователь: чужой личный план Bitrix не отдаёт.
+   * @return {Promise<any[]>} Задачи всех колонок одним массивом, у каждой — `personalStageId`.
+   */
+  async getPersonalPlanTasksByStages(stageIds, userId) {
+    const tasksByStageId = await this.getTasksByStageMap(stageIds, (stageId) => ({MEMBER: userId, STAGES_ID: stageId}));
+    return [...tasksByStageId].flatMap(([stageId, tasks]) => tasks.map((task) => ({...task, personalStageId: stageId})));
+  }
+
+  /**
+   * Выполняет одно и то же действие над пачкой задач (`tasks.task.complete`, `.renew`, `.approve`)
+   * и разбирает ответ по каждой задаче. Batch идёт с `halt: false`: отказ по одной задаче (нет
+   * прав, не заполнен обязательный результат) не прерывает остальные и не роняет запрос — HTTP-ответ
+   * успешен, а отказ виден только по отсутствию результата команды. Команды, которые Bitrix отклонил
+   * из-за частоты запросов, повторяются: это не отказ по самой задаче.
+   * @param {string} method - REST-метод, принимающий `taskId`.
+   * @param {Array<string|number>} taskIds
+   * @return {Promise<{doneIds: Array<string|number>, failedIds: Array<string|number>}>}
+   */
+  async runTaskActionBatch(method, taskIds) {
+    const commands = {};
+    taskIds.forEach((id, index) => {
+      commands[`t${index}`] = `${method}?taskId=${id}`;
+    });
+
+    const doneIndexes = new Set();
+    let pending = commands;
+
+    for (let attempt = 0; ; attempt++) {
+      const chunks = chunkBatchCommands(pending);
+      const responses = [];
+
+      // Как в getTasksByIdsBatch: первый проход порциями параллельно, повторы — последовательно
+      if (attempt === 0) {
+        responses.push(...await Promise.all(chunks.map((chunk) => this.postBatchCommands(chunk))));
+      } else {
+        for (const chunk of chunks) {
+          responses.push(await this.postBatchCommands(chunk));
+        }
+      }
+
+      const limited = {};
+      responses.forEach((response, chunkIndex) => {
+        const {result, result_error: resultError} = response.data?.result ?? {};
+        Object.keys(chunks[chunkIndex]).forEach((key) => {
+          if (result?.[key]) {
+            doneIndexes.add(Number(key.slice(1)));
+          } else if (isRateLimitResponse(resultError?.[key])) {
+            // Отказ из-за частоты запросов — не отказ по самой задаче, такую команду стоит повторить
+            limited[key] = chunks[chunkIndex][key];
+          }
+        });
+      });
+
+      if (!Object.keys(limited).length || attempt >= PER_COMMAND_RETRY_DELAYS.length) break;
+
+      await delay(PER_COMMAND_RETRY_DELAYS[attempt]);
+      pending = limited;
     }
 
-    return Promise.all(chunks.map((chunk) => {
-      const cmd = {};
-      chunk.forEach((id, i) => {
-        cmd[`t${i}`] = `tasks.task.complete?taskId=${id}`;
-      });
+    return {
+      doneIds: taskIds.filter((id, index) => doneIndexes.has(index)),
+      failedIds: taskIds.filter((id, index) => !doneIndexes.has(index)),
+    };
+  }
 
-      return this.http.postForm('/rest/batch.json', {
-        sessid: this.sessionId,
-        halt: false,
-        cmd,
-      });
-    }));
+  /**
+   * Batch-завершение задач — tasks.task.complete. Задача с включённым контролем уходит в статус
+   * «Ждёт контроля», остальные — в «Завершена». Bitrix отказывает, если у пользователя нет права
+   * завершать задачу или у задачи обязателен результат, а его нет, — такие задачи попадают в failedIds.
+   * @param {Array<string|number>} taskIds
+   * @return {Promise<{doneIds: Array<string|number>, failedIds: Array<string|number>}>}
+   */
+  completeTasksBatch(taskIds) {
+    return this.runTaskActionBatch('tasks.task.complete', taskIds);
   }
 
   /**
@@ -449,27 +547,10 @@ export default class BitrixApi {
    * поэтому они снова попадают под фильтр getTasksBatch (`!STATUS: 5`) и возвращаются в прежнюю
    * колонку канбана.
    * @param {Array<string|number>} taskIds
-   * @return {Promise<axios.AxiosResponse<any>[]>}
+   * @return {Promise<{doneIds: Array<string|number>, failedIds: Array<string|number>}>}
    */
   renewTasksBatch(taskIds) {
-    const CHUNK_SIZE = 50;
-    const chunks = [];
-    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
-      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
-    }
-
-    return Promise.all(chunks.map((chunk) => {
-      const cmd = {};
-      chunk.forEach((id, i) => {
-        cmd[`t${i}`] = `tasks.task.renew?taskId=${id}`;
-      });
-
-      return this.http.postForm('/rest/batch.json', {
-        sessid: this.sessionId,
-        halt: false,
-        cmd,
-      });
-    }));
+    return this.runTaskActionBatch('tasks.task.renew', taskIds);
   }
 
   /**
@@ -481,38 +562,8 @@ export default class BitrixApi {
    * @return {Promise<{approvedIds: Array<string|number>, failedIds: Array<string|number>}>}
    */
   approveTasksBatch(taskIds) {
-    const CHUNK_SIZE = 50;
-    const chunks = [];
-    for (let i = 0; i < taskIds.length; i += CHUNK_SIZE) {
-      chunks.push(taskIds.slice(i, i + CHUNK_SIZE));
-    }
-
-    return Promise.all(chunks.map((chunk) => {
-      const cmd = {};
-      chunk.forEach((id, i) => {
-        cmd[`t${i}`] = `tasks.task.approve?taskId=${id}`;
-      });
-
-      return this.http.postForm('/rest/batch.json', {
-        sessid: this.sessionId,
-        halt: false,
-        cmd,
-      }).then(({data}) => {
-        const approvedIds = [];
-        const failedIds = [];
-        chunk.forEach((id, i) => {
-          if (data?.result?.result?.[`t${i}`]) {
-            approvedIds.push(id);
-          } else {
-            failedIds.push(id);
-          }
-        });
-        return {approvedIds, failedIds};
-      });
-    })).then((chunkResults) => ({
-      approvedIds: chunkResults.flatMap((chunkResult) => chunkResult.approvedIds),
-      failedIds: chunkResults.flatMap((chunkResult) => chunkResult.failedIds),
-    }));
+    return this.runTaskActionBatch('tasks.task.approve', taskIds)
+      .then(({doneIds, failedIds}) => ({approvedIds: doneIds, failedIds}));
   }
 
   getComments(taskId) {
@@ -698,6 +749,8 @@ export default class BitrixApi {
    * @param {boolean} params.favorite - только избранные задачи (Bitrix native)
    * @param {string|null} params.title - поиск по названию (LIKE)
    * @param {boolean} params.smartTitleSearch - разбивать title по пробелам и искать каждое слово через AND
+   * @param {boolean} params.titleIndexSearch - дополнительно сужать поиск по названию полнотекстовым индексом портала: в разы быстрее, но находит только слова, которые начинаются с искомого. При пустом результате вызывающему стоит повторить поиск без флага
+   * @param {string|number|null} params.memberId - ID участника задачи в любой роли (постановщик, исполнитель, соисполнитель, наблюдатель)
    * @param {'active'|'closed'|null} params.status - 'active' = не завершённые, 'closed' = завершённые, null = все
    * @param {'all'|'root'|'subtask'} params.parentType - 'root' = только корневые задачи, 'subtask' = только подзадачи, 'all' = все
    * @param {Array<string|number>|null} params.parentIds - прямые дети конкретных задач (для обхода дерева подзадач по уровням); не сочетается с parentType
@@ -804,65 +857,16 @@ export default class BitrixApi {
   }
 
   /**
-   * Возвращает уникальные задачи, где пользователь фигурирует в любой из 4 ролей — ответственный,
-   * соисполнитель, наблюдатель или постановщик. Именно так Bitrix формирует личный канбан
-   * «Мой план» — он не ограничивается ответственностью (проверено эмпирически на реальном
-   * канбане: объединение всех 4 ролей дало 100% совпадение с видимыми карточками, при этом
-   * RESPONSIBLE_ID — не самая крупная роль).
-   * Одним запросом все 4 роли не забрать: ответственный и постановщик объединяются через OR
-   * (см. responsibleOrCreatedBy в buildTasksFilter), а соисполнитель и наблюдатель — нет, для них
-   * тот же OR вырождается в пересечение. Отсюда три запроса через уже существующий searchTasks()
-   * (со всей его пагинацией и повтором при рейт-лимите) и объединение здесь с дедупликацией по id.
+   * Возвращает задачи, где пользователь участвует в любой из 4 ролей — ответственный, соисполнитель,
+   * наблюдатель или постановщик. Именно так Bitrix формирует личный канбан «Мой план» — он не
+   * ограничивается ответственностью. Один запрос с фильтром MEMBER (см. buildTasksFilter): сортировка
+   * и limit выполняются на сервере, дублей в выборке нет.
    * @param {string|number} userId
-   * @param {Object} [params] - остальные параметры searchTasks (status, selectFields, limit и т.д.), общие для всех запросов
+   * @param {Object} [params] - остальные параметры searchTasks (status, selectFields, limit, order и т.д.)
    * @returns {Promise<any[]>}
    */
-  async searchMyTasks(userId, {order, limit, onProgress, ...params} = {}) {
-    const ROLE_FILTERS = [
-      {responsibleOrCreatedBy: userId},
-      {accompliceId: userId},
-      {auditorId: userId},
-    ];
-
-    // Прогресс общий на все запросы: каждый ролевой запрос считает свои loaded/total, и если
-    // отдавать их наружу как есть, полоса дёргалась бы между ролями. Складываем последние
-    // известные значения каждой роли
-    const progressByRole = ROLE_FILTERS.map(() => ({loaded: 0, total: 0}));
-    const trackRoleProgress = (roleIndex) => (progress) => {
-      progressByRole[roleIndex] = progress;
-      onProgress({
-        loaded: progressByRole.reduce((sum, item) => sum + item.loaded, 0),
-        total: progressByRole.reduce((sum, item) => sum + item.total, 0),
-      });
-    };
-
-    const results = await Promise.all(
-      // limit передаётся в каждый запрос, чтобы не выкачивать лишнее (например, у наблюдателя
-      // задач может быть на порядок больше остальных ролей) — после объединения список пересортировывается
-      // и обрезается до limit ещё раз, иначе после дедупликации порядок был бы «сначала все ответственные,
-      // потом все соисполнители» вместо реальной сортировки по order
-      ROLE_FILTERS.map((roleFilter, roleIndex) => this.searchTasks({
-        ...params,
-        ...roleFilter,
-        order,
-        limit,
-        onProgress: onProgress ? trackRoleProgress(roleIndex) : null,
-      })),
-    );
-
-    const taskById = new Map();
-    results.flat().forEach((task) => taskById.set(task.id, task));
-    const tasks = [...taskById.values()];
-
-    if (order?.field) {
-      // Bitrix ожидает поле фильтра/сортировки в верхнем регистре с подчёркиванием (CREATED_DATE),
-      // а сама задача в ответе tasks.task.list возвращается с тем же полем в camelCase (createdDate)
-      const key = order.field.toLowerCase().replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-      const direction = order.direction === 'ASC' ? 1 : -1;
-      tasks.sort((a, b) => (a[key] > b[key] ? 1 : a[key] < b[key] ? -1 : 0) * direction);
-    }
-
-    return limit ? tasks.slice(0, limit) : tasks;
+  searchMyTasks(userId, params = {}) {
+    return this.searchTasks({...params, memberId: userId});
   }
 
   /**
@@ -1158,7 +1162,8 @@ export default class BitrixApi {
   }
 
   /**
-   * Batch-запрос tasks.task.get для нескольких задач.
+   * Batch-запрос задач по списку ID: tasks.task.list с фильтром по ID, по 50 задач на команду —
+   * на сотню задач уходит две команды вместо сотни вызовов tasks.task.get.
    * Поля ответа в camelCase: id, responsibleId, createdBy, groupId, stageId.
    * Задачи, по которым ответ не пришёл, в карту не попадают — вызывающий код не может отличить
    * удалённую задачу от сбоя, поэтому отсутствие задачи нельзя считать окончательным ответом.
@@ -1169,12 +1174,15 @@ export default class BitrixApi {
   async getTasksByIdsBatch(taskIds, select = ['ID', 'TITLE', 'RESPONSIBLE_ID', 'CREATED_BY', 'GROUP_ID', 'STAGE_ID', 'CREATED_DATE', 'CHANGED_DATE']) {
     if (!taskIds.length) return {};
 
+    const TASKS_PER_COMMAND = 50;
+    const uniqueTaskIds = [...new Set(taskIds.map(String))];
     const commands = {};
-    taskIds.forEach((taskId, index) => {
-      const params = new URLSearchParams({taskId});
+    for (let offset = 0; offset < uniqueTaskIds.length; offset += TASKS_PER_COMMAND) {
+      const params = new URLSearchParams();
+      uniqueTaskIds.slice(offset, offset + TASKS_PER_COMMAND).forEach((taskId) => params.append('filter[ID][]', taskId));
       select.forEach((field) => params.append('select[]', field));
-      commands[`t${index}`] = `tasks.task.get?${params.toString()}`;
-    });
+      commands[`t${offset}`] = `tasks.task.list?${params.toString()}`;
+    }
 
     const tasksById = {};
     let pending = commands;
@@ -1197,8 +1205,9 @@ export default class BitrixApi {
       const limited = {};
       responses.forEach((response, chunkIndex) => {
         Object.values(response.data?.result?.result ?? {}).forEach((commandResult) => {
-          const task = commandResult?.task;
-          if (task?.id) tasksById[task.id] = task;
+          (commandResult?.tasks ?? []).forEach((task) => {
+            if (task?.id) tasksById[task.id] = task;
+          });
         });
 
         // Ограничение приходит и по отдельной команде батча — со статусом 200 и без общей ошибки,
